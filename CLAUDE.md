@@ -2,6 +2,73 @@
 
 本仓库的 AI 协作规则（Claude Code、AiCode 等 AI 编程助手均读取本文件），优先级高于默认通用规则。
 
+## 铁律（违反即返工，不得以"效率"为由跳过）
+
+### 1. 输出物必须分类存放在指定目录
+
+**唯一允许的项目输出根目录**：
+
+```
+/storage/emulated/0/Download/AiGo/AiGo开发/        （容器内等价：~/workspace/）
+├── AiGo-Android源码仓库/     完整 git 仓库
+├── build-output/             所有 APK / 构建产物
+├── docs/                     文档、截图、说明
+└── keystore/                 签名材料（含口令，绝不入库）
+```
+
+- **禁止**把任何产物、文档、临时文件写到 `/storage/emulated/0/Download` 根目录或其它位置。
+- 新类别输出先在 `AiGo开发/` 下建子目录再放，不要平铺到根。
+- 该目录在容器内即 `~/workspace`（PRoot 绑定挂载，同一份文件），两边路径等价。
+
+### 2. 构建必须离开 FUSE 目录
+
+`~/workspace` 是 FUSE 挂载，单次 `stat` 约 99 ms。在该目录内直接编译 Kotlin，30 分钟跑不完。
+
+- 日常开发与编译一律在 **`/root/.aigo-build`**（本地磁盘主副本）。
+- 只有需要宿主可见或归档时才写回 `~/workspace/AiGo-Android源码仓库`。
+- 统一用 `aigo` 命令，不要自己拼 Gradle 命令。
+
+### 3. 版本号只由 Git 决定，禁止手改
+
+- `versionCode` = `git rev-list --count HEAD`；`versionName` 由 tag 推导并追加构建日期。
+- **禁止**在 `build.gradle.kts` 里写死版本号。
+- **禁止**对 `main` 做 `rebase` / `squash` / `push --force`——提交数变小会导致 versionCode 回退、新包装不上，CI 会直接拦下发版。
+
+### 4. 不能破坏与上游 Nox 的 fork 关系
+
+三层链：`jieapi/aicode → xzyy03/Nox → steveneng2020/AiGo`。
+
+- remote 只保留 `origin` 与 `upstream`（Nox）。**禁止把 AiCode 加为 remote 或直接合并**——实测两者无共同祖先，合并会产生双根历史，versionCode 体系失效。
+- 源码包名保留 `com.nox`，只改应用层品牌（`applicationId`、应用名、图标、链接）。**禁止全局替换 `com.nox`**。
+- 上游同步只用 `merge`。
+
+### 5. 签名与密钥绝不入库
+
+- `*.jks`、`*.keystore`、`keystore.properties`、`local.properties` 均已被 `.gitignore` 忽略，**不要取消忽略**。
+- 推送前必须扫描：`git ls-files | grep -E '\.jks|keystore\.properties|local\.properties'` 应为空。
+- 口令、token、PAT 不写进任何被跟踪的文件，不贴进提交信息。
+
+### 6. 提交前必须过门禁
+
+改完编译型代码（`.kt` / `.kts` / `AndroidManifest.xml` / `res/`）后，**按顺序**执行，任一步失败就停下修：
+
+```bash
+aigo build                    # 冒烟编译，必须 BUILD SUCCESSFUL
+aigo test                     # 单元测试，必须 BUILD SUCCESSFUL
+python3 scripts/check_migrations.py   # 改过数据库 schema 时必跑
+```
+
+只改 `.md` / 纯文案时可跳过 1、2，但第 3 条若涉及迁移仍要跑。
+
+### 7. 界面文案必须中英双语
+
+- 用户可见文案一律进 `values/strings.xml`（中文）与 `values-en/strings.xml`（英文），**禁止在 `.kt` 里硬编码中文 UI 文案**。
+- 英文含撇号（`don't`）必须写成 `don\'t`，否则 `aapt2` 报 `Invalid unicode escape sequence`。
+
+### 8. 改 UI 必须同步文档
+
+新增页面、改交互、改文案 → 更新 `docs-site/docs/`；新增文档页还要加进 `docs-site/.vitepress/config.ts` 侧栏与 `guide/overview.md` 索引。
+
 ## 基本约定
 
 - **永远使用中文回复。**
@@ -19,12 +86,30 @@
 
 **改完编译型代码（`.kt` / `.gradle.kts` / `AndroidManifest.xml`）→ 提交前必跑冒烟编译；`git push` 前必跑单元测试，并跑 `check_migrations.py` 迁移对账。** 只改文档 / 资源文案 / 纯 `.md` 时这些都跳过。
 
+统一入口是 `aigo` 命令（`/root/bin/aigo`），它在 `/root/.aigo-build` 主副本里执行并自动注入环境变量：
+
 | 用途 | 命令 |
 | --- | --- |
-| 冒烟编译（日常默认） | `./gradlew :app:assembleUniversalDebug` |
-| 推送前单测 | `./gradlew :app:testUniversalDebugUnitTest` |
-| 推送前迁移对账 | `python3 scripts/check_migrations.py`（或 `./gradlew checkMigrations`） |
-| 发版构建 APK / AAB | `./gradlew assembleRelease` / `./gradlew bundleRelease` |
+| 冒烟编译（日常默认，缓存命中约 20~50 秒） | `aigo build` |
+| 推送前单测 | `aigo test` |
+| 出可安装的 debug 包（最快，无需 R8） | `aigo apk` |
+| 出 release 包但跳过 R8（仅自测） | `aigo fast` |
+| 迁移对账 | `python3 scripts/check_migrations.py` |
+| 状态 / 同步 | `aigo status` / `aigo push` |
+
+手工执行 Gradle 时必须先 export 这五个变量，否则会失败：
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+export ANDROID_HOME=/opt/android-sdk
+export ANDROID_SDK_ROOT=/opt/android-sdk
+export GRADLE_USER_HOME=/root/.gradle-home      # 默认 ~/.gradle 不可写
+export ANDROID_USER_HOME=/root/.android-home    # 默认 ~/.android 不可写，debug 签名需要
+```
+
+且一律用 `sh gradlew`（FUSE 上 chmod 不生效，`./gradlew` 会 Permission denied）。
+
+**不要加 `--no-daemon`**：实测 daemon 复用时无改动校验 22 秒，加 `--no-daemon` 后同操作 4 分 52 秒。
 
 - **别用聚合任务做日常验证**：`assembleDebug` / `assembleRelease` / `test` / `build` 都会跨三个 flavor 全跑，耗时极长。
 - 产物：`app/build/outputs/apk/<flavor>/release/app-<flavor>-release.apk`、`.../bundle/<flavor>/release/app-<flavor>-release.aab`。
