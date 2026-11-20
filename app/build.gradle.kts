@@ -212,12 +212,24 @@ android {
     }
 
     buildTypes {
-        // debug 加包名后缀 .debug → applicationId 变 com.nox.debug，与 release（com.nox）
-        // 可同机共存、互不覆盖。IDE 跑 debug 不再因签名不同卸载已装的正式版。
-        // 注意：因 applicationId 不同，debug 变体私有目录为 /data/data/com.nox.debug/，
-        // release 已解压的容器 rootfs 与工作区项目在 debug 下不可见（需重新解压/clone），属预期隔离行为。
+        // debug 不加包名后缀：与 release 同为 com.aigo，可直接覆盖安装，数据与容器 rootfs 全部保留。
+        //
+        // 上游原本给 debug 加 .debug 后缀，目的是让 IDE 的调试包不覆盖已装的正式版。
+        // 但本项目由 root 用户自建自用，覆盖安装本就是想要的行为，加后缀反而带来三个实际问题：
+        //   1. 同机出现两个应用（com.aigo 与 com.aigo.debug），桌面看着像装了两份；
+        //   2. debug 变体私有目录不同，之前解压的容器 rootfs、工作区项目全部"消失"；
+        //   3. debug 包 debuggable=true，Android 15+ 会弹 16 KB 页对齐兼容性警告。
+        // 因此统一为同一包名。签名若与已装包不同，安装时会提示签名冲突，需先卸载一次。
         debug {
-            applicationIdSuffix = ".debug"
+            // 保持与 release 相同的 applicationId，不做后缀。
+            // 显式声明而非留空，是为了让后续维护者一眼看出这是刻意为之。
+            applicationIdSuffix = null
+            // 签名也必须与 release 一致：包名相同而签名不同时，Android 会拒绝覆盖安装
+            // （INSTALL_FAILED_UPDATE_INCOMPATIBLE）。有 keystore 就用正式签名，
+            // 没有（如 CI 未配 Secrets 的 PR 构建）才退回默认 debug 签名。
+            if (keystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         release {
             // 本地调试可加 -PskipMinify 跳过 R8 与资源压缩：实测能省 3~5 分钟。
@@ -236,12 +248,12 @@ android {
                 include = false
             }
         }
-        // beta 测试版：继承 release 的全部配置（签名/R8/资源压缩/proguard），仅包名后缀 .beta
-        // → applicationId 变 com.nox.beta，可与正式版同机共存、互不覆盖。
+        // beta 测试版：继承 release 的全部配置（签名/R8/资源压缩/proguard），
+        // 同样不加包名后缀——理由见上面 debug 的注释，覆盖安装即可。
         // 由 .github/workflows/beta.yml 在 push main 时构建并上传 Artifacts，供测机验证。
         create("beta") {
             initWith(getByName("release"))
-            applicationIdSuffix = ".beta"
+            applicationIdSuffix = null
             // :terminal-emulator / :terminal-view 无 beta 变体，依赖解析回退到它们的 release 变体。
             matchingFallbacks += "release"
         }

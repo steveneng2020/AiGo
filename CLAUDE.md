@@ -65,7 +65,14 @@ python3 scripts/check_migrations.py   # 改过数据库 schema 时必跑
 - 用户可见文案一律进 `values/strings.xml`（中文）与 `values-en/strings.xml`（英文），**禁止在 `.kt` 里硬编码中文 UI 文案**。
 - 英文含撇号（`don't`）必须写成 `don\'t`，否则 `aapt2` 报 `Invalid unicode escape sequence`。
 
-### 8. 改 UI 必须同步文档
+### 8. 所有变体共用同一包名，禁止 applicationIdSuffix
+
+- `debug` / `beta` / `release` 一律是 `com.aigo`，**禁止**加 `.debug` / `.beta` 后缀。
+- 理由：本项目自建自用，覆盖安装是期望行为。加后缀会带来三个实际问题——同机出现多个应用、私有目录不同导致容器 rootfs 与工作区"消失"、debug 包触发 Android 15+ 的 16 KB 兼容性弹窗。
+- debug 变体必须与 release 使用**同一签名**（`signingConfig = release`），否则包名相同而签名不同会被拒绝覆盖安装（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`）。
+- 上游若把后缀改回来，合并后必须立即恢复本约定，并跑 `aigo gate` 确认。
+
+### 9. 改 UI 必须同步文档
 
 新增页面、改交互、改文案 → 更新 `docs-site/docs/`；新增文档页还要加进 `docs-site/.vitepress/config.ts` 侧栏与 `guide/overview.md` 索引。
 
