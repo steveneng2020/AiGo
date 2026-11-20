@@ -39,7 +39,7 @@ class BackupCryptoTest {
     fun encryptStream_writesVersionedHeader() {
         val encryptedBytes = encrypt("payload".toByteArray(Charsets.UTF_8))
 
-        assertArrayEquals("NOXBK".toByteArray(Charsets.US_ASCII), encryptedBytes.copyOfRange(0, 6))
+        assertArrayEquals("NOXBAK".toByteArray(Charsets.US_ASCII), encryptedBytes.copyOfRange(0, 6))
         assertEquals(2, encryptedBytes[6].toInt())
     }
 

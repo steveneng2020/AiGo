@@ -41,7 +41,9 @@ object BackupCrypto {
     /** 每块明文大小；每块独立做一次 GCM，单次 doFinal 产出有界。 */
     private const val CHUNK_SIZE = 256 * 1024
 
-    private val MAGIC = "NOXBK".toByteArray(Charsets.US_ASCII)
+    // 魔数固定 6 字节，与旧版 MUSEBK 等长，解密时两者都识别
+    private val MAGIC = "NOXBAK".toByteArray(Charsets.US_ASCII)
+    private val LEGACY_MAGIC = "MUSEBK".toByteArray(Charsets.US_ASCII)
     private const val FORMAT_VERSION = 0x02
     private const val NONCE_BASE_LEN = 8
 
@@ -122,13 +124,8 @@ object BackupCrypto {
     /** 流式解密：v2 文件按分块解密，其余按旧格式（单次 GCM）兼容解密。 */
     fun decryptStream(input: InputStream, output: OutputStream, password: CharArray) {
         val header = readFully(input, MAGIC.size + 1)
-        var isV2 = true
-        for (i in MAGIC.indices) {
-            if (header[i] != MAGIC[i]) {
-                isV2 = false
-                break
-            }
-        }
+        val magic = header.copyOfRange(0, MAGIC.size)
+        val isV2 = magic.contentEquals(MAGIC) || magic.contentEquals(LEGACY_MAGIC)
         if (!isV2) {
             decryptLegacy(input, output, password, header)
             return
