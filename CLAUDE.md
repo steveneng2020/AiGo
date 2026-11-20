@@ -115,7 +115,31 @@ export ANDROID_USER_HOME=/root/.android-home    # 默认 ~/.android 不可写，
 - 产物：`app/build/outputs/apk/<flavor>/release/app-<flavor>-release.apk`、`.../bundle/<flavor>/release/app-<flavor>-release.aab`。
 - flavor 按 ABI 拆分：`universal`（arm64-v8a + x86_64）、`armsolo`（仅 arm64-v8a）、`x86solo`（仅 x86_64）。
 - release 签名凭据读 `app/keystore.properties`（`storeFile` / `storePassword` / `keyAlias` / `keyPassword`）；本地通常不存放签名文件，CI 从 GitHub secret 还原到 `app/aicode.jks`。
-- **`targetSdk` 锁定 28**（`minSdk = 26`）：PRoot 需在 App 可写目录执行二进制，Android 10+ 的 W^X / SELinux 禁止该行为，别升。
+- ## 开发流程（按此执行，不要自创）
+
+完整流程见技能 `aigo-dev-workflow`，速查：
+
+```
+aigo status → 拉上游 → 定位代码 → 改
+  → aigo gate（敏感信息/迁移/品牌/编译/单测）
+  → aigo apk → 真机验收 → 用户确认
+  → commit → push → 打 tag → CI 出包
+```
+
+**`targetSdk` 锁定 28**（`minSdk = 26`）：PRoot 需在 App 可写目录执行二进制，Android 10+ 的 W^X / SELinux 禁止该行为，别升。
+
+## 开发流程（按此执行，不要自创）
+
+完整流程见技能 `aigo-dev-workflow`。速查：
+
+```
+aigo status → 拉上游 → 定位代码 → 改
+  → aigo gate（敏感信息/迁移/品牌/编译/单测）
+  → aigo apk → 真机验收 → 用户确认
+  → commit → push → 打 tag → CI 出包
+```
+
+**关键判定**：编译通过 ≠ 完成。UI 改动必须出包给用户真机验证。
 
 ## 架构地图
 
