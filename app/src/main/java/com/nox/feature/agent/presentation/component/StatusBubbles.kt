@@ -735,21 +735,24 @@ internal fun ReasoningBubble(
     } else {
         stringResource(R.string.chat_thinking_process_chars, charCount)
     }
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.semanticColors.capsuleSurface)
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.semanticColors.capsuleSurface)
                 .clickable { toggleExpanded(!expanded) }
-                .padding(horizontal = 14.dp, vertical = 13.dp),
+                .padding(start = 12.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ThinkingGlyph(tint = MaterialTheme.colorScheme.onSurfaceVariant, iconSize = 20.dp)
-            Spacer(Modifier.width(Spacing.md))
+            ThinkingGlyph(tint = MaterialTheme.colorScheme.onSurfaceVariant, iconSize = 16.dp)
+            Spacer(Modifier.width(Spacing.sm))
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
@@ -761,7 +764,7 @@ internal fun ReasoningBubble(
                 expanded = expanded,
                 contentDescription = if (expanded) stringResource(R.string.common_collapse) else stringResource(R.string.common_expand),
                 tint = Brand.IconGray,
-                size = 18.dp
+                size = 16.dp
             )
         }
         AnimatedVisibility(
@@ -770,7 +773,6 @@ internal fun ReasoningBubble(
             exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
         ) {
             Column {
-                Spacer(Modifier.height(Spacing.sm))
                 // 展开态用懒渲染（LazyMarkdownSuccess）：超长思考只组合可见块，不再一次性
                 // 组合全部节点把 Compose ChangeList 撑爆（OOM 根因）。高度上限交给内层 LazyColumn 自行滚动。
                 // 外层 SelectionContainer 负责长按选区：选中块会被 LazyColumn 钉住不回收，
@@ -790,6 +792,7 @@ internal fun ReasoningBubble(
                             lazyScroll = true,
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .padding(start = 36.dp, end = 12.dp, top = 2.dp, bottom = 10.dp)
                                 .heightIn(max = ReasoningWindowMaxHeight)
                                 .nestedScroll(rememberBoundNestedScrollConnection())
                                 .pointerInput(text) {
