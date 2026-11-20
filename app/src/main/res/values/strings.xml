@@ -280,7 +280,13 @@
     <string name="settings_refresh_logs">刷新日志</string>    <string name="settings_vision_follow_chat">跟随当前聊天模型</string>
     <string name="settings_compaction_follow_chat">跟随当前聊天模型</string>
     <string name="settings_title_follow_chat">跟随当前聊天模型</string>
-    <string name="settings_image_gen_unconfigured">未配置</string>    <string name="settings_theme_title">外观主题</string>    <string name="theme_auto">自动</string>
+    <string name="settings_image_gen_unconfigured">未配置</string>    <string name="settings_theme_title">外观主题</string>
+    <string name="settings_app_icon">图标设置</string>
+    <string name="app_icon_sheet_title">应用图标</string>
+    <string name="app_icon_sheet_hint">切换后会自动回到桌面，部分启动器需要几秒刷新图标</string>
+    <string name="app_icon_default">默认</string>
+    <string name="app_icon_glasses">绿镜黑猫</string>
+    <string name="app_icon_wrench">扳手黑猫</string>    <string name="theme_auto">自动</string>
     <string name="theme_dark">深色</string>
     <string name="theme_light">浅色</string>
     <string name="theme_mode_section">明暗模式</string>

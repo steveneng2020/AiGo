@@ -51,6 +51,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -84,6 +85,7 @@ import com.nox.feature.agent.domain.mcp.McpServerStatus
 import com.nox.feature.agent.presentation.component.MarkdownContent
 import com.nox.feature.agent.presentation.component.MarkdownRenderCache
 import com.nox.feature.backup.presentation.BackupScreen
+import com.nox.feature.settings.data.repository.AppIconManager
 import com.nox.feature.settings.data.repository.AppThemeMode
 import com.nox.feature.pet.presentation.PetOverlayService
 import com.nox.feature.settings.data.repository.BackgroundSettingsRepository
@@ -99,6 +101,7 @@ import com.nox.feature.agent.domain.skill.SkillImportError
 import com.nox.feature.agent.domain.skill.SkillScope
 import com.nox.feature.settings.presentation.SubAgentUiEntry
 import com.nox.feature.plugin.presentation.displayName
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
@@ -127,6 +130,7 @@ import compose.icons.feathericons.Save
 import compose.icons.feathericons.Server
 import compose.icons.feathericons.Shield
 import compose.icons.feathericons.Sliders
+import compose.icons.feathericons.Smartphone
 import compose.icons.feathericons.Terminal
 import compose.icons.feathericons.Settings
 import compose.icons.feathericons.Upload
@@ -2104,6 +2108,10 @@ internal fun SettingsMenu(
     pluginDataEntries: List<com.nox.feature.plugin.domain.PluginUiEntry> = emptyList(),
     onRunPluginDataEntry: (com.nox.feature.plugin.domain.PluginUiEntry) -> Unit = {}
 ) {
+    val appIconContext = LocalContext.current
+    var appIcon by remember { mutableStateOf(AppIconManager.current(appIconContext)) }
+    var showAppIconSheet by remember { mutableStateOf(false) }
+    val appIconScope = rememberCoroutineScope()
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -2133,6 +2141,19 @@ internal fun SettingsMenu(
                     }
                     Text(
                         text = "${stringResource(themeMode.labelRes)} · $colorLabel",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.semanticColors.subtleText
+                    )
+                }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Smartphone,
+                title = stringResource(R.string.settings_app_icon),
+                onClick = { showAppIconSheet = true },
+                trailing = {
+                    Text(
+                        text = stringResource(appIcon.labelRes),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.semanticColors.subtleText
                     )
@@ -2380,6 +2401,21 @@ internal fun SettingsMenu(
         }
     }
 
+    if (showAppIconSheet) {
+        AppIconSheet(
+            current = appIcon,
+            onDismiss = { showAppIconSheet = false },
+            onSelect = { option ->
+                AppIconManager.apply(appIconContext, option)
+                appIcon = option
+                showAppIconSheet = false
+                appIconScope.launch {
+                    delay(260)
+                    AppIconManager.goHome(appIconContext)
+                }
+            }
+        )
+    }
 }
 
 /** 把某个槽位下的插件入口渲染成设置行；页面通过 [onOpen] 交给宿主挂 WebView。 */

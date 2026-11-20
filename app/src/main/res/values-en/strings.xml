@@ -280,7 +280,13 @@
     <string name="settings_refresh_logs">Refresh logs</string>    <string name="settings_vision_follow_chat">Follow current chat model</string>
     <string name="settings_compaction_follow_chat">Follow current chat model</string>
     <string name="settings_title_follow_chat">Follow current chat model</string>
-    <string name="settings_image_gen_unconfigured">Not configured</string>    <string name="settings_theme_title">Appearance</string>    <string name="theme_auto">Auto</string>
+    <string name="settings_image_gen_unconfigured">Not configured</string>    <string name="settings_theme_title">Appearance</string>
+    <string name="settings_app_icon">App icon</string>
+    <string name="app_icon_sheet_title">App icon</string>
+    <string name="app_icon_sheet_hint">The app returns to the home screen after switching; some launchers take a few seconds to refresh.</string>
+    <string name="app_icon_default">Default</string>
+    <string name="app_icon_glasses">Green glasses</string>
+    <string name="app_icon_wrench">Wrench cat</string>    <string name="theme_auto">Auto</string>
     <string name="theme_dark">Dark</string>
     <string name="theme_light">Light</string>
     <string name="theme_mode_section">Appearance mode</string>
