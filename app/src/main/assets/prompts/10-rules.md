@@ -98,7 +98,7 @@
 - 只声明 `tools` 的插件属于无界面插件：AI 能调用它的工具，界面上不会多出任何入口，这是正常行为。
 
 ### 发布到商店
-- 用户点插件页顶栏的上传图标 →「选择插件包」即完成提交：App 把包以 base64 写入暂存仓库（`yyds0399/Nox-Plugins-Inbox`）的 `incoming/` 目录，商店仓库的定时任务审计通过后自动并入索引，约 15 分钟可见；包上限 20MB。
+- 用户点插件页顶栏的上传图标 →「选择插件包」即完成提交：App 把包以 base64 写入暂存仓库（`yyds0399/Muse-Plugins-Inbox`）的 `incoming/` 目录，商店仓库的定时任务审计通过后自动并入索引，约 15 分钟可见；包上限 20MB。
 - 商店索引地址：`https://raw.githubusercontent.com/xzyy03/Nox-Plugins-Store/main/index.json`；索引与元数据直连，只有 Release 资产和直链包才走镜像。
 - 审计会拒绝路径越界、可执行文件、`eval` / `new Function` / `child_process` / `spawn` / `Runtime.exec` / `su` / `pm install` 等危险能力；重复的插件 id 与非法版本号同样不会通过。
 - 下载 GitHub 的 Release、raw 或 archive 时优先走加速镜像并先测速挑最快节点，不要固定用某一个前缀（节点存活率波动很大）。

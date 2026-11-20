@@ -711,7 +711,7 @@ bundle.zip
 （App 里也有入口：插件 → 齿轮 →「插件开发文档」）。
 
 1. 在 App 里点插件页顶栏的上传图标 → 选包
-2. 包被写入暂存仓库 `yyds0399/Nox-Plugins-Inbox` 的 `incoming/`
+2. 包被写入暂存仓库 `yyds0399/Muse-Plugins-Inbox` 的 `incoming/`
 3. 商店仓库 Actions 每 15 分钟扫描，解包读清单、审计、通过后复制进 `packages/` 并更新 `index.json`
 4. 索引更新后约 15 分钟内出现在所有用户的插件商店
 

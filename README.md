@@ -26,20 +26,20 @@
 <p align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/screenshots/home.png" alt="AiCode 主页 - AI 对话界面，支持代码生成与 Markdown 渲染" width="270"/></td>
-      <td align="center"><img src="docs/screenshots/git.png" alt="AiCode Git 集成 - 可视化提交记录与分支管理" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/chat.jpg" alt="Nox 聊天页 - AI 对话、工具调用与思考过程" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/drawer.jpg" alt="Nox 侧栏 - 会话列表与角色、浏览器、设置入口" width="270"/></td>
     </tr>
     <tr>
-      <td align="center">主页 · AI 对话</td>
-      <td align="center">Git · 提交历史</td>
+      <td align="center">聊天 · AI 对话</td>
+      <td align="center">侧栏 · 会话与入口</td>
     </tr>
     <tr>
-      <td align="center"><img src="docs/screenshots/container.png" alt="AiCode 容器设置 - 容器镜像管理" width="270"/></td>
-      <td align="center"><img src="docs/screenshots/models.png" alt="AiCode 模型列表 - 多供应商模型管理" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/settings.jpg" alt="Nox 设置页 - 偏好、外观与 AI 配置" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/about.jpg" alt="Nox 关于页 - 版本、更新与开源仓库" width="270"/></td>
     </tr>
     <tr>
-      <td align="center">容器 · 镜像管理</td>
-      <td align="center">模型 · 列表配置</td>
+      <td align="center">设置 · 偏好与 AI 配置</td>
+      <td align="center">关于 · 版本与仓库</td>
     </tr>
   </table>
 </p>

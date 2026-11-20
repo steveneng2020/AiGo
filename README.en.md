@@ -26,20 +26,20 @@
 <p align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/screenshots/home.png" alt="AiCode home - AI chat interface with code generation and Markdown rendering" width="270"/></td>
-      <td align="center"><img src="docs/screenshots/git.png" alt="AiCode Git integration - visual commit history and branch management" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/chat.jpg" alt="Nox chat - AI conversation, tool calls and reasoning" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/drawer.jpg" alt="Nox drawer - session list with roles, browser and settings" width="270"/></td>
     </tr>
     <tr>
-      <td align="center">Home · AI Chat</td>
-      <td align="center">Git · Commit History</td>
+      <td align="center">Chat · AI Conversation</td>
+      <td align="center">Drawer · Sessions & Entry Points</td>
     </tr>
     <tr>
-      <td align="center"><img src="docs/screenshots/container.png" alt="AiCode container settings - container image management" width="270"/></td>
-      <td align="center"><img src="docs/screenshots/models.png" alt="AiCode model list - multi-provider model management" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/settings.jpg" alt="Nox settings - preferences, appearance and AI configuration" width="270"/></td>
+      <td align="center"><img src="docs/screenshots/about.jpg" alt="Nox about - version, updates and repositories" width="270"/></td>
     </tr>
     <tr>
-      <td align="center">Container · Image Manager</td>
-      <td align="center">Models · Provider List</td>
+      <td align="center">Settings · Preferences & AI</td>
+      <td align="center">About · Version & Repos</td>
     </tr>
   </table>
 </p>

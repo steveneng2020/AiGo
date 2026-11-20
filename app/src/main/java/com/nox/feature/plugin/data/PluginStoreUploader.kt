@@ -35,7 +35,7 @@ class PluginStoreUploader @Inject constructor(
 
     companion object {
         /** 暂存区仓库；App 内置凭据只能提交到这里。 */
-        private const val INBOX_REPO = "yyds0399/Nox-Plugins-Inbox"
+        private const val INBOX_REPO = "yyds0399/Muse-Plugins-Inbox"
 
         /**
          * 暂存区写入凭据，构建时由 local.properties 的 PLUGIN_INBOX_TOKEN 注入，
