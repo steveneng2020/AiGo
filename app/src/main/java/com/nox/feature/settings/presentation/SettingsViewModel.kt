@@ -541,6 +541,13 @@ class SettingsViewModel @Inject constructor(
     private val _updateCheckState = MutableStateFlow<UpdateCheckUiState>(UpdateCheckUiState.Idle)
     val updateCheckState: StateFlow<UpdateCheckUiState> = _updateCheckState.asStateFlow()
 
+    /** 关于页「更新内容」卡片的数据源：全部历史版本，从新到旧。 */
+    private val _releaseNotes = MutableStateFlow<List<com.nox.feature.settings.data.remote.VersionUpdate>>(emptyList())
+    val releaseNotes: StateFlow<List<com.nox.feature.settings.data.remote.VersionUpdate>> = _releaseNotes.asStateFlow()
+
+    private val _releaseNotesLoading = MutableStateFlow(false)
+    val releaseNotesLoading: StateFlow<Boolean> = _releaseNotesLoading.asStateFlow()
+
     /**
      * 更新弹窗是否可见。与 [updateCheckState] 分开：下载中关掉弹窗只收起界面、不打断下载，
      * 之后再点「版本」行即可按原状态重新亮出来（不必重下已完成的包）。
@@ -1815,6 +1822,22 @@ class SettingsViewModel @Inject constructor(
      * 检查更新。手动模式（关于页点击）不受开关与每日限制；自动模式（主页启动）
      * 需开关开启且当天未检测过，失败时静默（不弹错误窗），无论结果都记录当天已检。
      */
+    /**
+     * 加载全部历史版本供关于页「更新内容」卡片展示。
+     *
+     * 与 [checkUpdate] 分开：那条链路只关心「有没有比当前新的版本」，会把历史版本全部滤掉，
+     * 而关于页需要从新到旧的完整列表。失败时保持空列表，不弹错误弹窗。
+     */
+    fun loadReleaseNotes() {
+        if (_releaseNotesLoading.value) return
+        viewModelScope.launch {
+            _releaseNotesLoading.value = true
+            runCatching { updateCheckService.fetchAllReleases() }
+                .onSuccess { _releaseNotes.value = it }
+            _releaseNotesLoading.value = false
+        }
+    }
+
     fun checkUpdate(manual: Boolean) {
         val current = _updateCheckState.value
         // 下载中 / 安装包已就绪：不打断当前流程；手动点「版本」行只把弹窗重新亮出来，不重下

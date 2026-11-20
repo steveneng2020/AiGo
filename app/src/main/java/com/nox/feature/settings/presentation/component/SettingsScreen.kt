@@ -144,7 +144,7 @@ import com.nox.feature.terminal.data.repository.TerminalSettings
 import com.nox.feature.terminal.presentation.component.TerminalSettingsSheet
 
 /** 使用手册在线文档站地址。 */
-private const val USER_GUIDE_DOCS_URL = "https://aicode.murk.top"
+private const val USER_GUIDE_DOCS_URL = "https://github.com/steveneng2020/AiGo/tree/main/docs-site/docs"
 
 /** 大屏设置页左侧常驻菜单宽度。 */
 private val SettingsMenuWidth = 320.dp
@@ -293,6 +293,7 @@ fun SettingsScreen(
     val updateCheckEnabled by viewModel.updateCheckEnabled.collectAsStateWithLifecycle()
     val updateCheckChannel by viewModel.updateCheckChannel.collectAsStateWithLifecycle()
     val updateCheckMirror by viewModel.updateCheckMirror.collectAsStateWithLifecycle()
+    val releaseNotes by viewModel.releaseNotes.collectAsStateWithLifecycle()
     val containerAnnouncementText by viewModel.containerAnnouncementText.collectAsStateWithLifecycle()
     val containerAnnouncementOutdated by viewModel.containerAnnouncementOutdated.collectAsStateWithLifecycle()
     val promptsAnnouncementText by viewModel.promptsAnnouncementText.collectAsStateWithLifecycle()
@@ -325,6 +326,7 @@ fun SettingsScreen(
             "providers" -> SettingsSection.Providers
             "mcp" -> SettingsSection.Mcp
             "roles" -> SettingsSection.Roles
+            "plugins" -> SettingsSection.Plugins
             else -> null
         }
     }
@@ -1540,15 +1542,20 @@ fun SettingsScreen(
                 SettingsSection.SubAgentEditor -> {} // 已在上方 early return 处理
                 SettingsSection.RemoteServers -> {} // 已在上方 early return 处理
                 SettingsSection.Backup -> {} // 已在上方 early return 处理
-                SettingsSection.About -> AboutSection(
+                SettingsSection.About -> {
+                    // 进入关于页即拉一次更新日志；失败保持空列表，不打断页面。
+                    LaunchedEffect(Unit) { viewModel.loadReleaseNotes() }
+                    AboutSection(
                     updateCheckEnabled = updateCheckEnabled,
                     updateCheckChannel = updateCheckChannel,
                     updateCheckMirror = updateCheckMirror,
                     onToggleUpdateCheck = { viewModel.setUpdateCheckEnabled(it) },
                     onSelectChannel = { viewModel.setUpdateCheckChannel(it) },
                     onSelectMirror = { viewModel.setUpdateCheckMirror(it) },
-                    onCheckUpdate = { viewModel.checkUpdate(manual = true) }
-                )
+                    onCheckUpdate = { viewModel.checkUpdate(manual = true) },
+                    releaseNotes = releaseNotes
+                    )
+                }
             }
         }
     }

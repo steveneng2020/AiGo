@@ -1226,7 +1226,7 @@ class AIAgentViewModel @Inject constructor(
             PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(context, AGENT_COMPLETE_CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setSmallIcon(com.nox.feature.settings.data.repository.AppIconManager.smallIconRes(context))
             .setContentTitle(context.getString(R.string.agent_complete_notification_title))
             .setContentText(agentCompleteNotificationBody(userRequest))
             .setContentIntent(openAppIntent)

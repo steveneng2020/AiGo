@@ -741,6 +741,10 @@ fun AppNavigation(
                 navController.navigate("settings")
                 if (!permanentDrawer) scope.launch { drawerState.snapTo(DrawerValue.Closed) }
             },
+            onNavigateToPlugins = {
+                navController.navigate("settings?section=plugins&from=chat")
+                if (!permanentDrawer) scope.launch { drawerState.snapTo(DrawerValue.Closed) }
+            },
             pluginEntries = drawerPluginEntries,
             filePluginEntries = fileTreePluginEntries,
             sessionPluginEntries = sessionPluginEntries,

@@ -580,8 +580,12 @@
     <string name="agent_model_not_selected">未选择</string>
     <!-- About -->
     <string name="about_version">版本</string>
-    <string name="about_community">交流群</string>
-    <string name="about_community_copied">群号已复制</string>
+    <string name="about_community">联系邮箱</string>
+    <string name="about_app_name_slogan_title">更新内容</string>
+    <string name="about_release_notes_more">更多更新日记（共 %1$d 个版本）</string>
+    <string name="about_release_notes_collapse">收起更新日记</string>
+
+    <string name="about_community_copied">邮箱已复制</string>
     <string name="about_github_repo">GitHub 仓库（上游）</string>
     <string name="about_github_project_repo">GitHub 本项目仓库</string>
     <string name="about_license">开源许可证</string>
@@ -762,6 +766,9 @@
     <string name="session_group_pinned">置顶</string>
     <string name="session_group_month_format">yyyy年M月</string>
     <string name="chat_settings">设置</string>
+    <string name="chat_drawer_plugin_section">插件</string>
+    <string name="chat_drawer_plugin_source">插件 %1$s</string>
+    <string name="chat_drawer_more_plugins">更多插件</string>
     <string name="chat_pin_session">置顶</string>
     <string name="chat_unpin_session">取消置顶</string>
     <string name="chat_delete_session">删除会话</string>

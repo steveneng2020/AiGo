@@ -359,7 +359,7 @@ class AgentResultOverlayService : Service() {
         }
         return builder
             .setContentTitle(getString(R.string.agent_result_overlay_channel_title))
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(com.nox.feature.settings.data.repository.AppIconManager.smallIconRes(applicationContext))
             .setContentIntent(open)
             .setOngoing(true)
             .build()

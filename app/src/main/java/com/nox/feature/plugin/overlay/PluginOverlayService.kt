@@ -125,7 +125,7 @@ class PluginOverlayService : Service() {
             PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_view)
+            .setSmallIcon(com.nox.feature.settings.data.repository.AppIconManager.smallIconRes(applicationContext))
             .setContentTitle(getString(R.string.plugins_overlay_notification_title))
             .setContentText(getString(R.string.plugins_overlay_notification_text))
             .setContentIntent(openApp)

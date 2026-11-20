@@ -111,6 +111,7 @@ import com.nox.core.ui.ChevronRotationStyle
 import com.nox.core.ui.ExpandableChevronIcon
 import com.nox.core.ui.containerOsLogo
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.MoreHorizontal
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.CheckSquare
@@ -184,6 +185,8 @@ fun ChatDrawerContent(
     onClearClipboard: () -> Unit,
     onNavigateToBrowser: (() -> Unit)? = null,
     onNavigateToSettings: () -> Unit,
+    /** 抽屉里「更多插件」的出口；为 null 时不展示这一行。 */
+    onNavigateToPlugins: (() -> Unit)? = null,
     onNavigateToRoles: (() -> Unit)? = null,
     searchQuery: String,
     searchState: ChatSearchState,
@@ -407,13 +410,35 @@ fun ChatDrawerContent(
                 iconBackground = true,
                 modifier = Modifier.onboardingTarget(OnboardingStep.ENTER_SETTINGS)
             )
-            pluginEntries.forEach { entry ->
-                SettingsDivider()
-                SettingsRow(
-                    icon = com.nox.feature.plugin.presentation.pluginPageIcon(entry.icon),
-                    title = entry.title.resolve(pluginLanguageTag),
-                    onClick = { onPluginEntry(entry) }
-                )
+        }
+
+        // 插件入口单独成组：之前与角色/浏览器/设置混在同一张卡片里，既没有分组标题，
+        // 也缺少「更多插件」出口，层级上分不出「应用功能」与「第三方扩展」。
+        if (pluginEntries.isNotEmpty()) {
+            Spacer(Modifier.height(Spacing.md))
+            SettingsGroupHeader(stringResource(R.string.chat_drawer_plugin_section))
+            SettingsGroup {
+                pluginEntries.forEachIndexed { index, entry ->
+                    if (index > 0) SettingsDivider()
+                    SettingsRow(
+                        icon = com.nox.feature.plugin.presentation.pluginPageIcon(entry.icon),
+                        // 副标题标出来源插件，与截图里 Beta 版的信息层级保持一致
+                        subtitle = entry.pluginId.takeIf { it.isNotBlank() }
+                            ?.let { stringResource(R.string.chat_drawer_plugin_source, it) },
+                        title = entry.title.resolve(pluginLanguageTag),
+                        onClick = { onPluginEntry(entry) },
+                        iconBackground = true
+                    )
+                }
+                if (onNavigateToPlugins != null) {
+                    SettingsDivider()
+                    SettingsRow(
+                        icon = FeatherIcons.MoreHorizontal,
+                        title = stringResource(R.string.chat_drawer_more_plugins),
+                        onClick = onNavigateToPlugins,
+                        iconBackground = true
+                    )
+                }
             }
         }
         }

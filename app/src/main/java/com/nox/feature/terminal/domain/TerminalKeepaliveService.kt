@@ -137,7 +137,7 @@ class TerminalKeepaliveService : Service() {
             PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setSmallIcon(com.nox.feature.settings.data.repository.AppIconManager.smallIconRes(applicationContext))
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setContentIntent(openAppIntent)

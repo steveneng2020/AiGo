@@ -29,7 +29,9 @@ data class UpdateAsset(
 data class VersionUpdate(
     val tag: String,
     val changelog: String,
-    val asset: UpdateAsset? = null
+    val asset: UpdateAsset? = null,
+    /** Release 发布时间（ISO-8601），关于页的更新日志列表用它显示日期；旧接口无此字段时为空串。 */
+    val publishedAt: String = ""
 )
 
 /** 拉取到的更新信息：最新版本号 + 从当前版本到最新的更新日志。 */
@@ -63,52 +65,70 @@ class UpdateCheckService @Inject constructor(
     suspend fun checkForUpdate(currentVersion: String, channel: UpdateChannel): UpdateCheckResult =
         withContext(Dispatchers.IO) {
             runCatching {
-                val req = okhttp3.Request.Builder()
-                    .url("$GITHUB_RELEASES_API?per_page=50")
-                    .header("Accept", "application/vnd.github+json")
-                    .build()
-                SHARED_CLIENT.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) {
-                        return@use UpdateCheckResult.Error("HTTP ${resp.code}")
-                    }
-                    val body = resp.body?.string().orEmpty()
-                    val array = runCatching { JsonParser.parseString(body).asJsonArray }
-                        .getOrNull()
-                        ?: return@use UpdateCheckResult.Error(context.getString(R.string.about_parse_version_failed))
+                val releases = fetchReleases() ?: return@runCatching UpdateCheckResult.UpToDate
 
-                    val releases = array.mapNotNull { el ->
-                        val obj = el.asJsonObject
-                        val tag = obj.get("tag_name")?.asString ?: return@mapNotNull null
-                        val version = parseVersionTag(tag) ?: return@mapNotNull null
-                        ReleaseInfo(
-                            version = version,
-                            rawTag = tag,
-                            notes = obj.get("body")?.asString.orEmpty(),
-                            prerelease = obj.get("prerelease")?.asBoolean ?: false,
-                            assets = parseAssets(obj)
+                val updates = releases
+                    .filter { if (channel == UpdateChannel.STABLE) !it.prerelease else true }
+                    .filter { compareVersions(it.version, currentVersion) > 0 }
+                    .sortedWith { a, b -> compareVersions(b.version, a.version) }
+
+                if (updates.isEmpty()) {
+                    UpdateCheckResult.UpToDate
+                } else {
+                    val versionUpdates = updates.map { toVersionUpdate(it) }
+                    UpdateCheckResult.NewVersion(
+                        UpdateInfo(
+                            latestTag = versionUpdates.first().tag,
+                            changelog = versionUpdates.joinToString("\n\n") { "${it.tag}\n${it.changelog}" },
+                            updates = versionUpdates
                         )
-                    }
-
-                    val updates = releases
-                        .filter { if (channel == UpdateChannel.STABLE) !it.prerelease else true }
-                        .filter { compareVersions(it.version, currentVersion) > 0 }
-                        .sortedWith { a, b -> compareVersions(b.version, a.version) }
-
-                    if (updates.isEmpty()) {
-                        UpdateCheckResult.UpToDate
-                    } else {
-                        val versionUpdates = updates.map { toVersionUpdate(it) }
-                        UpdateCheckResult.NewVersion(
-                            UpdateInfo(
-                                latestTag = versionUpdates.first().tag,
-                                changelog = versionUpdates.joinToString("\n\n") { "${it.tag}\n${it.changelog}" },
-                                updates = versionUpdates
-                            )
-                        )
-                    }
+                    )
                 }
             }.getOrElse { UpdateCheckResult.Error(it.message ?: context.getString(R.string.about_network_error)) }
         }
+
+    /**
+     * 拉取全部历史版本（不按当前版本过滤），供「更新内容」卡片与「更多更新日记」使用。
+     *
+     * [checkForUpdate] 只返回「比当前版本新」的版本，无法充当历史日志；这里并集处理：
+     * 历史页面需要从新到旧完整列表，所以单独开一个入口，并带上发布时间供列表展示。
+     * 失败时返回空列表由调用方展示空态，不弹错——关于页不应因为网络问题变成错误页。
+     */
+    suspend fun fetchAllReleases(): List<VersionUpdate> = withContext(Dispatchers.IO) {
+        runCatching {
+            fetchReleases()
+                ?.sortedWith { a, b -> compareVersions(b.version, a.version) }
+                ?.map { toVersionUpdate(it) }
+                .orEmpty()
+        }.getOrDefault(emptyList())
+    }
+
+    /** 拉取 GitHub Releases 并解析；网络或格式错误返回 null，由调用方决定降级方式。 */
+    private fun fetchReleases(): List<ReleaseInfo>? = runCatching {
+        val req = okhttp3.Request.Builder()
+            .url("$GITHUB_RELEASES_API?per_page=100")
+            .header("Accept", "application/vnd.github+json")
+            .build()
+        SHARED_CLIENT.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) return@use null
+            val body = resp.body?.string().orEmpty()
+            val array = runCatching { JsonParser.parseString(body).asJsonArray }.getOrNull()
+                ?: return@use null
+            array.mapNotNull { el ->
+                val obj = runCatching { el.asJsonObject }.getOrNull() ?: return@mapNotNull null
+                val tag = obj.get("tag_name")?.asString ?: return@mapNotNull null
+                val version = parseVersionTag(tag) ?: return@mapNotNull null
+                ReleaseInfo(
+                    version = version,
+                    rawTag = tag,
+                    notes = obj.get("body")?.asString.orEmpty(),
+                    prerelease = obj.get("prerelease")?.asBoolean ?: false,
+                    publishedAt = obj.get("published_at")?.asString.orEmpty(),
+                    assets = parseAssets(obj)
+                )
+            }
+        }
+    }.getOrNull()
 
     private fun toVersionUpdate(release: ReleaseInfo): VersionUpdate {
         val notes = release.notes.trim()
@@ -119,7 +139,8 @@ class UpdateCheckService @Inject constructor(
             } else {
                 cleanMarkdown(notes)
             },
-            asset = selectUpdateAsset(release.assets, release.rawTag, preferredAbiToken(Build.SUPPORTED_ABIS.toList()))
+            asset = selectUpdateAsset(release.assets, release.rawTag, preferredAbiToken(Build.SUPPORTED_ABIS.toList())),
+            publishedAt = release.publishedAt
         )
     }
 
@@ -141,6 +162,7 @@ class UpdateCheckService @Inject constructor(
         val rawTag: String,
         val notes: String,
         val prerelease: Boolean,
+        val publishedAt: String = "",
         val assets: List<UpdateAsset>
     )
 

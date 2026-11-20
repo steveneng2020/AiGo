@@ -1,56 +1,36 @@
 <p align="center">
-  <img src="docs/icon-nox.webp" width="112" alt="Nox" />
-  <h1 align="center">Nox</h1>
+  <img src="docs/icon-nox.webp" width="112" alt="AiGo" />
+  <h1 align="center">AiGo</h1>
   <p align="center">
-    A miuix / HyperOS style UI fork of AiCode, based on jieapi/aicode
+    AI coding tool and mobile workstation for Android, a fork of Nox
     <br />
     <a href="README.md">中文</a> · <a href="README.en.md">English</a>
   </p>
 </p>
 
 > [!IMPORTANT]
-> **This repository is Nox, an unofficial UI fork of AiCode, released under GPL-3.0.**
+> **AiGo is an unofficial fork of Nox, released under GPL-3.0.**
 >
-> - **Original author**: [jieapi](https://github.com/jieapi) (author of AiCode)
-> - **Upstream repository**: [github.com/jieapi/aicode](https://github.com/jieapi/aicode)
-> - **This repository**: [github.com/xzyy03/Nox](https://github.com/xzyy03/Nox)
+> - **This repository**: [github.com/steveneng2020/AiGo](https://github.com/steveneng2020/AiGo)
+> - **Direct upstream**: [github.com/xzyy03/Nox](https://github.com/xzyy03/Nox) (the fork parent)
+> - **Further upstream**: [github.com/jieapi/aicode](https://github.com/jieapi/aicode) (what Nox forked from)
 > - **License**: [GPL-3.0](LICENSE), same as upstream; this fork is open source as well
-> - **Scope of changes**: UI style, branding and package name (com.nox), plus the memory page and chat shortcuts; container images are added manually
+> - **Package name**: `com.aigo` (Nox uses `com.nox`, so both can coexist on one device)
+> - **Contact**: steveneng@163.com
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License GPL-3.0" /></a>
   <img src="https://img.shields.io/badge/Platform-Android-green.svg" alt="Android Platform" />
-  <a href="https://github.com/xzyy03/Nox/releases"><img src="https://img.shields.io/github/v/release/xzyy03/Nox?display_name=tag&include_prereleases" alt="Latest Release" /></a>
-</p>
-
-<p align="center">
-  <table>
-    <tr>
-      <td align="center"><img src="docs/screenshots/chat.jpg" alt="Nox chat - AI conversation, tool calls and reasoning" width="270"/></td>
-      <td align="center"><img src="docs/screenshots/drawer.jpg" alt="Nox drawer - session list with roles, browser and settings" width="270"/></td>
-    </tr>
-    <tr>
-      <td align="center">Chat · AI Conversation</td>
-      <td align="center">Drawer · Sessions & Entry Points</td>
-    </tr>
-    <tr>
-      <td align="center"><img src="docs/screenshots/settings.jpg" alt="Nox settings - preferences, appearance and AI configuration" width="270"/></td>
-      <td align="center"><img src="docs/screenshots/about.jpg" alt="Nox about - version, updates and repositories" width="270"/></td>
-    </tr>
-    <tr>
-      <td align="center">Settings · Preferences & AI</td>
-      <td align="center">About · Version & Repos</td>
-    </tr>
-  </table>
+  <a href="https://github.com/steveneng2020/AiGo/releases"><img src="https://img.shields.io/github/v/release/steveneng2020/AiGo?display_name=tag&include_prereleases" alt="Latest Release" /></a>
 </p>
 
 ---
 
 ## Overview
 
-Nox is a universal AI coding agent that runs on Android, packing a full Linux development environment into your phone: it bundles a terminal, and the AI agent can read and write files, run shell commands and run build tools, so writing, debugging and building all happen on-device. A remote SSH server can also serve as the execution backend, turning your phone into a mobile workstation for remote projects.
+AiGo is a universal AI coding agent that runs on Android, packing a full Linux development environment into your phone: it bundles a terminal, and the AI agent can read and write files, run shell commands and run build tools, so writing, debugging and building all happen on-device. A remote SSH server can also serve as the execution backend, turning your phone into a mobile workstation for remote projects.
 
-There is nothing to set up beforehand: install the app and configure a model under AI Vendors. Container images are added or downloaded manually the first time. Nox ships no models and locks you into no vendor: it supports the OpenAI / Anthropic / Gemini protocols plus custom providers, with models, keys and endpoints all configured by you.
+There is nothing to set up beforehand: install the app and configure a model under AI Vendors. Container images are added or downloaded manually the first time. AiGo ships no models and locks you into no vendor: it supports the OpenAI / Anthropic / Gemini protocols plus custom providers, with models, keys and endpoints all configured by you.
 
 ## Features
 
@@ -93,41 +73,45 @@ There is nothing to set up beforehand: install the app and configure a model und
 | Item | Description |
 |------|-------------|
 | System requirements | Android 8.0+ (API 26), arm64-v8a / x86_64 |
-| Download | [GitHub Releases](https://github.com/xzyy03/Nox/releases/latest): pick `armsolo` for real devices, `x86solo` for emulators, `universal` for both |
+| Download | [GitHub Releases](https://github.com/steveneng2020/AiGo/releases/latest): pick `arm64` for real devices, `x86_64` for emulators, `universal` when unsure |
 | Quick start | Settings → AI Vendors to add a model → Container & Images to pick local or SSH → new session and chat |
-| Changelog | [Releases](https://github.com/xzyy03/Nox/releases) (all versions & notes) |
-| User guide | [Online docs](https://xzyy03.github.io/Nox): quick start, user manual and advanced guides (same content as the in-app docs) |
+| Changelog | [Releases](https://github.com/steveneng2020/AiGo/releases) (all versions & notes) |
+| User guide | [Online docs](https://github.com/steveneng2020/AiGo/tree/main/docs-site/docs): quick start, user manual and advanced guides (same content as the in-app docs) |
 
 ## Star
 
-If Nox is helpful to you, give it a [Star](https://github.com/xzyy03/Nox).
+If AiGo is helpful to you, give it a [Star](https://github.com/xzyy03/Nox).
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=xzyy03%2FNox&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=steveneng2020%2FAiGo&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=xzyy03/Nox&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=xzyy03/Nox&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=xzyy03/Nox&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=steveneng2020/AiGo&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=steveneng2020/AiGo&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=steveneng2020/AiGo&type=date&legend=top-left" />
  </picture>
 </a>
 
 ## Feedback & Contribution
 
-- **QQ group**: `1125470056` — share tips and feedback
-- **Bug reports**: open an [Issue](https://github.com/xzyy03/Nox/issues) with reproduction steps, device model and OS version
-- **Feature requests**: discuss your ideas in [Issues](https://github.com/xzyy03/Nox/issues)
-- **Contributing**: submit a [Pull Request](https://github.com/xzyy03/Nox/pulls)
+- **Contact**: steveneng@163.com
+- **Bug reports**: open an [Issue](https://github.com/steveneng2020/AiGo/issues) with reproduction steps, device model and OS version
+- **Feature requests**: discuss your ideas in [Issues](https://github.com/steveneng2020/AiGo/issues)
+- **Contributing**: submit a [Pull Request](https://github.com/steveneng2020/AiGo/pulls)
 
 ## Acknowledgements
 
+This project builds on:
+
+- [jieapi/aicode](https://github.com/jieapi/aicode) — the original project
+- [xzyy03/Nox](https://github.com/xzyy03/Nox) — AiGo's direct upstream
 - [OpenCode](https://github.com/anomalyco/opencode) — Terminal-based AI coding tool, the core inspiration for this project
 - [Termux](https://github.com/termux/termux-app) — Android terminal emulator, provided terminal components and PRoot solution
 - [Kelivo](https://github.com/Chevey339/kelivo) — Cross-platform LLM chat client, AI conversation UI design reference
 
 ## Disclaimer
 
-Nox is provided "as is", for learning, research and lawful software development only. Using it for any illegal or infringing purpose is strictly prohibited, including but not limited to unauthorized access to, cracking or reverse engineering of others' software or systems, circumventing technological protection measures, stealing or leaking others' data, or distributing malicious code.
+AiGo is provided "as is", for learning, research and lawful software development only. Using it for any illegal or infringing purpose is strictly prohibited, including but not limited to unauthorized access to, cracking or reverse engineering of others' software or systems, circumventing technological protection measures, stealing or leaking others' data, or distributing malicious code.
 
 You bear all risks and responsibility for your use of this software. The authors and contributors shall not be liable for any loss arising from your use of, or inability to use, this software, nor for any act you perform using it or its consequences.
 

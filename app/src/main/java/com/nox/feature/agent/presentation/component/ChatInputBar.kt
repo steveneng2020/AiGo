@@ -658,8 +658,11 @@ internal fun ChatInputBar(
                             )
                         }
                     }
+                    // 运行中也允许添加附件：sendMessage 会把附件随队列消息一起提交（
+                    // enqueueAgentRequest 已接收 inputImages / inputAttachments），
+                    // 禁用只是拦住了入口，反而让「插队/排队补资料」变得不可用。
                     UploadIconButton(
-                        enabled = !isBusy,
+                        enabled = true,
                         icon = FeatherIcons.Plus,
                         contentDescription = stringResource(R.string.chat_add_attachment),
                         onClick = { showAttachmentSheet = true }
@@ -683,8 +686,9 @@ internal fun ChatInputBar(
 
     if (showAttachmentSheet) {
         AttachmentSheet(
-            canUploadFiles = canUploadFiles && !isBusy,
-            canUploadImages = canUploadImages && !isBusy,
+            // 只受「该会话是否支持附件」约束，不受运行状态约束：AI 忙时也要能补传资料排队。
+            canUploadFiles = canUploadFiles,
+            canUploadImages = canUploadImages,
             onUploadFile = {
                 showAttachmentSheet = false
                 onUploadFile()

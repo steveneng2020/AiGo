@@ -104,7 +104,7 @@ class AgentApprovalNotificationManager @Inject constructor(
         }
         val body = pending.joinToString("\n") { "${it.sessionTitle} · ${it.label}" }
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setSmallIcon(com.nox.feature.settings.data.repository.AppIconManager.smallIconRes(context))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

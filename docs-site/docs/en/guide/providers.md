@@ -1,6 +1,6 @@
 # AI Vendors & Models
 
-Nox does not provide models itself — you need to connect at least one model service before you can start chatting. This page covers how to set it up.
+AiGo does not provide models itself — you need to connect at least one model service before you can start chatting. This page covers how to set it up.
 
 The entry point is "Settings → AI Vendors".
 

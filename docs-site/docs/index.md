@@ -1,30 +1,30 @@
 ---
 layout: home
-title: Nox - 手机端 AI 编程工具与内置 Linux 终端
+title: AiGo - 手机端 AI 编程工具与内置 Linux 终端
 titleTemplate: false
-description: Nox 是一款开源的 Android 端 AI 编程工具，无需电脑，在手机上即可完成完整开发流程。内置 Linux 容器与终端，AI Agent 可直接读写代码并执行构建；支持 Git 版本控制、MCP 协议与远程 SSH 开发。
+description: AiGo 是一款开源的 Android 端 AI 编程工具，无需电脑，在手机上即可完成完整开发流程。内置 Linux 容器与终端，AI Agent 可直接读写代码并执行构建；支持 Git 版本控制、MCP 协议与远程 SSH 开发。
 head:
   - - meta
     - name: keywords
-      content: Nox, Android AI 编程, 手机编程, 移动端开发, Linux 终端, PRoot, Termux, AI Agent, MCP 协议, 手机代码编辑器, Git 客户端, 移动工作站, 手机跑终端, 远程 SSH 开发
+      content: AiGo, Android AI 编程, 手机编程, 移动端开发, Linux 终端, PRoot, Termux, AI Agent, MCP 协议, 手机代码编辑器, Git 客户端, 移动工作站, 手机跑终端, 远程 SSH 开发
 
 hero:
-  name: Nox
+  name: AiGo
   text: 手机上的 AI 编程工具与移动工作站
   tagline: 无需电脑，在手机上即可完成从写代码、调试到提交的完整开发流程。内置 Linux 容器与终端，AI Agent 可自主读写文件、执行 Shell 命令与运行构建，还支持 Git、MCP、远程 SSH 与完整模型生态。
   image:
     src: /logo.png
-    alt: Nox
+    alt: AiGo
   actions:
     - theme: brand
       text: 快速上手
       link: /guide/quick-start
     - theme: alt
       text: 下载 APK
-      link: https://nox.murk.top/download
+      link: https://github.com/steveneng2020/AiGo/releases/latest
     - theme: alt
       text: GitHub
-      link: https://github.com/xzyy03/Nox
+      link: https://github.com/steveneng2020/AiGo
 
 features:
   - title: AI Agent
@@ -40,3 +40,7 @@ features:
   - title: Git 与工作区同步
     details: 内置状态、分支、提交、差异与标签管理；支持 SFTP / FTP 同步，并自带 FTP 服务端方便电脑侧管理文件。
 ---
+
+::: info 关于本项目
+AiGo 是 [Nox](https://github.com/xzyy03/Nox) 的二次开发版，Nox 又基于 [jieapi/aicode](https://github.com/jieapi/aicode)。AiGo 保持与 Nox 的 fork 关系，因此上游更新可以持续合入。包名为 `com.aigo`，与 Nox 的 `com.nox` 可同机共存。问题反馈请发邮件至 steveneng@163.com。
+:::

@@ -8,6 +8,11 @@ import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.widget.Toast
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -47,6 +52,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nox.R
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import com.nox.core.theme.Radius
 import com.nox.core.theme.Spacing
 import com.nox.core.theme.semanticColors
 import com.nox.core.ui.AppTextField
@@ -57,6 +68,8 @@ import com.nox.feature.settings.data.repository.UpdateChannel
 import com.nox.feature.settings.data.repository.isValidDownloadMirror
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.AlertCircle
+import compose.icons.feathericons.ChevronUp
+import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.Book
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.Download
@@ -80,7 +93,8 @@ internal fun AboutSection(
     onToggleUpdateCheck: (Boolean) -> Unit,
     onSelectChannel: (UpdateChannel) -> Unit,
     onSelectMirror: (String) -> Unit,
-    onCheckUpdate: () -> Unit
+    onCheckUpdate: () -> Unit,
+    releaseNotes: List<com.nox.feature.settings.data.remote.VersionUpdate> = emptyList()
 ) {
     val context = LocalContext.current
     var showMirrorDialog by remember { mutableStateOf(false) }
@@ -116,6 +130,14 @@ internal fun AboutSection(
     ) {
         AboutHeaderCard(appName = stringResource(R.string.app_name), appIcon = appIcon)
 
+        // 更新内容卡片：对齐截图里的形态——大字版本摘要 + 虚线框滚动的历史日志 + 更多入口。
+        if (releaseNotes.isNotEmpty()) {
+            ReleaseNotesCard(
+                currentVersion = appInfo.name,
+                releases = releaseNotes
+            )
+        }
+
         SettingsGroup {
             // 版本：点击手动检查更新
             SettingsRow(
@@ -131,18 +153,18 @@ internal fun AboutSection(
                 }
             )
             SettingsDivider()
-            // 交流群：点击复制群号
+            // 联系方式：点击复制邮箱（本项目用邮箱而不是 QQ 群）
             SettingsRow(
                 icon = FeatherIcons.MessageCircle,
                 title = stringResource(R.string.about_community),
                 onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Nox 交流群", "1125470056"))
+                    clipboard.setPrimaryClip(ClipData.newPlainText("AiGo 联系邮箱", "steveneng@163.com"))
                     Toast.makeText(context, R.string.about_community_copied, Toast.LENGTH_SHORT).show()
                 },
                 trailing = {
                     Text(
-                        text = "1125470056",
+                        text = "steveneng@163.com",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.semanticColors.subtleText
                     )
@@ -550,3 +572,141 @@ private const val GITHUB_REPO_URL = "https://github.com/jieapi/aicode"
 private const val PROJECT_REPO_URL = "https://github.com/steveneng2020/AiGo"
 private const val LICENSE_URL = "https://github.com/steveneng2020/AiGo/blob/main/LICENSE"
 private const val ICON_PX_DP = 48
+
+/**
+ * 「更新内容」卡片：概要展示最近若干版本的更新日志，可展开查看全部历史。
+ *
+ * 默认只显示 [PREVIEW_COUNT] 条并用固定高度遮罩，避免历史很长时把关于页撑成无限滚动；
+ * 展开后在原卡内继续向下渲染全部版本，不跳转新页面。
+ */
+@Composable
+private fun ReleaseNotesCard(
+    currentVersion: String,
+    releases: List<com.nox.feature.settings.data.remote.VersionUpdate>
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val shown = if (expanded) releases else releases.take(PREVIEW_COUNT)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.mdLarge))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(Spacing.lg)
+    ) {
+        Text(
+            text = stringResource(R.string.about_app_name_slogan_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.height(Spacing.xs))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "${stringResource(R.string.app_name)} $currentVersion",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.semanticColors.subtleText
+            )
+        }
+        Spacer(Modifier.height(Spacing.md))
+
+        // 虚线框：既是视觉分隔，也表明这是一段可滚动的日志文本。
+        // DrawScope 不是 @Composable 上下文，颜色必须在组合期取好后捕获进 lambda
+        val dashColor = MaterialTheme.colorScheme.outlineVariant
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .drawBehind {
+                    val stroke = Stroke(
+                        width = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 6.dp.toPx()))
+                    )
+                    drawRoundRect(
+                        color = dashColor,
+                        style = stroke,
+                        cornerRadius = CornerRadius(10.dp.toPx(), 10.dp.toPx())
+                    )
+                }
+                .padding(Spacing.md)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 未展开时限高，展开后交给外层页面滚动
+                    .then(
+                        if (expanded) Modifier
+                        else Modifier.heightIn(max = PREVIEW_MAX_HEIGHT)
+                    )
+                    .verticalScroll(rememberScrollState())
+            ) {
+                shown.forEach { release ->
+                    ReleaseNoteItem(release)
+                }
+            }
+        }
+
+        if (releases.size > PREVIEW_COUNT) {
+            Spacer(Modifier.height(Spacing.sm))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(Radius.sm))
+                    .clickable { expanded = !expanded }
+                    .padding(vertical = Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (expanded) {
+                        stringResource(R.string.about_release_notes_collapse)
+                    } else {
+                        stringResource(R.string.about_release_notes_more, releases.size)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(Spacing.xs))
+                Icon(
+                    imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
+/** 单条版本日志：`· 版本号-标题 日期` 标题行 + 正文。 */
+@Composable
+private fun ReleaseNoteItem(release: com.nox.feature.settings.data.remote.VersionUpdate) {
+    val title = release.tag.removePrefix("v")
+    val date = formatReleaseDate(release.publishedAt)
+    Column(modifier = Modifier.padding(bottom = Spacing.md)) {
+        Text(
+            text = if (date.isEmpty()) "· $title" else "· $title  $date",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        if (release.changelog.isNotBlank()) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = release.changelog,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.semanticColors.subtleText
+            )
+        }
+    }
+}
+
+/** ISO-8601 → `2026.11.17`；解析失败时原样返回，缺失时返回空串（不显示日期）。 */
+private fun formatReleaseDate(iso: String): String {
+    if (iso.isBlank()) return ""
+    return runCatching {
+        val date = iso.substringBefore("T")
+        date.replace('-', '.')
+    }.getOrDefault("")
+}
+
+private const val PREVIEW_COUNT = 5
+private val PREVIEW_MAX_HEIGHT = 420.dp

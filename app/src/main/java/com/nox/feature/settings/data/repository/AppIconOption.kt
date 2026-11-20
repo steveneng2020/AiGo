@@ -31,6 +31,9 @@ object AppIconManager {
     private const val PREFS = "app_icon_prefs"
     private const val KEY = "selected_icon"
 
+    /** 图标变更广播：常驻通知的持有者收到后重建通知，否则状态栏仍是旧图标。 */
+    const val ACTION_ICON_CHANGED = "com.aigo.action.APP_ICON_CHANGED"
+
     fun current(context: Context): AppIconOption =
         AppIconOption.byId(
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)
@@ -53,6 +56,8 @@ object AppIconManager {
             .edit()
             .putString(KEY, option.id)
             .apply()
+        // 已发出的通知不会自己换图标，广播一句让常驻通知重建。
+        context.sendBroadcast(Intent(ACTION_ICON_CHANGED).setPackage(context.packageName))
     }
 
     /** 切完图标回桌面，让启动器重新读取入口。 */
@@ -62,5 +67,21 @@ object AppIconManager {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
         runCatching { context.startActivity(intent) }
+    }
+
+    /**
+     * 当前图标对应的通知栏 / 任务卡片小图标。
+     *
+     * 之前各处通知直接用 `android.R.drawable.ic_menu_info_details` 等系统图标，
+     * 与用户在「图标设置」里选的图标毫无关系，所以改了图标后状态栏仍是旧样子。
+     * 这里按当前选项解析出实际 drawable，已发出的通知由调用方重新 notify 刷新。
+     *
+     * 小图标建议是单色剪影：彩色图会被系统映成灰块，但在 API 28 上会尽量保留原色，
+     * 这里直接用应用图标本身，与桌面图标保持视觉一致。
+     */
+    fun smallIconRes(context: Context): Int = when (current(context)) {
+        AppIconOption.DEFAULT -> R.mipmap.ic_launcher
+        AppIconOption.GLASSES -> R.mipmap.ic_launcher_glasses
+        AppIconOption.WRENCH -> R.mipmap.ic_launcher_wrench
     }
 }

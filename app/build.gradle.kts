@@ -21,9 +21,9 @@ if (keystorePropertiesFile.exists()) {
 
 // gitVersionName 从 git tag 动态解析，彻底解决“发版时手改 build.gradle.kts 与 tag 双向不同步”问题。
 // 规则：
-//   1. 若当前 commit 刚好有 tag（如 v1.7.0 或 v1.7.0-rc1），直接提取为 "1.7.0" 或 "1.7.0-rc1"；
-//   2. 若当前 commit 比上个 tag 多了 N 个提交（如 v1.7.0-2-g04bc2fa），提取为 "1.7.0-dev.2+g04bc2fa"；
-//   3. 若无 git 环境或报错，fallback 到默认版本号 "1.7.0-dev"。
+//   1. 若当前 commit 刚好有 tag（如 v1.0.0 或 v1.0.0-rc1），直接提取为 "1.0.0" 或 "1.0.0-rc1"；
+//   2. 若当前 commit 比上个 tag 多了 N 个提交（如 v1.0.0-2-g04bc2fa），提取为 "1.0.0-dev.2+g04bc2fa"；
+//   3. 若无 git 环境或报错，fallback 到默认版本号 "1.0.0-dev"。
 // providers.exec 而非 Runtime.exec：配置缓存要求配置阶段的外部进程调用登记为 provider 输入，
 // 直接 fork 会让缓存条目被丢弃（external process started）。
 val gitDescribeOutput = providers.exec {
@@ -36,8 +36,8 @@ fun gitVersionName(): String = try {
     val raw = gitDescribeOutput.get().trim()
     if (raw.startsWith("v")) {
         val version = raw.substring(1) // 去掉开头的 'v'
-        // 如 "1.7.0"、"1.7.0-rc1" 或 "1.7.0-2-g04bc2fa"
-        // 将 git describe 格式 "1.7.0-2-g04bc2fa" 转为规范语义化版本 "1.7.0-dev.2+g04bc2fa"
+        // 如 "1.0.0"、"1.0.0-rc1" 或 "1.0.0-2-g04bc2fa"
+        // 将 git describe 格式 "1.0.0-2-g04bc2fa" 转为规范语义化版本 "1.0.0-dev.2+g04bc2fa"
         val devRegex = Regex("""^(\d+\.\d+\.\d+(?:-[a-zA-Z0-9]+)?)-(\d+)-g([0-9a-f]+)(.*)$""")
         val match = devRegex.matchEntire(version)
         if (match != null) {
@@ -47,12 +47,12 @@ fun gitVersionName(): String = try {
             version
         }
     } else if (raw.isNotEmpty()) {
-        "1.7.0-dev+$raw"
+        "1.0.0-dev+$raw"
     } else {
-        "1.7.0-dev"
+        "1.0.0-dev"
     }
 } catch (e: Exception) {
-    "1.7.0-dev"
+    "1.0.0-dev"
 }
 
 // versionCode 从 git 提交数自动生成：随每次提交单调递增，无需手动维护，
@@ -70,6 +70,14 @@ fun gitCommitCount(): Int = try {
 } catch (e: Exception) {
     1
 }
+
+/** 本地调试用：`-PversionCodeOverride=14` 覆盖 git 提交数，便于反复覆盖安装。 */
+fun localVersionCodeOverride(): Int? =
+    (project.findProperty("versionCodeOverride") as String?)?.trim()?.toIntOrNull()
+
+/** 本地调试用：`-PversionNameOverride=1.0.0-dev` 覆盖 tag 推导结果。 */
+fun localVersionNameOverride(): String? =
+    (project.findProperty("versionNameOverride") as String?)?.trim()?.takeIf { it.isNotEmpty() }
 
 // AI 内置文档（~/.nox/docs）的源在仓库根的 docs-site/docs：同一份 Markdown 既构建 VitePress
 // 文档站，也在这里复制进 assets/docs 打进 APK，保证「站上看到的」与「AI 读到的」永远一致。
@@ -112,8 +120,13 @@ android {
         //      保活需换 specialUse。
         // 代价：不能上 Google Play。
         targetSdk = 28
-        versionCode = 6
-        versionName = "1.0.5"
+        // 版本号唯一事实源是 git：versionName 来自 tag（无 tag 时为基线+dev 后缀），
+        // versionCode 来自提交数。之前这里写死 `6` / "1.0.5"，两个 git 推导函数形同虚设，
+        // 导致每次发版 versionCode 不变、应用内更新自检（ApkVerifier 要求更高 versionCode）永远失败。
+        // 本地调试开关：-PversionCodeOverride=14 -PversionNameOverride=1.0.0-dev
+        // 固定版本号后反复重建可直接覆盖安装，不必先卸载，也不会让应用内更新误判。
+        versionCode = localVersionCodeOverride() ?: gitCommitCount()
+        versionName = localVersionNameOverride() ?: gitVersionName()
 
         // 插件上传暂存区令牌：由 local.properties 的 PLUGIN_INBOX_TOKEN 提供。
         // 不写进源码，避免明文凭据随仓库分发；本机没有配置时留空，上传会提示未配置。
@@ -185,8 +198,11 @@ android {
             applicationIdSuffix = ".debug"
         }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // 本地调试可加 -PskipMinify 跳过 R8 与资源压缩：实测能省 3~5 分钟。
+            // CI 与正式发版不要带这个参数，产物必须经过混淆与压缩。
+            val skipMinify = (project.findProperty("skipMinify") as String?)?.toBoolean() == true
+            isMinifyEnabled = !skipMinify
+            isShrinkResources = !skipMinify
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }

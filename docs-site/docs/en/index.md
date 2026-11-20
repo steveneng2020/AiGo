@@ -1,30 +1,30 @@
 ---
 layout: home
-title: Nox - AI Coding Tool & Linux Terminal on Android
+title: AiGo - AI Coding Tool & Linux Terminal on Android
 titleTemplate: false
-description: Nox is an open-source AI coding tool for Android that needs no computer. It ships a built-in Linux container and terminal so the AI Agent can read/write code and run builds on its own, with Git version control, the MCP protocol and remote SSH support.
+description: AiGo is an open-source AI coding tool for Android that needs no computer. It ships a built-in Linux container and terminal so the AI Agent can read/write code and run builds on its own, with Git version control, the MCP protocol and remote SSH support.
 head:
   - - meta
     - name: keywords
-      content: Nox, Android AI coding, mobile development, Linux terminal, PRoot, Termux, AI Agent, MCP, code editor, Git client, mobile workstation, remote SSH
+      content: AiGo, Android AI coding, mobile development, Linux terminal, PRoot, Termux, AI Agent, MCP, code editor, Git client, mobile workstation, remote SSH
 
 hero:
-  name: Nox
+  name: AiGo
   text: AI Coding Tool & Mobile Workstation on Your Phone
   tagline: No computer needed — write, debug and commit entirely from your phone. A built-in Linux container and terminal let the AI Agent read/write files, run shell commands and execute builds on its own, with Git, MCP, remote SSH and a full model ecosystem.
   image:
     src: /logo.png
-    alt: Nox
+    alt: AiGo
   actions:
     - theme: brand
       text: Quick Start
       link: /en/guide/quick-start
     - theme: alt
       text: Download APK
-      link: https://nox.murk.top/download
+      link: https://github.com/steveneng2020/AiGo/releases/latest
     - theme: alt
       text: GitHub
-      link: https://github.com/xzyy03/Nox
+      link: https://github.com/steveneng2020/AiGo
 
 features:
   - title: AI Agent
@@ -40,3 +40,7 @@ features:
   - title: Git & Workspace Sync
     details: Built-in status, branch, commit, diff and tag management. SFTP / FTP sync support, plus a built-in FTP server for managing files from your computer.
 ---
+
+::: info About this project
+AiGo is a fork of [Nox](https://github.com/xzyy03/Nox), which in turn is based on [jieapi/aicode](https://github.com/jieapi/aicode). AiGo keeps the fork relationship with Nox so upstream updates can be merged continuously. The package name is `com.aigo`, which coexists with Nox's `com.nox`. Contact: steveneng@163.com.
+:::

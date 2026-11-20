@@ -66,6 +66,24 @@ class AgentLiveNotificationManager @Inject constructor(
         scope.launch {
             sessions.collect { render(it) }
         }
+        // 图标切换后重建已发出的通知：smallIcon 在 build() 时已固化，不重新 notify 就不会变。
+        runCatching {
+            val filter = android.content.IntentFilter(
+                com.nox.feature.settings.data.repository.AppIconManager.ACTION_ICON_CHANGED
+            )
+            val receiver = object : android.content.BroadcastReceiver() {
+                override fun onReceive(ctx: Context?, intent: Intent?) {
+                    refreshIcon()
+                }
+            }
+            // RECEIVER_NOT_EXPORTED 是 API 33 引入的约束；minSdk 26，低版本走旧签名。
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                context.registerReceiver(receiver, filter)
+            }
+        }
     }
 
     /** 推入当前运行中的会话列表；空列表等价于撤销。 */
@@ -77,6 +95,11 @@ class AgentLiveNotificationManager @Inject constructor(
     fun dismiss() {
         sessions.value = emptyList()
         scope.launch { render(emptyList()) }
+    }
+
+    /** 应用图标切换后重绘：通知的小图标在建 notification 时已固化，必须重新 notify 才会换。 */
+    fun refreshIcon() {
+        scope.launch { render(sessions.value) }
     }
 
     private suspend fun render(running: List<RunningSession>) {
@@ -100,7 +123,7 @@ class AgentLiveNotificationManager @Inject constructor(
         }
         val body = running.joinToString("\n") { "${it.title} · ${it.statusLabel}" }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setSmallIcon(com.nox.feature.settings.data.repository.AppIconManager.smallIconRes(context))
             .setContentTitle(title)
             .setContentText(if (running.size == 1) running.first().title else body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

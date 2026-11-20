@@ -1,13 +1,13 @@
 ---
 title: User Agreement
-description: Nox User Agreement covering consent, AI and operational risks, lawful use, third-party services and fees, backups, open-source rights, and liability limits.
+description: AiGo User Agreement covering consent, AI and operational risks, lawful use, third-party services and fees, backups, open-source rights, and liability limits.
 ---
 
-# Nox User Agreement
+# AiGo User Agreement
 
 **Last updated: October 23, 2026**
 
-Nox ("the App") is an open-source AI coding tool for Android maintained by xzyy03 (an individual developer, "the Developer"). This agreement explains your rights, obligations, and important risks when using the App. Please read it together with the [Privacy Policy](/en/privacy).
+AiGo ("the App") is an open-source AI coding tool for Android maintained by xzyy03 (an individual developer, "the Developer"). This agreement explains your rights, obligations, and important risks when using the App. Please read it together with the [Privacy Policy](/en/privacy).
 
 ## 1. Reading and Consent
 
@@ -51,7 +51,7 @@ Back up important code, settings, and data regularly, and verify that backups ca
 
 ## 7. Open-Source License and Reserved Rights
 
-The App is open source under GPL-3.0, with source code in the [GitHub repository](https://github.com/xzyy03/Nox). This agreement does not restrict your rights under that license to run, study, copy, modify, or redistribute the software. Exercising those rights remains subject to the license's conditions. Third-party components retain their respective licenses.
+The App is open source under GPL-3.0, with source code in the [GitHub repository](https://github.com/steveneng2020/AiGo). This agreement does not restrict your rights under that license to run, study, copy, modify, or redistribute the software. Exercising those rights remains subject to the license's conditions. Third-party components retain their respective licenses.
 
 If this agreement conflicts with GPL-3.0 regarding rights granted by that license, GPL-3.0 prevails. The startup consent process does not impose additional restrictions on those open-source rights.
 
@@ -70,5 +70,5 @@ The Developer may update this agreement to reflect feature changes or legal requ
 For questions about this agreement or the App, use the contact details below. GitHub Issues is public; do not post API keys, passwords, or logs containing sensitive information.
 
 - Developer: xzyy03 (individual developer)
-- GitHub Issues: <https://github.com/xzyy03/Nox/issues>
-- Project homepage: <https://github.com/xzyy03/Nox>
+- GitHub Issues: <https://github.com/steveneng2020/AiGo/issues>
+- Project homepage: <https://github.com/steveneng2020/AiGo>
