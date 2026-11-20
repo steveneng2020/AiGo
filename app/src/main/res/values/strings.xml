@@ -2130,7 +2130,7 @@
     <string name="plugins_empty_hint">点右上角「＋」导入插件包（.zip）。插件可以为 AI 提供额外的技能和子代理。</string>
     <string name="plugins_empty_title">还没有安装插件</string>
     <string name="plugins_enable">启用插件</string>
-    <string name="plugins_error_api_incompatible">插件要求的插件接口版本（%1$s）与当前 AiCode 不兼容。</string>
+    <string name="plugins_error_api_incompatible">插件要求的插件接口版本（%1$s）与当前 Nox 不兼容。</string>
     <string name="plugins_error_archive_too_large">压缩包过大。</string>
     <string name="plugins_error_archive_too_many">压缩包内的文件过多。</string>
     <string name="plugins_error_archive_unreadable">无法读取这个文件，它不是有效的 ZIP 压缩包。</string>
@@ -2237,7 +2237,7 @@
     <string name="plugins_store_mirror_label">镜像加速地址</string>
     <string name="plugins_store_refresh_done">索引刷新完成</string>
     <string name="plugins_store_refresh_done_failed">索引刷新完成，失败 %1$d 个</string>
-    <string name="plugins_store_requires_min_version">要求 AiCode &gt;= %1$s</string>
+    <string name="plugins_store_requires_min_version">要求 Nox &gt;= %1$s</string>
     <string name="plugins_store_min_version_notice">插件声明要求 Nox &gt;= %1$s，仍可尝试安装</string>
     <string name="plugins_store_retry">重试</string>
     <string name="plugins_store_sources_hint">一行一个地址；官方索引始终保留并排在最前。

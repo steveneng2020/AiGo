@@ -2,6 +2,7 @@ package com.nox.feature.terminal.presentation.component
 
 import android.content.Context
 import android.graphics.Typeface
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,6 +10,8 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,8 +51,12 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
@@ -248,17 +255,27 @@ private fun TabBar(
         scrollState.animateScrollTo(target.coerceAtLeast(0))
     }
 
+    val dividerColor = MaterialTheme.semanticColors.subtleBorder
+
     Surface(
         color = MaterialTheme.colorScheme.surface,
         modifier = Modifier
             .fillMaxWidth()
             .onSizeChanged { barWidth = it.width }
+            .drawBehind {
+                val stroke = 0.75.dp.toPx()
+                drawRect(
+                    color = dividerColor,
+                    topLeft = Offset(0f, size.height - stroke),
+                    size = Size(size.width, stroke)
+                )
+            }
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(scrollState)
-                .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -308,15 +325,12 @@ private fun TabChip(
         else -> MaterialTheme.colorScheme.outline
     }
 
-    // 选中态高对比度设计：醒目主色描边 + 浅主色填充 + 加粗文字
+    // 选中态：浅主色填充 + 细主色描边；未选中保持透明，避免标签栏一排描边显得嘈杂
     val bg = when {
-        selected -> MaterialTheme.colorScheme.primary.copy(alpha = if (isLight) 0.14f else 0.22f)
-        else -> MaterialTheme.semanticColors.capsuleSurface
+        selected -> MaterialTheme.colorScheme.primary.copy(alpha = if (isLight) 0.12f else 0.20f)
+        else -> Color.Transparent
     }
-    val borderColor = when {
-        selected -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.semanticColors.subtleBorder
-    }
+    val borderColor = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
     val fg = when {
         selected -> MaterialTheme.colorScheme.primary
         isLight -> MaterialTheme.colorScheme.onSurface
@@ -325,13 +339,13 @@ private fun TabChip(
 
     Row(
         modifier = modifier
-            .height(36.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .height(34.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(bg)
             .border(
-                width = if (selected) 1.5.dp else 1.dp,
+                width = 1.dp,
                 color = borderColor,
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(10.dp)
             )
             .clickable(onClick = onClick)
             .padding(start = Spacing.md, end = 6.dp),
@@ -341,11 +355,11 @@ private fun TabChip(
         // 运行状态指示点（激活且运行时带微发光外圈）
         Box(
             modifier = Modifier
-                .size(if (selected && running) 10.dp else 8.dp)
+                .size(if (selected && running) 9.dp else 7.dp)
                 .clip(CircleShape)
                 .background(dot)
                 .then(
-                    if (selected && running) Modifier.border(1.5.dp, dot.copy(alpha = 0.4f), CircleShape)
+                    if (selected && running) Modifier.border(1.5.dp, dot.copy(alpha = 0.35f), CircleShape)
                     else Modifier
                 )
         )
@@ -353,12 +367,12 @@ private fun TabChip(
             text = tab.title,
             color = fg,
             fontFamily = FontFamily.Monospace,
-            fontSize = 13.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+            fontSize = 12.5.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
         )
         Box(
             modifier = Modifier
-                .size(22.dp)
+                .size(20.dp)
                 .clip(CircleShape)
                 .clickable(onClick = onClose),
             contentAlignment = Alignment.Center
@@ -366,8 +380,9 @@ private fun TabChip(
             Icon(
                 FeatherIcons.X,
                 contentDescription = stringResource(R.string.terminal_close_tab),
-                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.size(13.dp)
+                tint = if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                modifier = Modifier.size(12.dp)
             )
         }
     }
@@ -420,6 +435,8 @@ private fun TerminalSurface(
     AndroidView(
         modifier = Modifier
             .fillMaxSize()
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(bgColor),
         factory = { ctx ->
             val view = TerminalView(ctx, null)
@@ -514,19 +531,27 @@ private fun containerInitMessage(context: Context, state: ContainerInitState): S
         context.getString(R.string.terminal_preparing_env_first_run)
 }
 
-/** Termius 风格的现代化极客辅助按键栏。 */
+/** 终端辅助按键栏：控制键、方向键、组合键、常用符号四组，组间用细线分隔。 */
 @Composable
 private fun ExtraKeysRow(viewModel: TerminalViewModel) {
+    val dividerColor = MaterialTheme.semanticColors.subtleBorder
     Surface(
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .drawBehind {
+                    val stroke = 0.75.dp.toPx()
+                    drawRect(
+                        color = dividerColor,
+                        topLeft = Offset(0f, 0f),
+                        size = Size(size.width, stroke)
+                    )
+                }
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = Spacing.sm, vertical = 6.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -540,6 +565,8 @@ private fun ExtraKeysRow(viewModel: TerminalViewModel) {
                 viewModel.modifiers.alt = !viewModel.modifiers.alt
             }
 
+            KeyGroupDivider()
+
             // 方向键
             KeyChip("←", repeatOnHold = true) { viewModel.write("\u001b[D") }
             KeyChip("↑", repeatOnHold = true) { viewModel.write("\u001b[A") }
@@ -547,12 +574,14 @@ private fun ExtraKeysRow(viewModel: TerminalViewModel) {
             KeyChip("→", repeatOnHold = true) { viewModel.write("\u001b[C") }
 
             // 快捷控制组合
+            KeyGroupDivider()
             KeyChip("C-c") { viewModel.writeBytes(0x03) }
             KeyChip("C-d") { viewModel.writeBytes(0x04) }
             KeyChip("C-z") { viewModel.writeBytes(0x1A) }
             KeyChip("C-l") { viewModel.writeBytes(0x0C) }
 
             // 常用编程与 shell 符号
+            KeyGroupDivider()
             KeyChip("|") { viewModel.write("|") }
             KeyChip("~") { viewModel.write("~") }
             KeyChip("/") { viewModel.write("/") }
@@ -571,6 +600,17 @@ private fun ExtraKeysRow(viewModel: TerminalViewModel) {
 private const val KEY_REPEAT_INITIAL_DELAY_MS = 350L
 private const val KEY_REPEAT_INTERVAL_MS = 50L
 
+/** 键组之间的细竖线。 */
+@Composable
+private fun KeyGroupDivider() {
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 2.dp)
+            .size(width = 0.75.dp, height = 18.dp)
+            .background(MaterialTheme.semanticColors.subtleBorder)
+    )
+}
+
 @Composable
 private fun KeyChip(
     label: String,
@@ -578,51 +618,65 @@ private fun KeyChip(
     repeatOnHold: Boolean = false,
     onClick: () -> Unit
 ) {
-    val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
-    val bg = when {
-        active -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.semanticColors.capsuleSurface
-    }
-    val borderColor = when {
-        active -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.semanticColors.subtleBorder
-    }
-    val fg = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-
-    var pressed by remember { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
+    val interactionPressed by interaction.collectIsPressedAsState()
+    var holdPressed by remember { mutableStateOf(false) }
+    val pressed = interactionPressed || holdPressed
     var sentRepeated by remember { mutableStateOf(false) }
 
-    LaunchedEffect(pressed) {
-        if (!pressed) return@LaunchedEffect
+    LaunchedEffect(holdPressed) {
+        if (!holdPressed) return@LaunchedEffect
         sentRepeated = false
         delay(KEY_REPEAT_INITIAL_DELAY_MS)
-        while (pressed) {
+        while (holdPressed) {
             onClick()
             sentRepeated = true
             delay(KEY_REPEAT_INTERVAL_MS)
         }
     }
 
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        label = "terminal-key-press"
+    )
+    val bg = when {
+        active -> MaterialTheme.colorScheme.primary
+        pressed -> MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        else -> MaterialTheme.semanticColors.capsuleSurface
+    }
+    val fg = when {
+        active -> MaterialTheme.colorScheme.onPrimary
+        pressed -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+
     Box(
         modifier = Modifier
             .height(34.dp)
             .widthChip(label)
-            .clip(RoundedCornerShape(6.dp))
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(9.dp))
             .background(bg)
-            .border(1.dp, borderColor, RoundedCornerShape(6.dp))
             .then(
                 if (repeatOnHold) {
                     Modifier.pointerInput(onClick) {
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false)
-                            pressed = true
+                            holdPressed = true
                             waitForUpOrCancellation()
-                            pressed = false
+                            holdPressed = false
                             if (!sentRepeated) onClick()
                         }
                     }
                 } else {
-                    Modifier.clickable(onClick = onClick)
+                    Modifier.clickable(
+                        interactionSource = interaction,
+                        indication = null,
+                        onClick = onClick
+                    )
                 }
             ),
         contentAlignment = Alignment.Center
@@ -631,7 +685,7 @@ private fun KeyChip(
             text = label,
             color = fg,
             fontFamily = FontFamily.Monospace,
-            fontSize = 12.5.sp,
+            fontSize = 12.sp,
             fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
             modifier = Modifier.padding(horizontal = 10.dp)
         )
