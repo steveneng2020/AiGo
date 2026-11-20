@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 手机控制无障碍服务。
+     canPerformGestures 用于点击/滑动手势；canRetrieveWindowContent 用于读取界面节点；
+     flagRetrieveInteractiveWindows 让多窗口场景下也能取到目标窗口。
+     事件类型只订阅窗口变化，不订阅内容变化——AI 是按需读屏，不需要持续推送。 -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="true"
+    android:canTakeScreenshot="true"
+    android:description="@string/phone_control_service_description"
+    android:notificationTimeout="100" />

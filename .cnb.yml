@@ -1,0 +1,81 @@
+# CNB 云原生构建配置
+#
+# 与 GitHub Actions 的 android-release.yml 互补：这里只负责「能不能编出包」，
+# 不做 Release 发布（CNB 没有同等的 Release 资产接口，且发布渠道仍以 GitHub 为准）。
+#
+# 镜像选择：用 ubuntu + 官方 commandline tools 现场装 SDK，而不是第三方
+# android-sdk-image。原因：本仓库 compileSdk=36，社区镜像的平台版本参差不齐，
+# 缺平台时 Gradle 会自己联网补装、反而更难排查；自己装能明确钉住版本。
+#
+# 缓存：/root/.gradle 与 /opt/android-sdk 都挂 copy-on-write 卷。
+# SDK 卷是关键——commandline tools + platform 36 + build-tools 35 合计约 1.5GB，
+# 每次重下会把单次构建拖到 10 分钟以上。
+#
+# 脚本由 sh（dash）执行：不支持 set -o pipefail，也不保证 PATH 里有 sdkmanager
+# （dash 下 apt 安装后 PATH 未刷新、且 sdkmanager 本就不在 PATH 里），
+# 所以下面一律用绝对路径调用。
+
+.android-env: &android-env
+  runner:
+    cpus: 4
+  docker:
+    image: ubuntu:24.04
+  volumes:
+    - /root/.gradle:copy-on-write
+    - /opt/android-sdk:copy-on-write
+  env:
+    ANDROID_HOME: /opt/android-sdk
+    ANDROID_SDK_ROOT: /opt/android-sdk
+    JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+    DEBIAN_FRONTEND: noninteractive
+
+.install-sdk: &install-sdk
+  name: 安装 JDK 与 Android SDK
+  script: |
+    set -eu
+    if [ ! -x /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager ]; then
+      apt-get update -qq
+      apt-get install -y -qq --no-install-recommends \
+        openjdk-17-jdk-headless unzip curl ca-certificates
+      curl -fsSL --retry 3 -o /tmp/cmdline-tools.zip \
+        https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+      ls -l /tmp/cmdline-tools.zip
+      rm -rf /tmp/cmdline-tools
+      unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
+      mkdir -p /opt/android-sdk/cmdline-tools
+      rm -rf /opt/android-sdk/cmdline-tools/latest
+      mv /tmp/cmdline-tools/cmdline-tools /opt/android-sdk/cmdline-tools/latest
+      rm -f /tmp/cmdline-tools.zip
+      test -x /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager
+    fi
+    SDKMANAGER=/opt/android-sdk/cmdline-tools/latest/bin/sdkmanager
+    yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+    "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+    "$SDKMANAGER" --version
+
+.build: &build
+  name: 编译 armsolo 变体
+  script: |
+    set -eu
+    export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+    chmod +x ./gradlew
+    # 只编 armsolo：真机首选、单 ABI、体积最小。universal 与 x86solo
+    # 是给模拟器与 Chromebook 的，日常验证不需要，编三份只会翻倍耗时。
+    ./gradlew :app:assembleArmsoloMiuix --no-daemon --stacktrace
+    ls -lh app/build/outputs/apk/armsolo/miuix/
+
+main:
+  push:
+    - name: android-build
+      <<: *android-env
+      stages:
+        - *install-sdk
+        - *build
+
+  # tag 触发同样只验证能编出包，不发布。
+  tag_push:
+    - name: android-build-on-tag
+      <<: *android-env
+      stages:
+        - *install-sdk
+        - *build
