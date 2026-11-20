@@ -78,7 +78,8 @@ export default defineConfig({
   title: 'Nox',
   titleTemplate: ':title | Nox - 手机端 AI 编程工具与终端',
   description: 'Nox 是一款开源的 Android 端 AI 编程与移动工作站工具。内置 Linux 容器与终端环境，AI Agent 可自主读写文件、执行 Shell 命令与运行构建，深度集成 MCP 协议、Git 版本控制与远程 SSH 开发。',
-  cleanUrls: true,
+  // GitHub Pages 不支持无扩展名路由（/terms 会 404），因此生成 .html 路径
+  cleanUrls: false,
   lastUpdated: true,
   sitemap: {
     hostname: 'https://xzyy03.github.io/Nox'

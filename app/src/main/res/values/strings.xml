@@ -633,8 +633,8 @@
     <string name="agreement_notice_suffix">，了解使用规则与数据处理方式。\n\n点击“同意并继续”表示你已阅读并同意上述两份文件。</string>
     <string name="agreement_accept">同意并继续</string>
     <string name="agreement_decline">不同意</string>
-    <string name="agreement_terms_url">https://xzyy03.github.io/Nox/terms</string>
-    <string name="agreement_privacy_url">https://xzyy03.github.io/Nox/privacy</string>
+    <string name="agreement_terms_url">https://xzyy03.github.io/Nox/terms.html</string>
+    <string name="agreement_privacy_url">https://xzyy03.github.io/Nox/privacy.html</string>
 
     <!-- Ask User Question -->
     <string name="ask_confirm_title">AI 需要你的确认</string>
