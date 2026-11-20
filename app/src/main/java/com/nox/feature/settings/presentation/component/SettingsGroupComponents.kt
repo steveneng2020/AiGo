@@ -227,7 +227,8 @@ internal fun SettingsRow(
     subtitle: String? = null,
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
-    iconTint: Color? = null
+    iconTint: Color? = null,
+    iconBackground: Boolean = false
 ) {
     val baseModifier = modifier
         .fillMaxWidth()
@@ -238,19 +239,36 @@ internal fun SettingsRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconTint ?: settingsIconTint(icon),
-                modifier = Modifier.size(18.dp)
-            )
+            if (iconBackground) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = iconTint ?: MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint ?: settingsIconTint(icon),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
             Spacer(Modifier.width(12.dp))
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             if (subtitle != null) {

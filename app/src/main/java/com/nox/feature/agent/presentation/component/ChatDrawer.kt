@@ -231,7 +231,7 @@ fun ChatDrawerContent(
                 )
             )
             .padding(horizontal = Spacing.lg)
-            .padding(bottom = imeInset + Spacing.xl),
+            .padding(bottom = imeInset + 6.dp),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         // 顶部 Tab 切换
@@ -386,7 +386,8 @@ fun ChatDrawerContent(
                 SettingsRow(
                     icon = FeatherIcons.User,
                     title = stringResource(R.string.settings_roles),
-                    onClick = onNavigateToRoles
+                    onClick = onNavigateToRoles,
+                    iconBackground = true
                 )
                 SettingsDivider()
             }
@@ -394,7 +395,8 @@ fun ChatDrawerContent(
                 SettingsRow(
                     icon = FeatherIcons.Globe,
                     title = stringResource(R.string.browser_title),
-                    onClick = onNavigateToBrowser
+                    onClick = onNavigateToBrowser,
+                    iconBackground = true
                 )
                 SettingsDivider()
             }
@@ -402,6 +404,7 @@ fun ChatDrawerContent(
                 icon = FeatherIcons.Settings,
                 title = stringResource(R.string.chat_settings),
                 onClick = onNavigateToSettings,
+                iconBackground = true,
                 modifier = Modifier.onboardingTarget(OnboardingStep.ENTER_SETTINGS)
             )
             pluginEntries.forEach { entry ->

@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.TextSelectionColors
@@ -61,12 +62,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.nox.R
 import com.nox.core.theme.Brand
 import com.nox.core.theme.Spacing
+import com.nox.core.theme.semanticColors
 import com.nox.feature.agent.domain.provider.RetryErrorInfo
 import com.nox.feature.agent.domain.provider.RetryErrorKind
 import compose.icons.FeatherIcons
@@ -724,31 +728,33 @@ internal fun ReasoningBubble(
             String.format(java.util.Locale.US, "%.1f", sec)
         }
     }
-    // 折叠行文案：进行中显示实时耗时，完成后显示总耗时（拿不到耗时数据时只显示「思考完成」）。
-    val label = when {
-        live -> {
-            val secText = formattedDuration ?: "0.1"
-            stringResource(R.string.chat_thinking_running_time, secText)
-        }
-        formattedDuration != null -> stringResource(R.string.chat_thinking_done_time, formattedDuration)
-        else -> stringResource(R.string.chat_thinking_done)
+    // 折叠行文案：思考过程 + 当前字数；拿得到耗时时附在末尾。
+    val charCount = text.length
+    val label = if (formattedDuration != null) {
+        stringResource(R.string.chat_thinking_process_chars_time, charCount, formattedDuration)
+    } else {
+        stringResource(R.string.chat_thinking_process_chars, charCount)
     }
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 28.dp)
-                .clickable { toggleExpanded(!expanded) },
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.semanticColors.capsuleSurface)
+                .clickable { toggleExpanded(!expanded) }
+                .padding(horizontal = 14.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ThinkingGlyph(tint = Brand.IconGray, iconSize = 16.dp)
-            Spacer(Modifier.width(Spacing.sm))
+            ThinkingGlyph(tint = MaterialTheme.colorScheme.onSurfaceVariant, iconSize = 20.dp)
+            Spacer(Modifier.width(Spacing.md))
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
             Spacer(Modifier.width(Spacing.xs))
             ExpandableChevronIcon(

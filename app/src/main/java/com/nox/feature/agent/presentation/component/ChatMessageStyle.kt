@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.platform.ClipEntry
@@ -104,7 +105,8 @@ internal fun chatUserBubbleColor(): Color = when (LocalChatBubbleStyle.current) 
 /** 用户气泡描边色：按样式返回；无描边样式返回透明（调用方不再画边）。 */
 @Composable
 internal fun chatUserBubbleBorderColor(): Color = when (LocalChatBubbleStyle.current) {
-    ChatBubbleStyle.CLASSIC -> MaterialTheme.colorScheme.onSurface
+    ChatBubbleStyle.CLASSIC ->
+        if (MaterialTheme.colorScheme.background.luminance() > 0.5f) Color(0xFF000000) else MaterialTheme.colorScheme.onSurface
     ChatBubbleStyle.SHADOW -> Color.Transparent
     ChatBubbleStyle.MINIMAL -> Color.Transparent
     ChatBubbleStyle.DARK -> Color.Transparent

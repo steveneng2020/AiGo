@@ -115,7 +115,7 @@ internal fun UserMessageBubble(
                 shape = shape,
                 color = bubbleColor,
                 border = borderColor.takeIf { it != Color.Transparent }
-                    ?.let { BorderStroke(1.5.dp, it) },
+                    ?.let { BorderStroke(if (style == ChatBubbleStyle.CLASSIC) 1.8.dp else 1.5.dp, it) },
                 modifier = Modifier
                     .widthIn(max = maxWidth)
                     .then(
