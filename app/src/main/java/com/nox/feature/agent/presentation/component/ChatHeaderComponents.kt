@@ -280,12 +280,12 @@ private fun OverlayMenuButton(
                 properties = PopupProperties(focusable = true)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(22.dp),
+                    shape = RoundedCornerShape(20.dp),
                     color = MaterialTheme.colorScheme.surface,
                     shadowElevation = 0.dp,
                     tonalElevation = 0.dp
                 ) {
-                    Column(modifier = Modifier.width(200.dp).padding(vertical = 6.dp)) {
+                    Column(modifier = Modifier.width(170.dp).padding(vertical = 4.dp)) {
                         HeaderMenuRow(
                             icon = FeatherIcons.GitBranch,
                             label = stringResource(R.string.chat_open_git),
@@ -293,7 +293,7 @@ private fun OverlayMenuButton(
                             onClick = { expanded = false; onNavigateToGit() }
                         )
                         HorizontalDivider(
-                            modifier = Modifier.padding(start = 54.dp, end = 18.dp),
+                            modifier = Modifier.padding(start = 46.dp, end = 14.dp),
                             thickness = 1.dp,
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         )
@@ -305,7 +305,7 @@ private fun OverlayMenuButton(
                         )
                         pluginEntries.forEach { entry ->
                             HorizontalDivider(
-                                modifier = Modifier.padding(start = 54.dp, end = 18.dp),
+                                modifier = Modifier.padding(start = 46.dp, end = 14.dp),
                                 thickness = 1.dp,
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
@@ -342,20 +342,20 @@ private fun HeaderMenuRow(
                 indication = null,
                 onClick = onClick
             )
-            .padding(horizontal = 18.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-            modifier = Modifier.size(22.dp)
+            modifier = Modifier.size(20.dp)
         )
-        Spacer(Modifier.width(13.dp))
+        Spacer(Modifier.width(12.dp))
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+            fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f)
         )

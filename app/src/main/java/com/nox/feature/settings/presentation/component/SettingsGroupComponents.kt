@@ -233,7 +233,7 @@ internal fun SettingsRow(
     val baseModifier = modifier
         .fillMaxWidth()
         .let { if (onClick != null && enabled) it.clickable { onClick() } else it }
-        .padding(horizontal = Spacing.lg, vertical = 14.dp)
+        .padding(horizontal = Spacing.lg, vertical = if (iconBackground) 10.dp else 14.dp)
     Row(
         modifier = baseModifier.alpha(if (enabled) 1f else 0.5f),
         verticalAlignment = Alignment.CenterVertically
@@ -242,7 +242,7 @@ internal fun SettingsRow(
             if (iconBackground) {
                 Box(
                     modifier = Modifier
-                        .size(30.dp)
+                        .size(28.dp)
                         .clip(RoundedCornerShape(9.dp))
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)),
                     contentAlignment = Alignment.Center
@@ -251,7 +251,7 @@ internal fun SettingsRow(
                         imageVector = icon,
                         contentDescription = null,
                         tint = iconTint ?: MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                 }
             } else {
