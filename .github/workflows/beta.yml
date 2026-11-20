@@ -77,29 +77,42 @@ jobs:
       - name: Build universal beta APK
         run: ./gradlew :app:assembleUniversalBeta --stacktrace
 
-      # 产物重命名为 nox-universal-beta-<sha7>.apk，短 sha 便于区分每次构建。
+      # 产物重命名为 AiGo-universal-beta-<版本>-<sha7>.apk：
+      # 短 sha 便于区分每次构建，版本名（含日期）便于对照是哪次提交出的包。
+      - name: Read versionName
+        id: ver
+        run: |
+          AAPT2="$ANDROID_HOME/build-tools/35.0.0/aapt2"
+          SRC="app/build/outputs/apk/universal/beta/app-universal-beta.apk"
+          vn=$("$AAPT2" dump badging "$SRC" | head -1 | sed -E "s/.*versionName='([^']*)'.*/\1/" | tr '/' '-')
+          echo "versionName=$vn" >> "$GITHUB_OUTPUT"
+          echo "versionName=$vn"
+
+      # 产物重命名为 AiGo-universal-beta-<版本>-<sha7>.apk，
       # 同时带上 R8 混淆映射（mapping.txt），供 beta 崩溃报告反混淆。
       - name: Rename APK & collect mapping
         run: |
           set -e
           mkdir -p dist
           sha7="${GITHUB_SHA::7}"
+          VER="${{ steps.ver.outputs.versionName }}"
+          if [[ -z "$VER" ]]; then VER="unknown"; fi
           cp "app/build/outputs/apk/universal/beta/app-universal-beta.apk" \
-             "dist/nox-universal-beta-${sha7}.apk"
+             "dist/AiGo-universal-beta-${VER}-${sha7}.apk"
           # AGP 8.x 的 mapping 输出目录是 variant 驼峰名（flavor + BuildType），
           # 即 outputs/mapping/universalBeta/，不是 outputs/mapping/universal/beta/。
           if [[ -f "app/build/outputs/mapping/universalBeta/mapping.txt" ]]; then
             cp "app/build/outputs/mapping/universalBeta/mapping.txt" \
-               "dist/nox-universal-beta-${sha7}-mapping.txt"
+               "dist/AiGo-universal-beta-${VER}-${sha7}-mapping.txt"
           fi
           ls -lh dist/
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nox-beta-${{ github.sha }}
+          name: AiGo-beta-${{ github.sha }}
           # Artifacts 默认保留 90 天，无需显式配置。
           path: |
-            dist/nox-universal-beta-*.apk
-            dist/nox-universal-beta-*-mapping.txt
+            dist/AiGo-universal-beta-*.apk
+            dist/AiGo-universal-beta-*-mapping.txt
           if-no-files-found: error

@@ -449,7 +449,7 @@ class PhoneControlManager @Inject constructor(
     suspend fun setBrightness(percent: Int): PhoneActionResult = withContext(Dispatchers.IO) {
         if (!Settings.System.canWrite(appContext)) {
             return@withContext fail(
-                "没有修改系统设置的权限：请到「应用权限 → 修改系统设置」里允许 Nox",
+                "没有修改系统设置的权限：请到「应用权限 → 修改系统设置」里允许 AiGo",
                 "WRITE_SETTINGS_DENIED"
             )
         }
@@ -601,7 +601,7 @@ class PhoneControlManager @Inject constructor(
 
     private fun notEnabled() = PhoneActionResult(
         ok = false,
-        detail = "手机控制未开启：请到「软件权限 → 手机控制」打开 Nox 的无障碍服务",
+        detail = "手机控制未开启：请到「软件权限 → 手机控制」打开 AiGo 的无障碍服务",
         errorCode = ERROR_NOT_ENABLED
     )
 

@@ -31,7 +31,7 @@ class RoleRepository @Inject constructor(
     private companion object {
         const val TAG = "RoleRepository"
         const val DEFAULT_ID = "nox"
-        const val DEFAULT_NAME = "Nox"
+        const val DEFAULT_NAME = "AiGo"
         const val BUILTIN_IDENTITY_ASSET = "prompts/00-identity.md"
         const val MAX_AVATAR_BYTES = 8L * 1024 * 1024
     }

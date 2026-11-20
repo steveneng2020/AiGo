@@ -138,7 +138,7 @@ class PhoneControlTool @Inject constructor(
 
         if (!manager.isEnabled()) {
             return ToolResult.Error(
-                "手机控制未开启：请到「软件权限 → 手机控制」打开 Nox 的无障碍服务",
+                "手机控制未开启：请到「软件权限 → 手机控制」打开 AiGo 的无障碍服务",
                 code = PhoneControlManager.ERROR_NOT_ENABLED
             )
         }

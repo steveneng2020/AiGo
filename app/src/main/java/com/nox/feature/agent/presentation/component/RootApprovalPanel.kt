@@ -146,7 +146,7 @@ private fun RootConsentPanel(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "Nox 将以 root 身份执行命令，用于访问普通权限到不了的目录。",
+                    text = "AiGo 将以 root 身份执行命令，用于访问普通权限到不了的目录。",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(

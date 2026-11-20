@@ -33,7 +33,7 @@ enum class ChatBubbleStyle(val id: String, val displayName: String) {
     /** 心动时刻。 */
     VALENTINE("valentine", "心动时刻"),
     /** 原版 AiCode 气泡：主题容器色底、无描边、小圆角。 */
-    ORIGINAL("original", "原版 Nox");
+    ORIGINAL("original", "原版 AiGo");
 
     companion object {
         fun fromId(id: String?): ChatBubbleStyle =

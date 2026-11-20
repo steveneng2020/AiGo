@@ -284,8 +284,8 @@
     <string name="settings_app_icon">图标设置</string>
     <string name="app_icon_sheet_title">应用图标</string>
     <string name="app_icon_sheet_hint">切换后会自动回到桌面，部分启动器需要几秒刷新图标</string>
-    <string name="app_icon_default">默认</string>
-    <string name="app_icon_glasses">绿镜黑猫</string>
+    <string name="app_icon_default">绿镜黑猫</string>
+    <string name="app_icon_glasses">蓝底双猫</string>
     <string name="app_icon_wrench">扳手黑猫</string>    <string name="theme_auto">自动</string>
     <string name="theme_dark">深色</string>
     <string name="theme_light">浅色</string>
@@ -584,6 +584,9 @@
     <string name="about_app_name_slogan_title">更新内容</string>
     <string name="about_release_notes_more">更多更新日记（共 %1$d 个版本）</string>
     <string name="about_release_notes_collapse">收起更新日记</string>
+    <string name="about_release_notes_loading">正在获取版本信息…</string>
+    <string name="about_release_notes_empty">暂无发布记录。发布第一个版本后，这里会显示更新日记。</string>
+
 
     <string name="about_community_copied">邮箱已复制</string>
     <string name="about_github_repo">GitHub 仓库（上游）</string>

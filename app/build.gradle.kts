@@ -32,6 +32,26 @@ val gitDescribeOutput = providers.exec {
     isIgnoreExitValue = true
 }.standardOutput.asText
 
+// 构建日期（yyyyMMdd）。用于 versionName 的元数据段，格式如 1.0.0-dev.5+g04bc2fa.20261121。
+//
+// 为什么放在 '+' 之后：SemVer 规定 '+' 之后是构建元数据，不参与版本比较。
+// splitVersion() 里是 v.substringBefore('+')，所以带日期不会影响「是否有新版本」的判定。
+// 若放在 '-' 之后（如 1.0.0-20261121），按 SemVer 会小于 1.0.0，正式版发布后更新检测会失效。
+//
+// 取 git 提交日期而非机器当前时间：同一提交在任何机器、任何时间构建都得到相同值，
+// 这样 CI 与本地产物一致，也避免每次构建都让 BuildConfig 变化而打掉增量缓存。
+val buildDateOutput = providers.exec {
+    workingDir = rootProject.projectDir
+    commandLine("git", "log", "-1", "--format=%cd", "--date=format:%Y%m%d")
+    isIgnoreExitValue = true
+}.standardOutput.asText
+
+fun buildDate(): String = try {
+    buildDateOutput.get().trim().ifEmpty { "" }
+} catch (e: Exception) {
+    ""
+}
+
 fun gitVersionName(): String = try {
     val raw = gitDescribeOutput.get().trim()
     if (raw.startsWith("v")) {
@@ -42,14 +62,16 @@ fun gitVersionName(): String = try {
         val match = devRegex.matchEntire(version)
         if (match != null) {
             val (base, count, hash, dirty) = match.destructured
-            "$base-dev.$count+$hash$dirty"
+            "$base-dev.$count+$hash$dirty.${buildDate()}"
         } else {
-            version
+            // 当前 commit 正好有 tag：版本号本身已确定（如 1.0.0 或 1.0.0-20261121）。
+            // tag 里若已含 8 位日期就不再追加，避免出现 1.0.0-20261121.20261121。
+            if (version.contains(Regex("""\d{8}"""))) version else "$version+${buildDate()}"
         }
     } else if (raw.isNotEmpty()) {
-        "1.0.0-dev+$raw"
+        "1.0.0-dev+$raw.${buildDate()}"
     } else {
-        "1.0.0-dev"
+        "1.0.0-dev+${buildDate()}"
     }
 } catch (e: Exception) {
     "1.0.0-dev"

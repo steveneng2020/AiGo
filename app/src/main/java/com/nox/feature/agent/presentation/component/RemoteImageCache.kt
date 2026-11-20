@@ -72,7 +72,7 @@ internal object RemoteImageCache {
         return try {
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "Nox/1.0")
+                .header("User-Agent", "AiGo/1.0")
                 .build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {

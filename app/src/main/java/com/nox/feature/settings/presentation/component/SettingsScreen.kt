@@ -294,6 +294,7 @@ fun SettingsScreen(
     val updateCheckChannel by viewModel.updateCheckChannel.collectAsStateWithLifecycle()
     val updateCheckMirror by viewModel.updateCheckMirror.collectAsStateWithLifecycle()
     val releaseNotes by viewModel.releaseNotes.collectAsStateWithLifecycle()
+    val releaseNotesLoading by viewModel.releaseNotesLoading.collectAsStateWithLifecycle()
     val containerAnnouncementText by viewModel.containerAnnouncementText.collectAsStateWithLifecycle()
     val containerAnnouncementOutdated by viewModel.containerAnnouncementOutdated.collectAsStateWithLifecycle()
     val promptsAnnouncementText by viewModel.promptsAnnouncementText.collectAsStateWithLifecycle()
@@ -1553,7 +1554,8 @@ fun SettingsScreen(
                     onSelectChannel = { viewModel.setUpdateCheckChannel(it) },
                     onSelectMirror = { viewModel.setUpdateCheckMirror(it) },
                     onCheckUpdate = { viewModel.checkUpdate(manual = true) },
-                    releaseNotes = releaseNotes
+                    releaseNotes = releaseNotes,
+                    releaseNotesLoading = releaseNotesLoading
                     )
                 }
             }

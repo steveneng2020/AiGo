@@ -284,8 +284,8 @@
     <string name="settings_app_icon">App icon</string>
     <string name="app_icon_sheet_title">App icon</string>
     <string name="app_icon_sheet_hint">The app returns to the home screen after switching; some launchers take a few seconds to refresh.</string>
-    <string name="app_icon_default">Default</string>
-    <string name="app_icon_glasses">Green glasses</string>
+    <string name="app_icon_default">Green glasses</string>
+    <string name="app_icon_glasses">Blue cats</string>
     <string name="app_icon_wrench">Wrench cat</string>    <string name="theme_auto">Auto</string>
     <string name="theme_dark">Dark</string>
     <string name="theme_light">Light</string>
@@ -573,6 +573,9 @@
     <string name="about_app_name_slogan_title">What\'s new</string>
     <string name="about_release_notes_more">More release notes (%1$d versions)</string>
     <string name="about_release_notes_collapse">Collapse release notes</string>
+    <string name="about_release_notes_loading">Fetching release info…</string>
+    <string name="about_release_notes_empty">No releases yet. Release notes will appear here after the first version is published.</string>
+
 
     <string name="about_community_copied">Email copied</string>
     <string name="about_github_repo">GitHub Repository (upstream)</string>

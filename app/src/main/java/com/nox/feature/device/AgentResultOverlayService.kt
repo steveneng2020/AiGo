@@ -180,13 +180,13 @@ class AgentResultOverlayService : Service() {
         actions.addView(
             iconButton(CopyGlyphView(this)) {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                clipboard?.setPrimaryClip(ClipData.newPlainText("Nox", detail))
+                clipboard?.setPrimaryClip(ClipData.newPlainText("AiGo", detail))
                 Toast.makeText(this, "已复制", Toast.LENGTH_SHORT).show()
             },
             LinearLayout.LayoutParams(dp(48), dp(48))
         )
         actions.addView(pillButton("完成", filled = false) { stopSelf() }, weighted())
-        actions.addView(pillButton("回到 Nox", filled = true) {
+        actions.addView(pillButton("回到 AiGo", filled = true) {
             stopSelf()
             val open = Intent(this, MainActivity::class.java).apply {
                 addFlags(

@@ -115,19 +115,45 @@ jobs:
       - name: Build all flavor Release APKs
         run: ./gradlew assembleRelease --stacktrace
 
-      # 给三个 APK 重命名为「包名-架构-版本」格式，架构用真实 ABI 名便于用户识别：
-      #   nox-arm64-v1.0.0-rc1.apk      (armsolo)
-      #   nox-x86_64-v1.0.0-rc1.apk     (x86solo)
-      #   nox-universal-v1.0.0-rc1.apk  (universal，含两套镜像)
+      # 给三个 APK 重命名，文件名带上「品牌-架构-版本-日期-更新摘要」，下载后一眼能认出是哪个版本：
+      #   AiGo-universal-v1.0.0-20261121-附件可用性等5项.apk
+      #   AiGo-arm64-v1.0.0-20261121-附件可用性等5项.apk
+      #   AiGo-x86_64-v1.0.0-20261121-附件可用性等5项.apk
+      #
+      # 版本与日期来自 APK 自身（aapt2 dump badging），不依赖 tag 命名习惯，
+      # 避免「tag 写成 v1.0 但 APK 里是 1.0.0」这类不一致。
+      # 更新摘要取自 annotated tag 的注释首行，由发版人填写；无 tag 时退回提交标题。
       - name: Rename APKs by flavor
         run: |
           mkdir -p dist
-          ver="${GITHUB_REF_NAME:-manual}"   # tag 如 v1.0.0-rc1；手动触发时为 manual-N
+
+          AAPT2="$ANDROID_HOME/build-tools/35.0.0/aapt2"
+          SAMPLE="app/build/outputs/apk/universal/release/app-universal-release.apk"
+          if [[ -f "$SAMPLE" ]]; then
+            VERSION_NAME=$("$AAPT2" dump badging "$SAMPLE" | head -1 | sed -E "s/.*versionName='([^']*)'.*/\1/")
+          else
+            VERSION_NAME="${GITHUB_REF_NAME:-manual}"
+          fi
+          echo "versionName from APK: $VERSION_NAME"
+
+          # 摘要：优先用 tag 注释首行，其次提交标题
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            SUMMARY=$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME" 2>/dev/null | head -1)
+          fi
+          if [[ -z "${SUMMARY:-}" ]]; then
+            SUMMARY=$(git log -1 --format=%s)
+          fi
+          # 文件名安全化：去掉路径分隔符与常见非法字符，截断到 40 字符
+          SUMMARY=$(printf '%s' "$SUMMARY" | tr '/:|*?"<>\\' '--------' | tr -s ' ' | cut -c1-40)
+          SUMMARY=$(printf '%s' "$SUMMARY" | sed -E 's/^[[:space:]-]+|[[:space:]-]+$//g')
+          [[ -z "$SUMMARY" ]] && SUMMARY="update"
+          echo "summary: $SUMMARY"
+
           declare -A abi=( [armsolo]=arm64 [x86solo]=x86_64 [universal]=universal )
           for f in universal armsolo x86solo; do
             src="app/build/outputs/apk/$f/release/app-$f-release.apk"
             if [[ -f "$src" ]]; then
-              out="dist/nox-${abi[$f]}-${ver}.apk"
+              out="dist/AiGo-${abi[$f]}-${VERSION_NAME}-${SUMMARY}.apk"
               cp "$src" "$out"
               echo "packaged $out"
             else
@@ -138,12 +164,12 @@ jobs:
           # 保留 R8 混淆映射（mapping.txt）到 dist/，随 Release 一起发布，供崩溃堆栈反混淆。
           # 三个 flavor 共享同一份字节码与混淆结果，取 universal 一份即可；
           # gzip 压缩后只有几 MB（原始约 90MB），retrace/Android Studio 解析前 gunzip 一下。
-          # 命名沿用 nox-<abi>-<ver> 约定，看到崩溃报告里的版本号即可取对应 mapping。
+          # 命名沿用 AiGo-<abi>-<ver> 约定，看到崩溃报告里的版本号即可取对应 mapping。
           # AGP 8.x 的 mapping 输出目录是 variant 驼峰名（flavor + BuildType），
           # 即 outputs/mapping/universalRelease/，不是 outputs/mapping/universal/release/。
           if [[ -f "app/build/outputs/mapping/universalRelease/mapping.txt" ]]; then
-            gzip -c "app/build/outputs/mapping/universalRelease/mapping.txt" > "dist/nox-universal-${ver}-mapping.txt.gz"
-            echo "packaged nox-universal-${ver}-mapping.txt.gz"
+            gzip -c "app/build/outputs/mapping/universalRelease/mapping.txt" > "dist/AiGo-universal-${VERSION_NAME}-mapping.txt.gz"
+            echo "packaged AiGo-universal-${VERSION_NAME}-mapping.txt.gz"
           else
             echo "::warning::missing mapping.txt（R8 混淆映射）"
           fi
@@ -220,13 +246,13 @@ jobs:
           name: Release ${{ steps.release.outputs.tag }}
           body: ${{ steps.changelog.outputs.body }}
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
-          # 产物名约定 nox-<abi>-<版本>.apk（见 Rename 步骤），故 glob 把 ABI 段放 nox- 紧后、版本段用 * 兜底。
-          # 不要写成 nox-*-<abi>.apk——那会把 abi 误放末段，与 nox-<abi>-<ver> 永远匹配不上（rc3 翻车原因）。
+          # 产物名约定 AiGo-<abi>-<版本>-<摘要>.apk（见 Rename 步骤），故 glob 把 ABI 段放 AiGo- 紧后、版本段用 * 兜底。
+          # 不要写成 AiGo-*-<abi>.apk——那会把 abi 误放末段，与 AiGo-<abi>-<ver>-<摘要> 永远匹配不上（rc3 翻车原因）。
           files: |
-            dist/nox-universal-*.apk
-            dist/nox-arm64-*.apk
-            dist/nox-x86_64-*.apk
+            dist/AiGo-universal-*.apk
+            dist/AiGo-arm64-*.apk
+            dist/AiGo-x86_64-*.apk
             # R8 映射与 APK 同版本发布，反混淆崩溃报告的凭据（gzip 压缩，体积小）
-            dist/nox-universal-*mapping.txt.gz
+            dist/AiGo-universal-*mapping.txt.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

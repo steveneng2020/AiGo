@@ -94,7 +94,8 @@ internal fun AboutSection(
     onSelectChannel: (UpdateChannel) -> Unit,
     onSelectMirror: (String) -> Unit,
     onCheckUpdate: () -> Unit,
-    releaseNotes: List<com.nox.feature.settings.data.remote.VersionUpdate> = emptyList()
+    releaseNotes: List<com.nox.feature.settings.data.remote.VersionUpdate> = emptyList(),
+    releaseNotesLoading: Boolean = false
 ) {
     val context = LocalContext.current
     var showMirrorDialog by remember { mutableStateOf(false) }
@@ -131,12 +132,12 @@ internal fun AboutSection(
         AboutHeaderCard(appName = stringResource(R.string.app_name), appIcon = appIcon)
 
         // 更新内容卡片：对齐截图里的形态——大字版本摘要 + 虚线框滚动的历史日志 + 更多入口。
-        if (releaseNotes.isNotEmpty()) {
-            ReleaseNotesCard(
-                currentVersion = appInfo.name,
-                releases = releaseNotes
-            )
-        }
+        // 没有 Release 时也渲染卡片并给出空态说明，否则用户会以为功能缺失。
+        ReleaseNotesCard(
+            currentVersion = appInfo.name,
+            releases = releaseNotes,
+            loading = releaseNotesLoading
+        )
 
         SettingsGroup {
             // 版本：点击手动检查更新
@@ -207,7 +208,7 @@ internal fun AboutSection(
             SettingsRow(
                 icon = FeatherIcons.Github,
                 title = stringResource(R.string.about_github_repo),
-                onClick = { openUrl(context, GITHUB_REPO_URL) }
+                onClick = { openUrl(context, UPSTREAM_REPO_URL) }
             )
             SettingsDivider()
             // GitHub 仓库：本二改仓库
@@ -568,7 +569,9 @@ private fun loadAppIconBitmap(context: Context): ImageBitmap? {
     }.getOrNull()
 }
 
-private const val GITHUB_REPO_URL = "https://github.com/jieapi/aicode"
+// 「GitHub 仓库（上游）」指直接 fork 源 Nox，不是更上游的 AiCode：
+// 用户从这里能对照 AiGo 与原版 Nox 的差异，AiCode 与本项目已隔了一层。
+private const val UPSTREAM_REPO_URL = "https://github.com/xzyy03/Nox"
 private const val PROJECT_REPO_URL = "https://github.com/steveneng2020/AiGo"
 private const val LICENSE_URL = "https://github.com/steveneng2020/AiGo/blob/main/LICENSE"
 private const val ICON_PX_DP = 48
@@ -582,7 +585,8 @@ private const val ICON_PX_DP = 48
 @Composable
 private fun ReleaseNotesCard(
     currentVersion: String,
-    releases: List<com.nox.feature.settings.data.remote.VersionUpdate>
+    releases: List<com.nox.feature.settings.data.remote.VersionUpdate>,
+    loading: Boolean = false
 ) {
     var expanded by remember { mutableStateOf(false) }
     val shown = if (expanded) releases else releases.take(PREVIEW_COUNT)
@@ -639,8 +643,19 @@ private fun ReleaseNotesCard(
                     )
                     .verticalScroll(rememberScrollState())
             ) {
-                shown.forEach { release ->
-                    ReleaseNoteItem(release)
+                if (shown.isEmpty()) {
+                    Text(
+                        text = stringResource(
+                            if (loading) R.string.about_release_notes_loading
+                            else R.string.about_release_notes_empty
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.semanticColors.subtleText
+                    )
+                } else {
+                    shown.forEach { release ->
+                        ReleaseNoteItem(release)
+                    }
                 }
             }
         }
