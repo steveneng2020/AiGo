@@ -13,6 +13,21 @@ Modification notice (GPL-3.0 section 5a):
     added manually). No upstream business logic was intentionally changed.
     All modifications are released under GPL-3.0 as well.
 
+AiGo
+Copyright (C) 2026 AiGo contributors
+
+This repository is a modified version of Nox:
+    Upstream: https://github.com/xzyy03/Nox
+    Upstream license: GNU General Public License version 3.0 (GPL-3.0)
+
+Modification notice (GPL-3.0 section 5a):
+    Changes made from 2026-11-20 include rebranding to AiGo (applicationId
+    com.aigo), a new application name and icon set, and pointing the update
+    check and about links at this repository. Java/Kotlin source package
+    names remain com.nox to keep upstream merges tractable. No upstream
+    business logic was intentionally changed. All modifications are released
+    under GPL-3.0 as well.
+
 AiCode
 Copyright (C) 2026 AiCode contributors
 

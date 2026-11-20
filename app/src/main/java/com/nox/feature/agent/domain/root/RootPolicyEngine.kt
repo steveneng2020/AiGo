@@ -48,7 +48,7 @@ class RootPolicyEngine @Inject constructor() {
         /** root 通道的工作区：这里的普通写入直接放行。 */
         val WORKSPACE_PREFIXES = listOf(
             "/data/local/tmp",
-            "/storage/emulated/0/Android/data/com.nox"
+            "/storage/emulated/0/Android/data/com.aigo"
         )
     }
 

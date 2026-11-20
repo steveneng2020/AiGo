@@ -547,6 +547,6 @@ private fun loadAppIconBitmap(context: Context): ImageBitmap? {
 }
 
 private const val GITHUB_REPO_URL = "https://github.com/jieapi/aicode"
-private const val PROJECT_REPO_URL = "https://github.com/xzyy03/Nox"
-private const val LICENSE_URL = "https://github.com/xzyy03/Nox/blob/main/LICENSE"
+private const val PROJECT_REPO_URL = "https://github.com/steveneng2020/AiGo"
+private const val LICENSE_URL = "https://github.com/steveneng2020/AiGo/blob/main/LICENSE"
 private const val ICON_PX_DP = 48

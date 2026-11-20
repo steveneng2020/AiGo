@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Nox</string>
+    <string name="app_name">AiGo</string>
     <string name="common_tool_missing_argument">缺少参数：%1$s。</string>
     <string name="plan_mode_invalid_action">无效的 action：%1$s。支持 enter 或 exit。</string>
     <string name="plan_mode_already_active">当前已处于 PLAN（计划）模式。</string>
@@ -481,7 +481,7 @@
     <string name="credential_auto_inject_title">自动注入凭证</string>
     <string name="credential_auto_inject_hint">把应用中保存的 git 凭据同步到远程服务器，仅对当前工作区根目录下的仓库生效，不影响你在服务器上手动使用 git</string>
     <string name="credential_auto_inject_prompt_title">自动注入 git 凭证？</string>
-    <string name="credential_auto_inject_prompt_body">是否让 Nox 把应用中保存的 git 凭据同步到该远程服务器？仅对当前工作区根目录下的仓库生效，不会改动服务器的全局 git 配置。</string>
+    <string name="credential_auto_inject_prompt_body">是否让 AiGo 把应用中保存的 git 凭据同步到该远程服务器？仅对当前工作区根目录下的仓库生效，不会改动服务器的全局 git 配置。</string>
     <string name="credential_auto_inject_enable">开启</string>
     <string name="common_rename">重命名</string>
     <string name="common_hide">隐藏</string>
@@ -629,7 +629,7 @@
     <string name="about_update_verify_not_newer">安装包版本不高于当前版本</string>
     <string name="about_update_install_failed">没有可用的安装程序</string>
 
-    <string name="agreement_title">欢迎使用 Nox</string>
+    <string name="agreement_title">欢迎使用 AiGo</string>
     <string name="agreement_terms">用户协议</string>
     <string name="agreement_privacy">隐私政策</string>
     <string name="agreement_notice_prefix">使用前，请阅读并同意</string>
@@ -639,8 +639,8 @@
     <string name="agreement_notice_suffix">，了解使用规则与数据处理方式。\n\n点击“同意并继续”表示你已阅读并同意上述两份文件。</string>
     <string name="agreement_accept">同意并继续</string>
     <string name="agreement_decline">不同意</string>
-    <string name="agreement_terms_url">https://xzyy03.github.io/Nox/terms.html</string>
-    <string name="agreement_privacy_url">https://xzyy03.github.io/Nox/privacy.html</string>
+    <string name="agreement_terms_url">https://github.com/steveneng2020/AiGo/blob/main/docs-site/docs/terms.md</string>
+    <string name="agreement_privacy_url">https://github.com/steveneng2020/AiGo/blob/main/docs-site/docs/privacy.md</string>
 
     <!-- Ask User Question -->
     <string name="ask_confirm_title">AI 需要你的确认</string>
@@ -828,7 +828,7 @@
     <string name="chat_export_session_failed">导出失败</string>
 
     <!-- Chat Input Bar -->
-    <string name="chat_input_placeholder">交给 Nox 去完成</string>
+    <string name="chat_input_placeholder">交给 AiGo 去完成</string>
     <string name="chat_queue_hint">AI 正在处理中，回车发送将自动排队</string>
     <string name="chat_input_expand">展开输入框</string>
     <string name="chat_mention_loading">正在加载文件列表…</string>
@@ -843,8 +843,8 @@
     <string name="chat_queue_drag">拖拽排序</string>
     <string name="chat_upload_file">上传文件</string>
     <string name="chat_upload_app">上传应用</string>
-    <string name="phone_control_service_label">Nox 手机控制</string>
-    <string name="phone_control_service_description">允许 Nox 读取当前界面并点击、输入、滑动，用于自动化操作手机。</string>
+    <string name="phone_control_service_label">AiGo 手机控制</string>
+    <string name="phone_control_service_description">允许 AiGo 读取当前界面并点击、输入、滑动，用于自动化操作手机。</string>
     <string name="settings_phone_control_title">手机控制</string>
     <string name="settings_plugins">插件</string>
     <string name="plugins_badge">插件</string>
@@ -1090,7 +1090,7 @@
     <string name="credential_device_waiting_desc">完成授权后将自动绑定并保存凭据</string>
     <string name="credential_device_success_title">授权成功</string>
     <string name="credential_device_success">已成功关联账号 %1$s 并保存凭据</string>
-    <string name="credential_device_install_required">已登录为 %1$s。还需把 Nox 安装到你的仓库，之后才能推送/拉取代码。</string>
+    <string name="credential_device_install_required">已登录为 %1$s。还需把 AiGo 安装到你的仓库，之后才能推送/拉取代码。</string>
     <string name="credential_device_install_now">去安装</string>
     <string name="credential_device_install_later">稍后</string>
     <string name="credential_device_failed_title">授权未能完成</string>
@@ -1919,7 +1919,7 @@
     <string name="crash_restart">重启应用</string>
     <string name="crash_exit">退出应用</string>
     <string name="crash_log_hint">完整日志文件位置：%1$s</string>
-    <string name="crash_report_title">Nox 崩溃报告</string>
+    <string name="crash_report_title">AiGo 崩溃报告</string>
     <string name="crash_report_time">时间：%1$s</string>
     <string name="crash_report_version">版本：%1$s</string>
     <string name="crash_report_device">设备：%1$s</string>
@@ -2138,7 +2138,7 @@
     <string name="plugins_empty_hint">点右上角「＋」导入插件包（.zip）。插件可以为 AI 提供额外的技能和子代理。</string>
     <string name="plugins_empty_title">还没有安装插件</string>
     <string name="plugins_enable">启用插件</string>
-    <string name="plugins_error_api_incompatible">插件要求的插件接口版本（%1$s）与当前 Nox 不兼容。</string>
+    <string name="plugins_error_api_incompatible">插件要求的插件接口版本（%1$s）与当前 AiGo 不兼容。</string>
     <string name="plugins_error_archive_too_large">压缩包过大。</string>
     <string name="plugins_error_archive_too_many">压缩包内的文件过多。</string>
     <string name="plugins_error_archive_unreadable">无法读取这个文件，它不是有效的 ZIP 压缩包。</string>
@@ -2245,8 +2245,8 @@
     <string name="plugins_store_mirror_label">镜像加速地址</string>
     <string name="plugins_store_refresh_done">索引刷新完成</string>
     <string name="plugins_store_refresh_done_failed">索引刷新完成，失败 %1$d 个</string>
-    <string name="plugins_store_requires_min_version">要求 Nox &gt;= %1$s</string>
-    <string name="plugins_store_min_version_notice">插件声明要求 Nox &gt;= %1$s，仍可尝试安装</string>
+    <string name="plugins_store_requires_min_version">要求 AiGo &gt;= %1$s</string>
+    <string name="plugins_store_min_version_notice">插件声明要求 AiGo &gt;= %1$s，仍可尝试安装</string>
     <string name="plugins_store_retry">重试</string>
     <string name="plugins_store_sources_hint">一行一个地址；官方索引始终保留并排在最前。
         第三方源由你自行添加和担保，出问题需自行承担，请确认来源安全。</string>
