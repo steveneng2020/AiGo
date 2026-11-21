@@ -201,7 +201,7 @@ jobs:
 
       # 只编这一个 flavor。三个 job 并行，各自跑自己的 KSP + Kotlin + R8。
       - name: Build ${{ matrix.flavor }} Release APK
-        run: ./gradlew :${{ matrix.gradle }} --stacktrace
+        run: ./gradlew :app:${{ matrix.gradle }} --stacktrace
 
       # 重命名：AiGo-<abi>-<versionName>-<更新摘要>.apk
       # 版本取自 APK 自身（aapt2 dump badging），不依赖 tag 命名习惯。
