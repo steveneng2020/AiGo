@@ -392,11 +392,21 @@ jobs:
           else
             prev_tag=$(git tag --sort=-creatordate | grep -vE "^${cur_tag}$" | head -1 || true)
           fi
+          # 取提交标题并按「对用户的重要程度」排序：功能在前、CI/构建在后。
+          # 排序逻辑与 App 内置 changelog 共用 scripts/sort-changelog.py，
+          # 避免发布页与 App 内显示顺序不一致。
           if [[ -z "$prev_tag" ]]; then
-            log=$(git log --oneline --no-decorate -30)
+            subjects=$(git log --no-merges --format=%s -60)
+            shas=$(git log --no-merges --format=%h -60)
           else
-            log=$(git log --oneline --no-decorate "${prev_tag}..HEAD")
+            subjects=$(git log --no-merges --format=%s "${prev_tag}..HEAD")
+            shas=$(git log --no-merges --format=%h "${prev_tag}..HEAD")
           fi
+          # 用 `sha<TAB>subject` 形式排序，保证短哈希跟着标题一起走
+          log=$(paste <(printf '%s\n' "$subjects") <(printf '%s\n' "$shas") \
+                | awk -F'\t' '{print $2"\t"$1}' \
+                | python3 scripts/sort-changelog.py --with-sha \
+                | awk -F'\t' '{print $2" ("$1")"}')
           delimiter="EOF_$(date +%s)"
           echo "body<<${delimiter}" >> "$GITHUB_OUTPUT"
           # 中文摘要放在正文最前面：GitHub 的资产名不支持中文，正文是唯一能完整呈现的地方
