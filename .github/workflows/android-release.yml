@@ -256,11 +256,23 @@ jobs:
           cp "$SRC" "$out"
           echo "packaged $out"
 
+          # artifact 上传/下载之间中文文件名会被替换成 '-'（实测 upload-artifact@v4
+          # 往返后 "发布前校验-tag-可用性" 变成 "-.-tag-.-.-versionName-"）。
+          # 因此 artifact 内统一用 ASCII 名，真实文件名记在 MANIFEST 里，
+          # release 阶段按映射还原。
+          ascii="AiGo-${{ matrix.abi }}-${VERSION_NAME}.apk"
+          cp "$SRC" "dist/$ascii"
+          printf '%s\t%s\n' "$ascii" "$(basename "$out")" > "dist/MANIFEST.txt"
+          rm -f "$out"
+          echo "artifact file: $ascii"
+          echo "real name: $(basename "$out")"
+
           # universal 单独产一份 R8 映射（三个 flavor 字节码相同，取一份即可）
           if [[ "${{ matrix.flavor }}" == "universal" ]]; then
             MAPPING="app/build/outputs/mapping/universalRelease/mapping.txt"
             if [[ -f "$MAPPING" ]]; then
               gzip -c "$MAPPING" > "dist/AiGo-universal-${VERSION_NAME}-mapping.txt.gz"
+              echo "AiGo-universal-${VERSION_NAME}-mapping.txt.gz" >> "dist/MANIFEST.txt"
               echo "packaged mapping"
             fi
           fi
@@ -299,9 +311,17 @@ jobs:
       - name: Collect assets
         run: |
           mkdir -p dist
-          # 注意 -o 的优先级：必须写成 \( ... -o ... \)，否则只有第一个条件生效，
-          # mapping 文件会被静默丢掉（本地已复现）。
-          find dist-tmp -type f \( -name '*.apk' -o -name '*mapping*.gz' \) -exec cp {} dist/ \;
+          # artifact 内是 ASCII 名 + MANIFEST.txt（ASCII->真实名），逐个还原。
+          # 中文名直接走 artifact 往返会被替换成 '-'，见 build job 里的说明。
+          while IFS=$'\t' read -r ascii real; do
+            [[ -z "$ascii" || -z "$real" ]] && continue
+            src=$(find dist-tmp -type f -name "$ascii" | head -1)
+            if [[ -n "$src" ]]; then
+              cp "$src" "dist/$real"
+            else
+              echo "::warning::未找到 $ascii"
+            fi
+          done < <(find dist-tmp -name 'MANIFEST.txt' -exec cat {} \; | sort -u)
           ls -lh dist/
           # 至少要有 1 个 APK；数量应等于本次构建的 flavor 数
           # （flavors=all 时 3 个，arm64/x86_64 时 1 个）。
