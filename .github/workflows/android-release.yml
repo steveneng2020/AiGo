@@ -42,6 +42,15 @@ on:
         required: false
         type: boolean
         default: false
+      flavors:
+        description: '要构建的架构：all=三包全出 / arm64=只出真机包 / x86_64=只出模拟器包'
+        required: false
+        type: choice
+        options:
+          - all
+          - arm64
+          - x86_64
+        default: all
 
 concurrency:
   group: release-${{ github.ref }}-${{ inputs.release_tag }}
@@ -124,28 +133,44 @@ jobs:
         run: ./gradlew :app:testUniversalDebugUnitTest --stacktrace
 
   # ── 2. 构建：三个 flavor 并行，各自在独立 runner 上跑 ──
+  # 按输入决定要构建哪些 flavor。
+  #   all    -> universal + arm64 + x86_64（对外发布，兼容所有设备）
+  #   arm64  -> 只出 armsolo（真机自用，省一个并发 job 与两份产物）
+  #   x86_64 -> 只出 x86solo（模拟器调试）
+  # 三个 flavor 并行构建，墙钟时长取决于单个最慢者，所以「只出 arm64」
+  # 省的不是墙钟时间而是并发额度与产物数量。
+  prepare:
+    name: Prepare matrix
+    needs: verify
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - name: Build matrix
+        id: m
+        run: |
+          sel="${{ inputs.flavors }}"
+          [[ -z "$sel" ]] && sel="all"
+          universal='{"flavor":"universal","gradle":"assembleUniversalRelease","apk":"app-universal-release.apk","abi":"universal"}'
+          armsolo='{"flavor":"armsolo","gradle":"assembleArmsoloRelease","apk":"app-armsolo-release.apk","abi":"arm64"}'
+          x86solo='{"flavor":"x86solo","gradle":"assembleX86soloRelease","apk":"app-x86solo-release.apk","abi":"x86_64"}'
+          case "$sel" in
+            arm64)  list="[$armsolo]" ;;
+            x86_64) list="[$x86solo]" ;;
+            *)      list="[$universal,$armsolo,$x86solo]" ;;
+          esac
+          echo "matrix={\"include\":$list}" >> "$GITHUB_OUTPUT"
+          echo "flavors: $sel -> $list"
+
   build:
     name: Build ${{ matrix.flavor }}
-    needs: verify
+    needs: prepare
     runs-on: ubuntu-latest
     permissions:
       contents: read
     strategy:
       fail-fast: true
-      matrix:
-        include:
-          - flavor: universal
-            gradle: assembleUniversalRelease
-            apk: app-universal-release.apk
-            abi: universal
-          - flavor: armsolo
-            gradle: assembleArmsoloRelease
-            apk: app-armsolo-release.apk
-            abi: arm64
-          - flavor: x86solo
-            gradle: assembleX86soloRelease
-            apk: app-x86solo-release.apk
-            abi: x86_64
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
 
     steps:
       - name: Checkout
@@ -278,12 +303,21 @@ jobs:
           # mapping 文件会被静默丢掉（本地已复现）。
           find dist-tmp -type f \( -name '*.apk' -o -name '*mapping*.gz' \) -exec cp {} dist/ \;
           ls -lh dist/
-          # 三个 APK 缺一不可，少了说明某个 flavor 构建失败或产物名不符预期
+          # 至少要有 1 个 APK；数量应等于本次构建的 flavor 数
+          # （flavors=all 时 3 个，arm64/x86_64 时 1 个）。
           count=$(ls dist/*.apk 2>/dev/null | wc -l)
-          if [[ "$count" -ne 3 ]]; then
-            echo "::error::期望 3 个 APK，实际 $count 个"
+          sel="${{ inputs.flavors }}"
+          [[ -z "$sel" ]] && sel="all"
+          if [[ "$sel" == "all" ]]; then
+            expect=3
+          else
+            expect=1
+          fi
+          if [[ "$count" -ne "$expect" ]]; then
+            echo "::error::期望 $expect 个 APK（flavors=$sel），实际 $count 个"
             exit 1
           fi
+          echo "✓ 收集到 $count 个 APK" 
 
       - name: Resolve release tag
         id: tag
