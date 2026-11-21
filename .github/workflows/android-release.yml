@@ -143,19 +143,9 @@ jobs:
           if [[ -z "${SUMMARY:-}" ]]; then
             SUMMARY=$(git log -1 --format=%s)
           fi
-          # 文件名安全化：
-          #   1. 去掉 conventional commit 前缀（feat: / fix(x): 等）
-          #   2. 非法字符换 '-'，压缩空白
-          #   3. 按「字符」截断而非字节——cut -c 对中文会切断多字节序列产生乱码
-          SUMMARY=$(printf '%s' "$SUMMARY" | python3 -c '
-import re, sys
-s = sys.stdin.read().strip()
-s = re.sub(r"^[a-z]+(\([^)]*\))?:\s*", "", s)          # 去前缀
-s = re.sub(r"[\\/:|*?\"<>，,。.、]", "-", s)              # 非法字符
-s = re.sub(r"\s+", "-", s)                                # 空白换连字符
-s = re.sub(r"-+", "-", s).strip("-")                       # 合并连续连字符
-print(s[:32])                                             # 按字符截断
-' 2>/dev/null)
+          # 文件名安全化：去 conventional commit 前缀、非法字符换 '-'、按字符截断。
+          # 逻辑放在独立脚本里：内联 python -c 的多层引号在 YAML run 块中极易被误解析。
+          SUMMARY=$(printf '%s' "$SUMMARY" | python3 scripts/apk-name-summary.py)
           [[ -z "$SUMMARY" ]] && SUMMARY="update"
           echo "summary: $SUMMARY"
 
