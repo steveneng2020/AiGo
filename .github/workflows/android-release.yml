@@ -311,7 +311,10 @@ jobs:
           # 所以真实文件名先 URL 编码成纯 ASCII 再落盘，读取端解码还原。
           real_encoded=$(printf '%s' "$(basename "$out")" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))')
           printf '%s\t%s\n' "$ascii" "$real_encoded" > "dist/MANIFEST.txt"
-          rm -f "$out"
+          # 摘要为空时 out 与 dist/$ascii 是同一个路径，此时不能 rm，
+          # 否则会把唯一那份 APK 删掉，artifact 里只剩 MANIFEST.txt（165 字节），
+          # 下游 Collect assets 报「期望 1 个 APK，实际 0 个」。
+          [[ "$out" != "dist/$ascii" ]] && rm -f "$out" || true
           echo "artifact file: $ascii"
           echo "real name: $(basename "$out")"
 
