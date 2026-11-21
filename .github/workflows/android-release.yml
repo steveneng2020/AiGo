@@ -151,8 +151,9 @@ jobs:
 import re, sys
 s = sys.stdin.read().strip()
 s = re.sub(r"^[a-z]+(\([^)]*\))?:\s*", "", s)          # 去前缀
-s = re.sub(r"[\\/:|*?\"<>]", "-", s)                    # 非法字符
-s = re.sub(r"\s+", " ", s).strip(" -")                    # 压缩空白
+s = re.sub(r"[\\/:|*?\"<>，,。.、]", "-", s)              # 非法字符
+s = re.sub(r"\s+", "-", s)                                # 空白换连字符
+s = re.sub(r"-+", "-", s).strip("-")                       # 合并连续连字符
 print(s[:32])                                             # 按字符截断
 ' 2>/dev/null)
           [[ -z "$SUMMARY" ]] && SUMMARY="update"
