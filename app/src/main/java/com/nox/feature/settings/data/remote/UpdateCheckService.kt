@@ -208,18 +208,29 @@ internal fun preferredAbiToken(supportedAbis: List<String>): String? =
     }
 
 /**
+ * Release 资产名里可能出现的品牌前缀。
+ *
+ * 历史原因保留两种：上游 CI 产 `nox-*`，本仓库 CI 产 `AiGo-*`（含构建日期与更新摘要）。
+ * 只认一个前缀会让另一边的包永远匹配不到——实测改名后一度导致应用内更新退化为跳浏览器。
+ */
+private val UPDATE_ASSET_PREFIXES = listOf("AiGo", "nox")
+
+/**
  * 从 Release 资产里挑出更新包。
  *
- * 资产命名由 CI 决定（`nox-<架构>-<版本>.apk`，见 `.github/workflows/android-release.yml`）。
+ * 资产命名由 CI 决定（`AiGo-<架构>-<版本>-<摘要>.apk`，见 `.github/workflows/android-release.yml`）。
  * 同一 Release 里还混着 `mapping.txt.gz`，所以只认 `.apk` 结尾；精确名没命中时依次退让为
  * 「含架构段」→ `universal`，都不命中返回 null（该版本没有可用安装包，只能去浏览器下载）。
  * 一律按 API 返回的资产名匹配，不自己拼下载 URL——CI 曾因段序拼错导致资产匹配不上。
  */
 internal fun selectUpdateAsset(assets: List<UpdateAsset>, rawTag: String, abiToken: String?): UpdateAsset? {
     val apks = assets.filter { it.name.endsWith(".apk", ignoreCase = true) }
-    if (abiToken != null) {
-        apks.firstOrNull { it.name.equals("nox-$abiToken-$rawTag.apk", ignoreCase = true) }?.let { return it }
-        apks.firstOrNull { it.name.startsWith("nox-$abiToken-", ignoreCase = true) }?.let { return it }
+    for (prefix in UPDATE_ASSET_PREFIXES) {
+        if (abiToken != null) {
+            apks.firstOrNull { it.name.equals("$prefix-$abiToken-$rawTag.apk", ignoreCase = true) }?.let { return it }
+            apks.firstOrNull { it.name.startsWith("$prefix-$abiToken-", ignoreCase = true) }?.let { return it }
+        }
+        apks.firstOrNull { it.name.startsWith("$prefix-universal-", ignoreCase = true) }?.let { return it }
     }
-    return apks.firstOrNull { it.name.startsWith("nox-universal-", ignoreCase = true) }
+    return null
 }

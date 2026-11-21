@@ -357,7 +357,7 @@ private fun TerminalPreviewCard(settings: TerminalSettings) {
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "root@nox",
+                    text = "root@aigo",
                     color = greenColor,
                     fontFamily = fontFamily,
                     fontSize = settings.fontSizeSp.sp,

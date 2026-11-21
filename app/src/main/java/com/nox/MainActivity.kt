@@ -731,7 +731,7 @@ fun AppNavigation(
             onExport = { session ->
                 pendingExportSessionId = session.id
                 val safeTitle = session.title.replace(Regex("[^\\w\\u4e00-\\u9fa5\\-]"), "_")
-                sessionExportLauncher.launch("nox-session-$safeTitle-${System.currentTimeMillis()}.tar.gz")
+                sessionExportLauncher.launch("aigo-session-$safeTitle-${System.currentTimeMillis()}.tar.gz")
             },
             onNavigateToBrowser = {
                 openWorkbench(WorkbenchPaneKind.BROWSER)

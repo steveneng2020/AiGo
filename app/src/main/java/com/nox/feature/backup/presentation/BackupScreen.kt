@@ -251,7 +251,7 @@ internal fun BackupScreen(
                 pendingExportOptions = exportOptions
                 password = ""
                 pendingAction = null
-                exportLauncher.launch("nox-backup-${System.currentTimeMillis()}.tar.gz")
+                exportLauncher.launch("aigo-backup-${System.currentTimeMillis()}.tar.gz")
             },
             onDismiss = {
                 password = ""

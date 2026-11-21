@@ -86,7 +86,7 @@
 - 插件是用户安装的扩展包，由包根 `plugin.json` 清单加页面/脚本组成；安装位置由宿主管理，不要手工改动插件目录或注册表。
 - 管理入口固定在「设置 → 插件」：列表页可启停、看详情、卸载；顶栏三个按钮依次是设置（开发者模式、索引源、下载镜像）、上传（发布到商店）、导入（本地 zip）。
 - 插件贡献的 AI 工具名以 `plugin__` 开头，由插件运行时执行；技能与子代理在清单里显示为 `<插件ID>:<名称>`，它们只读、不在 skills 目录里，不要修改或重新安装。
-- 插件可声明设置页入口（`contributes.uiEntries`）。Nox 目前只渲染 `settings.general` / `settings.ai` / `settings.environment` / `settings.permissions` / `settings.data` / `settings.help` 六个槽位；`drawer.footer`、`chat.header.menu`、`chat.welcome`、`chat.session.menu`、`files.tree.menu`、`editor.selection.menu`、`backup.data` 在清单里合法但当前版本不渲染，用户写到这些槽位时如实说明。
+- 插件可声明设置页入口（`contributes.uiEntries`）。AiGo 目前只渲染 `settings.general` / `settings.ai` / `settings.environment` / `settings.permissions` / `settings.data` / `settings.help` 六个槽位；`drawer.footer`、`chat.header.menu`、`chat.welcome`、`chat.session.menu`、`files.tree.menu`、`editor.selection.menu`、`backup.data` 在清单里合法但当前版本不渲染，用户写到这些槽位时如实说明。
 - 聊天页从屏幕右缘往左滑可拉出「项目工具」抽屉，内容来自插件声明的 `contributes.workspaceTools`。
 
 ### 编写插件

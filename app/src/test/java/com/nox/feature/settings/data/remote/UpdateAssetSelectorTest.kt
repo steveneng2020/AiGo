@@ -58,6 +58,39 @@ class UpdateAssetSelectorTest {
     }
 
     @Test
+    fun selectUpdateAsset_matchesAiGoNamingWithDateAndSummary() {
+        // 本仓库 CI 的产物命名：AiGo-<架构>-<versionName>-<摘要>.apk，
+        // versionName 里带构建日期与 +hash，摘要含中文。改名后一度因只认 nox- 前缀
+        // 导致应用内更新匹配不到任何包，退化成跳浏览器下载。
+        val assets = listOf(
+            asset("AiGo-arm64-1.0.0+20261121-附件可用性等5项.apk"),
+            asset("AiGo-universal-1.0.0+20261121-附件可用性等5项.apk"),
+            asset("AiGo-universal-1.0.0+20261121-mapping.txt.gz")
+        )
+        assertEquals(
+            "AiGo-arm64-1.0.0+20261121-附件可用性等5项.apk",
+            selectUpdateAsset(assets, "v1.0.0", "arm64")?.name
+        )
+        assertEquals(
+            "AiGo-universal-1.0.0+20261121-附件可用性等5项.apk",
+            selectUpdateAsset(assets, "v1.0.0", null)?.name
+        )
+    }
+
+    @Test
+    fun selectUpdateAsset_prefersAiGoOverLegacyNoxPrefix() {
+        // 同一 Release 里如果同时存在两种前缀，优先本仓库的 AiGo-*。
+        val assets = listOf(
+            asset("nox-arm64-v1.0.0.apk"),
+            asset("AiGo-arm64-1.0.0+20261121-摘要.apk")
+        )
+        assertEquals(
+            "AiGo-arm64-1.0.0+20261121-摘要.apk",
+            selectUpdateAsset(assets, "v1.0.0", "arm64")?.name
+        )
+    }
+
+    @Test
     fun selectUpdateAsset_fallsBackToUniversal() {
         val assets = listOf(
             asset("nox-arm64-v1.12.0-rc4.apk"),

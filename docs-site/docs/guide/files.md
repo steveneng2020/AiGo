@@ -133,4 +133,4 @@ AI 工具或终端可能同时在改同一个文件，而保存会直接用编�
 
 **交由 AI 处理**：AI 运行在容器里，你可以说“把 `~/.nox/mcp.json` 打印出来查看”或“在 `~/.nox/skills/` 下写一个新技能”。
 
-**Root 设备**：直接进 `/data/data/com.aigo/files/`（部分系统等价路径是 `/data/user/0/com.aigo/files/`）。其中 `projects/` 是工作区根，`nox/` 对应 `~/.nox`，`rootfs/` 是容器系统。注意 debug 构建的包名是 `com.aigo.debug`，两者私有目录完全隔离。
+**Root 设备**：直接进 `/data/data/com.aigo/files/`（部分系统等价路径是 `/data/user/0/com.aigo/files/`）。其中 `projects/` 是工作区根，`nox/` 对应 `~/.nox`，`rootfs/` 是容器系统。debug / beta 构建与正式版共用同一包名，覆盖安装时私有目录与容器 rootfs 都会保留。

@@ -1939,7 +1939,7 @@ class SettingsViewModel @Inject constructor(
             val result = apkDownloader.download(
                 url = asset.url,
                 mirror = updateCheckSettingsRepository.downloadMirror,
-                fileName = "nox-${target.latestTag}.apk",
+                fileName = "aigo-${target.latestTag}.apk",
                 expectedSize = asset.size,
                 expectedSha256 = asset.sha256
             ) { downloaded, total ->
