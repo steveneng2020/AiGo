@@ -139,9 +139,10 @@ jobs:
   #   x86_64 -> 只出 x86solo（模拟器调试）
   # 三个 flavor 并行构建，墙钟时长取决于单个最慢者，所以「只出 arm64」
   # 省的不是墙钟时间而是并发额度与产物数量。
+  # prepare 与 verify 并行：它只做 tag 解析与 matrix 生成（3 秒），
+  # 不需要等单测跑完。之前 needs: verify 让构建白等 4 分钟。
   prepare:
     name: Prepare matrix
-    needs: verify
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.m.outputs.matrix }}
@@ -300,9 +301,12 @@ jobs:
           retention-days: 7
 
   # ── 3. 汇总发布 ──
+  # release 等 verify 与 build 都成功才发版：
+  # 单测失败时构建产物会被丢弃（不发布），但构建已经并行跑完，
+  # 换来的是正常路径上省掉 4 分钟的串行等待。
   release:
     name: Release
-    needs: build
+    needs: [verify, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
