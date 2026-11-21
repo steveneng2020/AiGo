@@ -232,6 +232,7 @@ jobs:
       # 版本取自 APK 自身（aapt2 dump badging），不依赖 tag 命名习惯。
       # 摘要取 tag 注释首行，其次提交标题，用独立脚本安全化（避免内联 python 破坏 YAML）。
       - name: Rename APK
+        id: rename
         run: |
           set -e
           mkdir -p dist
@@ -248,9 +249,17 @@ jobs:
           if [[ -z "${SUMMARY:-}" ]]; then
             SUMMARY=$(git log -1 --format=%s)
           fi
+          SUMMARY_RAW="$SUMMARY"
           SUMMARY=$(printf '%s' "$SUMMARY" | python3 scripts/apk-name-summary.py)
-          [[ -z "$SUMMARY" ]] && SUMMARY="update"
+          # 纯中文标题经 ASCII 化后为空，用短 commit 兜底，避免文件名缺段
+          [[ -z "$SUMMARY" ]] && SUMMARY="build-$(git rev-parse --short HEAD)"
           echo "summary: $SUMMARY"
+          # 中文原始摘要写进 job summary，release 阶段拼进正文
+          {
+            echo "SUMMARY_RAW<<EOF_SUM"
+            echo "$SUMMARY_RAW"
+            echo "EOF_SUM"
+          } >> "$GITHUB_OUTPUT"
 
           out="dist/AiGo-${{ matrix.abi }}-${VERSION_NAME}-${SUMMARY}.apk"
           cp "$SRC" "$out"
@@ -390,6 +399,9 @@ jobs:
           fi
           delimiter="EOF_$(date +%s)"
           echo "body<<${delimiter}" >> "$GITHUB_OUTPUT"
+          # 中文摘要放在正文最前面：GitHub 的资产名不支持中文，正文是唯一能完整呈现的地方
+          echo "**本版要点**：$(git log -1 --format=%s)" >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
           echo "## What's Changed" >> "$GITHUB_OUTPUT"
           echo "" >> "$GITHUB_OUTPUT"
           if [[ -z "$log" ]]; then

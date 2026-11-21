@@ -24,18 +24,22 @@ import sys
 
 
 def to_filename_fragment(raw: str, limit: int = 32) -> str:
+    """生成可安全用于 GitHub Release 资产的名称片段。
+
+    注意：GitHub 的 Release Assets API 会把中文等非 ASCII 字符改写成 '-'，
+    无论客户端传什么名字（实测 softprops/action-gh-release 上传时日志显示中文，
+    但 API 落库后变成 '-.-'）。因此这里只保留 ASCII 单词，
+    中文摘要改由 Release 正文承载（见 workflow 的 Generate changelog 步骤）。
+    """
     s = raw.strip()
     if not s:
         return ""
     # conventional commit 前缀：type 或 type(scope) 后跟冒号
     s = re.sub(r"^[a-z]+(\([^)]*\))?:\s*", "", s)
-    # 非法字符与中文标点
-    s = re.sub(r'[\\/:|*?"<>，,。.、；;：！!？?（）()【】\[\]]', "-", s)
-    # 空白与连字符归一
-    s = re.sub(r"\s+", "-", s)
+    # 只保留 ASCII 字母数字与分隔符；中文/标点全部视为分隔
+    s = re.sub(r"[^A-Za-z0-9]+", "-", s)
     s = re.sub(r"-+", "-", s).strip("-")
-    # 按字符截断（Python 的 str 切片以字符为单位，不会切断中文）
-    return s[:limit]
+    return s[:limit].strip("-")
 
 
 def main() -> int:
