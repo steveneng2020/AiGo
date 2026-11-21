@@ -81,7 +81,14 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          cache-read-only: false
+          # 发版只在 tag ref 上跑，而 GitHub 缓存按 ref 隔离：
+          # tag 作用域写入的条目除同 tag 重跑外永远无人读取，
+          # post-job 保存（30-60 秒）纯属浪费，还会挤掉 main 分支的有用条目。
+          # 缓存由 ci.yml（push main）播种，这里只读。
+          cache-read-only: true
+          # 本地 build cache 跨 run 命中率约 0（发版每次都是新 commit），
+          # 留着只增加恢复/保存体积。
+          gradle-home-cache-excludes: caches/build-cache-1
 
       - name: Resolve release tag
         id: tag
@@ -128,50 +135,53 @@ jobs:
       - name: Check migration versions
         run: python3 scripts/check_migrations.py
 
+      # Robolectric 在测试运行时自己下载 android-all-instrumented jar（约 106MB），
+      # 落在 ~/.m2 —— 不在 setup-gradle 的缓存范围内（它只缓存 Gradle User Home），
+      # 所以每次 CI 都要现场下载，是单测耗时里一段不稳定且不可见的开销。
+      # 缓存它可省 10-40 秒，并显著降低 Robolectric 抖动。
+      - name: Cache Robolectric jars
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ runner.os }}-${{ hashFiles('**/libs.versions.toml', '**/*.gradle.kts') }}
+          restore-keys: |
+            robolectric-${{ runner.os }}-
+
       # 单测只跑 universal debug：单测逻辑与 flavor 无关，跑多个变体是重复编译。
       - name: Run unit tests
         run: ./gradlew :app:testUniversalDebugUnitTest --stacktrace
 
-  # ── 2. 构建：三个 flavor 并行，各自在独立 runner 上跑 ──
-  # 按输入决定要构建哪些 flavor。
-  #   all    -> universal + arm64 + x86_64（对外发布，兼容所有设备）
-  #   arm64  -> 只出 armsolo（真机自用，省一个并发 job 与两份产物）
-  #   x86_64 -> 只出 x86solo（模拟器调试）
-  # 三个 flavor 并行构建，墙钟时长取决于单个最慢者，所以「只出 arm64」
-  # 省的不是墙钟时间而是并发额度与产物数量。
-  # prepare 与 verify 并行：它只做 tag 解析与 matrix 生成（3 秒），
-  # 不需要等单测跑完。之前 needs: verify 让构建白等 4 分钟。
-  prepare:
-    name: Prepare matrix
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.m.outputs.matrix }}
-    steps:
-      - name: Build matrix
-        id: m
-        run: |
-          sel="${{ inputs.flavors }}"
-          [[ -z "$sel" ]] && sel="all"
-          universal='{"flavor":"universal","gradle":"assembleUniversalRelease","apk":"app-universal-release.apk","abi":"universal"}'
-          armsolo='{"flavor":"armsolo","gradle":"assembleArmsoloRelease","apk":"app-armsolo-release.apk","abi":"arm64"}'
-          x86solo='{"flavor":"x86solo","gradle":"assembleX86soloRelease","apk":"app-x86solo-release.apk","abi":"x86_64"}'
-          case "$sel" in
-            arm64)  list="[$armsolo]" ;;
-            x86_64) list="[$x86solo]" ;;
-            *)      list="[$universal,$armsolo,$x86solo]" ;;
-          esac
-          echo "matrix={\"include\":$list}" >> "$GITHUB_OUTPUT"
-          echo "flavors: $sel -> $list"
-
+  # ── 2. 构建：按选择的架构并行 ──
+  # 用静态 matrix + if 条件，而不是单独一个 prepare job 动态生成：
+  # prepare 只花 3 秒，但多一次 runner 调度（约 10-15 秒），不值得。
+  # 「all」时三个 flavor 在独立 runner 并行，墙钟取决于最慢的那个；
+  # 合并成单 job 串行实测 17 分 47 秒，因为每个 flavor 都要独立跑一遍 R8。
   build:
     name: Build ${{ matrix.flavor }}
-    needs: prepare
+    # 只用选中的架构出包，未选中的直接跳过（不占 runner）
+    if: matrix.enabled
     runs-on: ubuntu-latest
     permissions:
       contents: read
     strategy:
       fail-fast: true
-      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+      matrix:
+        include:
+          - flavor: universal
+            gradle: assembleUniversalRelease
+            apk: app-universal-release.apk
+            abi: universal
+            enabled: ${{ inputs.flavors == 'all' || inputs.flavors == '' }}
+          - flavor: armsolo
+            gradle: assembleArmsoloRelease
+            apk: app-armsolo-release.apk
+            abi: arm64
+            enabled: ${{ inputs.flavors == 'all' || inputs.flavors == 'arm64' || inputs.flavors == '' }}
+          - flavor: x86solo
+            gradle: assembleX86soloRelease
+            apk: app-x86solo-release.apk
+            abi: x86_64
+            enabled: ${{ inputs.flavors == 'all' || inputs.flavors == 'x86_64' || inputs.flavors == '' }}
 
     steps:
       - name: Checkout
