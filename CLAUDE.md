@@ -222,6 +222,8 @@ Room（`feature/agent/data/local/database/AgentDatabase.kt` + 各 DAO），迁�
 - **提供商预设只在仓库数据文件维护**：新增或调整内置 AI 供应商，**只改 `data/providers.json`**（App 启动时从仓库动态拉取的源）；**不要**同步改 `app/src/main/assets/providers.json`（内置兜底快照，随发版固化）与 `docs-site/` 文档。
 - **容器镜像目录由脚本生成，禁止手改**：`data/container-images.json` 由 CI（`sync-container-images.yml`，每日）跑 `scripts/sync-container-images.py` 抓上游生成后发布到 `data` 分支；`app/src/main/assets/container-images.json` 是内置兜底快照，**发版前用同一脚本刷新**（`python3 scripts/sync-container-images.py --out app/src/main/assets/container-images.json`）——它承载离线可用的版本号与 SHA-256 校验和，与 providers 快照「不维护」的策略刻意不同。要增删发行版或改镜像源，改脚本里的配置或 `sources` 表，不要改生成结果。
 
+- **更新日记必须内置，不能只靠网络**：`assets/changelog.json` 由 Gradle 任务 `generateChangelog` 在构建时从 git tag + 提交标题生成。关于页先读内置（离线可读），联网成功再覆盖。GitHub API 匿名限流 60 次/小时，只走网络会导致断网/限流时关于页显示「暂无发布记录」。改动关于页更新日记逻辑时，必须保证内置路径仍然有效。
+
 **文档目录约定**：`docs-site/docs/` 是文档唯一事实源，`guide/` 放功能说明、`advanced/` 放环境搭建与进阶教程。构建时由 `syncAiDocs` task 复制到 `assets/docs/`，AI 在容器内看到的是 `~/.nox/docs/{guide,advanced}/*.md`。**面向用户书写**：讲清怎么做、会看到什么、出错怎么办；变量名、错误码、内部实现路径属于 `prompts/`，别写进用户文档。
 
 ## Git 提交规范

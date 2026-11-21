@@ -94,14 +94,45 @@ class UpdateCheckService @Inject constructor(
      * 历史页面需要从新到旧完整列表，所以单独开一个入口，并带上发布时间供列表展示。
      * 失败时返回空列表由调用方展示空态，不弹错——关于页不应因为网络问题变成错误页。
      */
+    /**
+     * 更新日记：优先用 APK 内置的历史（离线可用），联网成功时再用远端数据覆盖。
+     *
+     * 内置数据由 Gradle 任务 `generateChangelog` 在构建时从 git tag + 提交标题生成，
+     * 写入 assets/changelog.json。这样断网或 GitHub API 被限流（匿名 60 次/小时）
+     * 时仍能看到历史，不会出现「暂无发布记录」这种误导性空态。
+     *
+     * 远端数据优先的原因：它带 release 正文（人工撰写的详细说明），
+     * 且能覆盖「装了旧包、仓库已有新版本」的情况。
+     */
     suspend fun fetchAllReleases(): List<VersionUpdate> = withContext(Dispatchers.IO) {
-        runCatching {
+        val bundled = readBundledChangelog()
+        val remote = runCatching {
             fetchReleases()
                 ?.sortedWith { a, b -> compareVersions(b.version, a.version) }
                 ?.map { toVersionUpdate(it) }
                 .orEmpty()
         }.getOrDefault(emptyList())
+        // 远端有数据就用远端；否则退回内置，保证永不空白
+        if (remote.isNotEmpty()) remote else bundled
     }
+
+    /** 读取 APK 内置的更新日志（assets/changelog.json）。失败返回空列表。 */
+    private fun readBundledChangelog(): List<VersionUpdate> = runCatching {
+        val raw = context.assets.open("changelog.json").bufferedReader().use { it.readText() }
+        val root = JsonParser.parseString(raw).asJsonObject
+        val entries = root.getAsJsonArray("entries") ?: return emptyList()
+        entries.mapNotNull { el ->
+            val obj = runCatching { el.asJsonObject }.getOrNull() ?: return@mapNotNull null
+            val tag = obj.get("tag")?.asString ?: return@mapNotNull null
+            val date = obj.get("date")?.asString.orEmpty()
+            val items = obj.getAsJsonArray("items")?.mapNotNull { it.asString }.orEmpty()
+            VersionUpdate(
+                tag = tag,
+                changelog = items.joinToString("\n") { "· $it" },
+                publishedAt = date
+            )
+        }
+    }.getOrDefault(emptyList())
 
     /** 拉取 GitHub Releases 并解析；网络或格式错误返回 null，由调用方决定降级方式。 */
     private fun fetchReleases(): List<ReleaseInfo>? = runCatching {

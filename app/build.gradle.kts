@@ -115,6 +115,64 @@ val syncAiDocs = tasks.register<Sync>("syncAiDocs") {
     into(layout.buildDirectory.dir("generated/aiDocs/docs"))
 }
 
+// 内置更新日志：把 git 历史导出成 assets/changelog.json 打进 APK。
+//
+// 为什么内置而不是纯网络拉取：关于页的「更新日记」原先只调 GitHub API，
+// 匿名请求限流 60 次/小时，一旦被限流或断网就什么都看不到（实测遇到过）。
+// 内置一份后，离线也能看到历史；联网时再去刷新获取更新内容。
+//
+// 数据源用 git tag + 提交标题，不依赖 GitHub Release：
+// 即使 Release 还没建，刚打的 tag 也能出现在列表里。
+val changelogGeneratedDir = layout.buildDirectory.dir("generated/changelog")
+val genChangelog = tasks.register("generateChangelog") {
+    description = "从 git 历史生成内置更新日志 assets/changelog.json"
+    val outDir = changelogGeneratedDir
+    val rootDir = rootProject.projectDir
+    outputs.dir(outDir)
+    // tag 与提交变化都要重新生成
+    inputs.property("head", providers.exec {
+        workingDir = rootDir
+        commandLine("git", "rev-parse", "HEAD")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.map { it.trim() })
+
+    doLast {
+        val dir = outDir.get().asFile
+        dir.mkdirs()
+        // 直接 fork 进程：providers.exec 在 doLast 里取不到输出（配置阶段才会求值），
+        // 而配置缓存要求配置期不启动外部进程，所以这里在任务执行期用 ProcessBuilder。
+        fun git(vararg args: String): String = runCatching {
+            val proc = ProcessBuilder(listOf("git") + args.toList())
+                .directory(rootDir)
+                .redirectErrorStream(true)
+                .start()
+            val out = proc.inputStream.bufferedReader().readText()
+            proc.waitFor()
+            out
+        }.getOrDefault("")
+
+        // 取最近 30 个 tag，每个 tag 到上一个 tag 之间的提交作为该版本的更新内容
+        val tags = git("tag", "--sort=-creatordate").lines().filter { it.isNotBlank() }.take(30)
+        val entries = StringBuilder()
+        tags.forEachIndexed { i, tag ->
+            val next = tags.getOrNull(i + 1)
+            val range = if (next != null) "$next..$tag" else tag
+            val subjects = git("log", "--no-merges", "--format=%s", range)
+                .lines().filter { it.isNotBlank() }
+            val date = git("log", "-1", "--format=%cd", "--date=format:%Y-%m-%d", tag).trim()
+            val items = subjects.joinToString(",") { s ->
+                "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+            }
+            if (entries.isNotEmpty()) entries.append(",")
+            entries.append(
+                """{"tag":"${tag.replace("\"", "\\\"")}","date":"$date","items":[$items]}"""
+            )
+        }
+        File(dir, "changelog.json").writeText("{\"version\":1,\"entries\":[$entries]}")
+    }
+}
+
+
 android {
     namespace = "com.nox"
     compileSdk = 36
@@ -209,6 +267,7 @@ android {
         getByName("x86solo") { jniLibs.srcDir("src/_x86JniLibs") }
         // 文档不放在 app/src/main/assets 下，改由 syncAiDocs 从 docs-site/docs 生成后并入
         getByName("main") { assets.srcDir(aiDocsGeneratedDir) }
+        getByName("main") { assets.srcDir(changelogGeneratedDir) }
     }
 
     buildTypes {
