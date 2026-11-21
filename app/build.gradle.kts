@@ -129,7 +129,12 @@ val genChangelog = tasks.register("generateChangelog") {
     val outDir = changelogGeneratedDir
     val rootDir = rootProject.projectDir
     val src = rootProject.file("CHANGELOG.md")
+    val parser = rootProject.file("scripts/parse-changelog.py")
     inputs.file(src)
+    // 解析脚本本身也是输入：此前只声明 CHANGELOG.md 是输入，
+    // 改了脚本（输出结构从 sections 改为 items）任务被判为 UP-TO-DATE 不重跑，
+    // 导致包里的 changelog.json 一直是旧结构，App 只剩摘要、条目全丢。
+    inputs.file(parser)
     outputs.dir(outDir)
 
     doLast {
