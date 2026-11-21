@@ -304,13 +304,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      # 三个 build job 的产物都下载到 dist/，各自带 flavor 子目录，这里合并回一层。
+      # 三个 build job 的产物下载到 dist-tmp/<artifact 名>/ 子目录。
+      # 不能开 merge-multiple：三个 artifact 各带一份 MANIFEST.txt，
+      # 合并到同一目录会互相覆盖，只剩最后一份（实测只还原出 1 个 APK）。
       - name: Download all APK artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: apk-*
           path: dist-tmp
-          merge-multiple: true
+          merge-multiple: false
 
       - name: Collect assets
         run: |
