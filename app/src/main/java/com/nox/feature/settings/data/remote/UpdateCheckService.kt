@@ -25,13 +25,23 @@ data class UpdateAsset(
     val sha256: String?
 )
 
+/** 更新日记里的一条：标题 + 具体说明。 */
+data class ChangelogItem(
+    val title: String,
+    val detail: String
+)
+
 /** 单个版本的更新日志与更新包。 */
 data class VersionUpdate(
     val tag: String,
     val changelog: String,
     val asset: UpdateAsset? = null,
     /** Release 发布时间（ISO-8601），关于页的更新日志列表用它显示日期；旧接口无此字段时为空串。 */
-    val publishedAt: String = ""
+    val publishedAt: String = "",
+    /** 一句话概括这一版，来自 CHANGELOG.md 版本标题下的首段。 */
+    val summary: String = "",
+    /** 结构化条目；来自内置 changelog.json 时有值，来自 GitHub Release 时为空。 */
+    val items: List<ChangelogItem> = emptyList()
 )
 
 /** 拉取到的更新信息：最新版本号 + 从当前版本到最新的更新日志。 */
@@ -125,11 +135,21 @@ class UpdateCheckService @Inject constructor(
             val obj = runCatching { el.asJsonObject }.getOrNull() ?: return@mapNotNull null
             val tag = obj.get("tag")?.asString ?: return@mapNotNull null
             val date = obj.get("date")?.asString.orEmpty()
-            val items = obj.getAsJsonArray("items")?.mapNotNull { it.asString }.orEmpty()
+            val summary = obj.get("summary")?.asString.orEmpty()
+            val items = obj.getAsJsonArray("items")?.mapNotNull { itemEl ->
+                val item = runCatching { itemEl.asJsonObject }.getOrNull() ?: return@mapNotNull null
+                ChangelogItem(
+                    title = item.get("title")?.asString.orEmpty(),
+                    detail = item.get("detail")?.asString.orEmpty()
+                )
+            }.orEmpty()
             VersionUpdate(
                 tag = tag,
-                changelog = items.joinToString("\n") { "· $it" },
-                publishedAt = date
+                // changelog 保留纯文本形态，供不支持分条渲染的场景（如更新弹窗）使用
+                changelog = items.joinToString("\n") { "· ${it.title}：${it.detail}" },
+                publishedAt = date,
+                summary = summary,
+                items = items
             )
         }
     }.getOrDefault(emptyList())

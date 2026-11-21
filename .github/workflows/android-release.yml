@@ -381,70 +381,32 @@ jobs:
             echo "正式版，不标记 pre-release"
           fi
 
-      # GitHub 的 generate_release_notes 只列 merged PR，直接 push 的 commit 不会出现。
-      # 本仓库在 main 上直接 commit，不走 PR 流程，所以手动用 git log 生成 changelog。
-      - name: Generate changelog from git log
+      # Release 正文从仓库根的 CHANGELOG.md 读取，与 App 内关于页同源。
+      # 此前两边各自从 git log 生成：只给提交标题、混入 CI 改动、顺序还不一致。
+      # 现在 CHANGELOG.md 是唯一事实源，人工撰写面向用户的说明。
+      - name: Read release notes from CHANGELOG.md
         id: changelog
         run: |
-          cur_tag="${{ steps.tag.outputs.tag }}"
-          if [[ "$cur_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            prev_tag=$(git tag --sort=-creatordate | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+$" | grep -vE "^${cur_tag}$" | head -1 || true)
-          else
-            prev_tag=$(git tag --sort=-creatordate | grep -vE "^${cur_tag}$" | head -1 || true)
+          tag="${{ steps.tag.outputs.tag }}"
+          if [[ ! -f CHANGELOG.md ]]; then
+            echo "::error::CHANGELOG.md 不存在，Release 正文无法生成"
+            exit 1
           fi
-          # 取提交标题并按「对用户的重要程度」排序：功能在前、CI/构建在后。
-          # 排序逻辑与 App 内置 changelog 共用 scripts/sort-changelog.py，
-          # 避免发布页与 App 内显示顺序不一致。
-          if [[ -z "$prev_tag" ]]; then
-            subjects=$(git log --no-merges --format=%s -60)
-            shas=$(git log --no-merges --format=%h -60)
-          else
-            subjects=$(git log --no-merges --format=%s "${prev_tag}..HEAD")
-            shas=$(git log --no-merges --format=%h "${prev_tag}..HEAD")
+
+          # 用与 App 相同的解析脚本，取与本次 tag 对应的版本段落
+          notes=$(python3 scripts/parse-changelog.py --markdown-for "$tag" 2>/dev/null || true)
+          if [[ -z "$notes" ]]; then
+            # tag 尚未写进 CHANGELOG.md 时退化为最新一段，并在正文里提示
+            notes=$(python3 scripts/parse-changelog.py --markdown 2>/dev/null || true)
+            notes="> 注意：CHANGELOG.md 里没有找到 $tag 的条目，以下是最新一版的内容。
+
+          $notes"
           fi
-          # 用 `sha<TAB>subject` 形式排序，保证短哈希跟着标题一起走
-          log=$(paste <(printf '%s\n' "$subjects") <(printf '%s\n' "$shas") \
-                | awk -F'\t' '{print $2"\t"$1}' \
-                | python3 scripts/sort-changelog.py --with-sha \
-                | awk -F'\t' '{print $2" ("$1")"}')
+
           delimiter="EOF_$(date +%s)"
           echo "body<<${delimiter}" >> "$GITHUB_OUTPUT"
-          # 中文摘要放在正文最前面：GitHub 的资产名不支持中文，正文是唯一能完整呈现的地方
-          echo "**本版要点**：$(git log -1 --format=%s)" >> "$GITHUB_OUTPUT"
-          echo "" >> "$GITHUB_OUTPUT"
-          echo "## What's Changed" >> "$GITHUB_OUTPUT"
-          echo "" >> "$GITHUB_OUTPUT"
-          if [[ -z "$log" ]]; then
-            echo "- 无新增提交（与上次发布同一提交）" >> "$GITHUB_OUTPUT"
-          else
-            echo "$log" | while IFS= read -r line; do
-              sha=$(echo "$line" | cut -d' ' -f1)
-              msg=$(echo "$line" | cut -d' ' -f2-)
-              echo "- ${msg} (${sha})" >> "$GITHUB_OUTPUT"
-            done
-          fi
-          echo "" >> "$GITHUB_OUTPUT"
-          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${prev_tag:-HEAD}...${cur_tag}" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$notes" >> "$GITHUB_OUTPUT"
           echo "${delimiter}" >> "$GITHUB_OUTPUT"
-
-      # 提前检查 tag / Release 是否已被占用，给出可操作的提示。
-      # 否则 action-gh-release 会以一段难懂的 API 错误失败。
-      - name: Check tag availability
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          tag="${{ steps.tag.outputs.tag }}"
-          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "::error::Release $tag 已存在。要重新发布请先在 GitHub 删除该 Release 与对应 tag："
-            echo "  https://github.com/${{ github.repository }}/releases"
-            exit 1
-          fi
-          if git ls-remote --tags origin "refs/tags/$tag" | grep -q .; then
-            echo "::error::tag $tag 已存在但无对应 Release。请先删除该 tag 再重试："
-            echo "  git push --delete origin $tag   # 或到 GitHub Tags 页面删除"
-            exit 1
-          fi
-          echo "✓ tag $tag 可用"
 
       - name: Create GitHub Release & Upload assets
         uses: softprops/action-gh-release@v2

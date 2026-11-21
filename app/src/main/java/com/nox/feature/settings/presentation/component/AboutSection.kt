@@ -48,7 +48,10 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nox.R
@@ -691,20 +694,61 @@ private fun ReleaseNotesCard(
     }
 }
 
-/** 单条版本日志：`· 版本号-标题 日期` 标题行 + 正文。 */
+/**
+ * 单条版本日志。
+ *
+ * 版式参考上游 Nox：版本号 + 一句话概括 + 紧凑列表，每条一行写完。
+ * 每条用「粗体短语：说明」的格式，靠 AnnotatedString 把短语加粗，
+ * 比拆成「标题一行 + 说明一段」省一半纵向空间，也更接近用户读更新日志的习惯。
+ *
+ * 来自 GitHub Release 的数据没有 items（那边是整段 Markdown 文本），退回纯文本渲染。
+ */
 @Composable
 private fun ReleaseNoteItem(release: com.nox.feature.settings.data.remote.VersionUpdate) {
     val title = release.tag.removePrefix("v")
     val date = formatReleaseDate(release.publishedAt)
-    Column(modifier = Modifier.padding(bottom = Spacing.md)) {
+    Column(modifier = Modifier.padding(bottom = Spacing.lg)) {
         Text(
-            text = if (date.isEmpty()) "· $title" else "· $title  $date",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
+            text = if (date.isEmpty()) title else "$title  $date",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface
         )
-        if (release.changelog.isNotBlank()) {
-            Spacer(Modifier.height(2.dp))
+
+        if (release.summary.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = release.summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.semanticColors.subtleText
+            )
+        }
+
+        if (release.items.isNotEmpty()) {
+            Spacer(Modifier.height(Spacing.sm))
+            release.items.forEach { item ->
+                val bold = MaterialTheme.colorScheme.onSurface
+                val normal = MaterialTheme.semanticColors.subtleText
+                val text = buildAnnotatedString {
+                    append("· ")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Medium, color = bold)) {
+                        append(item.title)
+                    }
+                    if (item.detail.isNotBlank()) {
+                        withStyle(SpanStyle(color = normal)) {
+                            append("：${item.detail}")
+                        }
+                    }
+                }
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = normal,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+            }
+        } else if (release.changelog.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
             Text(
                 text = release.changelog,
                 style = MaterialTheme.typography.bodySmall,

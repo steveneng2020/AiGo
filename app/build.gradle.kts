@@ -115,92 +115,39 @@ val syncAiDocs = tasks.register<Sync>("syncAiDocs") {
     into(layout.buildDirectory.dir("generated/aiDocs/docs"))
 }
 
-// 内置更新日志：把 git 历史导出成 assets/changelog.json 打进 APK。
+// 内置更新日志：把仓库根的 CHANGELOG.md 解析成 assets/changelog.json 打进 APK。
 //
-// 为什么内置而不是纯网络拉取：关于页的「更新日记」原先只调 GitHub API，
-// 匿名请求限流 60 次/小时，一旦被限流或断网就什么都看不到（实测遇到过）。
-// 内置一份后，离线也能看到历史；联网时再去刷新获取更新内容。
+// 为什么不再从 git log 生成：git log 只能给标题，而且是给开发者看的。
+// 用户需要的是「这版改了什么、对我有什么影响」，这必须人工撰写；
+// CI 配置、构建脚本这类用户感受不到的改动也不该出现在更新日记里。
 //
-// 数据源用 git tag + 提交标题，不依赖 GitHub Release：
-// 即使 Release 还没建，刚打的 tag 也能出现在列表里。
+// CHANGELOG.md 是唯一事实源，App 内关于页与 GitHub Release 页都从它读取，
+// 保证两处内容一致（此前两处各自从 git log 生成，顺序与内容都对不齐）。
 val changelogGeneratedDir = layout.buildDirectory.dir("generated/changelog")
 val genChangelog = tasks.register("generateChangelog") {
-    description = "从 git 历史生成内置更新日志 assets/changelog.json"
+    description = "把 CHANGELOG.md 解析成内置更新日志 assets/changelog.json"
     val outDir = changelogGeneratedDir
     val rootDir = rootProject.projectDir
+    val src = rootProject.file("CHANGELOG.md")
+    inputs.file(src)
     outputs.dir(outDir)
-    // tag 与提交变化都要重新生成
-    inputs.property("head", providers.exec {
-        workingDir = rootDir
-        commandLine("git", "rev-parse", "HEAD")
-        isIgnoreExitValue = true
-    }.standardOutput.asText.map { it.trim() })
 
     doLast {
+        require(src.exists()) { "CHANGELOG.md 不存在，关于页的更新日记会为空" }
         val dir = outDir.get().asFile
         dir.mkdirs()
-        // 直接 fork 进程：providers.exec 在 doLast 里取不到输出（配置阶段才会求值），
-        // 而配置缓存要求配置期不启动外部进程，所以这里在任务执行期用 ProcessBuilder。
-        fun git(vararg args: String): String = runCatching {
-            val proc = ProcessBuilder(listOf("git") + args.toList())
-                .directory(rootDir)
-                .redirectErrorStream(true)
-                .start()
-            val out = proc.inputStream.bufferedReader().readText()
-            proc.waitFor()
-            out
-        }.getOrDefault("")
-
-        // 上游边界：本仓库是 Nox 的 fork，Nox 的提交不属于 AiGo 的更新日记。
-        // 不排除会把「品牌独立为 Nox 1.0.0」「终端页视觉优化与 Nox 品牌文案」
-        // 这类上游提交也列进去，用户看到会以为自己的版本包含那些改动（实际出现过）。
-        //
-        // 优先用 upstream/main（本地开发时有），CI 上没有该 remote，
-        // 退回硬编码的 Nox 最后提交 289c434（同步上游后需更新此值）。
-        val upstreamTip = git("rev-parse", "--verify", "-q", "upstream/main")
-            .trim().ifEmpty { "289c434" }
-
-        // 取最近 30 个 tag，每个 tag 到上一个 tag 之间的提交作为该版本的更新内容
-        val tags = git("tag", "--sort=-creatordate").lines().filter { it.isNotBlank() }.take(30)
-        val entries = StringBuilder()
-        tags.forEachIndexed { i, tag ->
-            val next = tags.getOrNull(i + 1)
-            // 最早的 tag 以下界用 upstreamTip，避免把上游历史算进来
-            val lower = next ?: upstreamTip
-            val range = "$lower..$tag"
-            val subjects = git("log", "--no-merges", "--format=%s", range)
-                .lines().filter { it.isNotBlank() }
-            val date = git("log", "-1", "--format=%cd", "--date=format:%Y-%m-%d", tag).trim()
-            // 按重要度排序：更新日记是给用户看的，不是提交日志。
-            // 排序逻辑与 CI 发布页共用 scripts/sort-changelog.py，
-            // 避免 App 内与 Release 页面顺序不一致。
-            val ordered = runCatching {
-                val proc = ProcessBuilder(
-                    "python3", "scripts/sort-changelog.py"
-                )
-                    .directory(rootDir)
-                    .redirectErrorStream(true)
-                    .start()
-                proc.outputStream.bufferedWriter().use { w ->
-                    subjects.forEach { w.write(it); w.newLine() }
-                }
-                val out = proc.inputStream.bufferedReader().readText()
-                proc.waitFor()
-                out.lines().filter { it.isNotBlank() }
-            }.getOrElse { subjects }   // 脚本不可用时退回原顺序，不能让构建失败
-
-            val items = ordered.joinToString(",") { s ->
-                "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-            }
-            if (entries.isNotEmpty()) entries.append(",")
-            entries.append(
-                """{"tag":"${tag.replace("\"", "\\\"")}","date":"$date","items":[$items]}"""
-            )
+        // 复用与 CI 相同的解析脚本，避免两处格式理解不一致
+        val proc = ProcessBuilder("python3", "scripts/parse-changelog.py")
+            .directory(rootDir)
+            .redirectErrorStream(true)
+            .start()
+        val out = proc.inputStream.bufferedReader().readText()
+        if (proc.waitFor() != 0) {
+            throw GradleException("parse-changelog.py 失败：$out")
         }
-        File(dir, "changelog.json").writeText("{\"version\":1,\"entries\":[$entries]}")
+        File(dir, "changelog.json").writeText(out)
     }
 }
-
 
 android {
     namespace = "com.nox"
