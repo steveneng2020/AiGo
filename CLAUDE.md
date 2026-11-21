@@ -4,7 +4,35 @@
 
 ## 铁律（违反即返工，不得以"效率"为由跳过）
 
-### 1. 输出物必须分类存放在指定目录
+### 0. 最高优先级：绝不破坏与上游 Nox 的 fork 关系
+
+**这是本项目的存续前提，优先级高于本文件其余所有条款。**
+
+禁止的操作（无一例外）：
+
+- 在 GitHub 仓库设置里点 **"Leave fork network"** 脱离 fork
+- 删除仓库后重新创建（fork 关系会丢失）
+- 把仓库转移给他人或其他组织
+- 将 `origin` 改为非 fork 来源，或把上游历史整体替换
+- 任何 `git push --force` / 历史重写，导致与上游的 merge-base 不可追溯
+
+**遇到 GitHub 对 fork 的限制时，只能找绕过办法，不能解散 fork。** 已知限制与对策：
+
+| fork 限制 | 正确对策 |
+| --- | --- |
+| fork 仓库的 push / tag push 不触发 workflow | 改用 `workflow_dispatch` 手动触发，由 CI 自己创建 tag 与 Release |
+| fork 的 workflow 默认禁用 | 在 Actions 页面点一次授权，或用 API `enable` |
+| fork 的 PR 不带 Secrets | 在 Actions 设置里单独放行，或改为在 fork 内直接构建 |
+
+### 1. 遇到问题必须找到根因，禁止猜测与退缩
+
+- **禁止**在未定位根因前就改代码"试试看"。先用证据确认：读日志、查 API 返回值、对比实际文件、验证假设。
+- **禁止**因为难就降低目标或绕过问题。例如「tag 不触发」不能以"fork 就是这样"收场，必须查清是配置、语法还是平台限制，并给出可行方案。
+- **禁止**在同一个问题上反复试错超过两轮。第二轮失败就停下来重新做假设，从最基础的证据开始验证。
+- 定位到根因后，要**把根因和验证方式写进注释与文档**，避免同类问题再次发生。
+- 汇报时必须区分「已证实」与「推测」。推测要明说，不能当成结论。
+
+### 2. 输出物必须分类存放在指定目录
 
 **唯一允许的项目输出根目录**：
 
@@ -20,7 +48,7 @@
 - 新类别输出先在 `AiGo开发/` 下建子目录再放，不要平铺到根。
 - 该目录在容器内即 `~/workspace`（PRoot 绑定挂载，同一份文件），两边路径等价。
 
-### 2. 构建必须离开 FUSE 目录
+### 3. 构建必须离开 FUSE 目录
 
 `~/workspace` 是 FUSE 挂载，单次 `stat` 约 99 ms。在该目录内直接编译 Kotlin，30 分钟跑不完。
 
@@ -28,13 +56,13 @@
 - 只有需要宿主可见或归档时才写回 `~/workspace/AiGo-Android源码仓库`。
 - 统一用 `aigo` 命令，不要自己拼 Gradle 命令。
 
-### 3. 版本号只由 Git 决定，禁止手改
+### 4. 版本号只由 Git 决定，禁止手改
 
 - `versionCode` = `git rev-list --count HEAD`；`versionName` 由 tag 推导并追加构建日期。
 - **禁止**在 `build.gradle.kts` 里写死版本号。
 - **禁止**对 `main` 做 `rebase` / `squash` / `push --force`——提交数变小会导致 versionCode 回退、新包装不上，CI 会直接拦下发版。
 
-### 4. 不能破坏与上游 Nox 的 fork 关系
+### 5. 品牌层改名的边界
 
 三层链：`jieapi/aicode → xzyy03/Nox → steveneng2020/AiGo`。
 
@@ -42,13 +70,13 @@
 - 源码包名保留 `com.nox`，只改应用层品牌（`applicationId`、应用名、图标、链接）。**禁止全局替换 `com.nox`**。
 - 上游同步只用 `merge`。
 
-### 5. 签名与密钥绝不入库
+### 6. 签名与密钥绝不入库
 
 - `*.jks`、`*.keystore`、`keystore.properties`、`local.properties` 均已被 `.gitignore` 忽略，**不要取消忽略**。
 - 推送前必须扫描：`git ls-files | grep -E '\.jks|keystore\.properties|local\.properties'` 应为空。
 - 口令、token、PAT 不写进任何被跟踪的文件，不贴进提交信息。
 
-### 6. 提交前必须过门禁
+### 7. 提交前必须过门禁
 
 改完编译型代码（`.kt` / `.kts` / `AndroidManifest.xml` / `res/`）后，**按顺序**执行，任一步失败就停下修：
 
@@ -60,19 +88,19 @@ python3 scripts/check_migrations.py   # 改过数据库 schema 时必跑
 
 只改 `.md` / 纯文案时可跳过 1、2，但第 3 条若涉及迁移仍要跑。
 
-### 7. 界面文案必须中英双语
+### 8. 界面文案必须中英双语
 
 - 用户可见文案一律进 `values/strings.xml`（中文）与 `values-en/strings.xml`（英文），**禁止在 `.kt` 里硬编码中文 UI 文案**。
 - 英文含撇号（`don't`）必须写成 `don\'t`，否则 `aapt2` 报 `Invalid unicode escape sequence`。
 
-### 8. 所有变体共用同一包名，禁止 applicationIdSuffix
+### 9. 所有变体共用同一包名，禁止 applicationIdSuffix
 
 - `debug` / `beta` / `release` 一律是 `com.aigo`，**禁止**加 `.debug` / `.beta` 后缀。
 - 理由：本项目自建自用，覆盖安装是期望行为。加后缀会带来三个实际问题——同机出现多个应用、私有目录不同导致容器 rootfs 与工作区"消失"、debug 包触发 Android 15+ 的 16 KB 兼容性弹窗。
 - debug 变体必须与 release 使用**同一签名**（`signingConfig = release`），否则包名相同而签名不同会被拒绝覆盖安装（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`）。
 - 上游若把后缀改回来，合并后必须立即恢复本约定，并跑 `aigo gate` 确认。
 
-### 9. 改 UI 必须同步文档
+### 10. 改 UI 必须同步文档
 
 新增页面、改交互、改文案 → 更新 `docs-site/docs/`；新增文档页还要加进 `docs-site/.vitepress/config.ts` 侧栏与 `guide/overview.md` 索引。
 

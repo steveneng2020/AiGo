@@ -1,16 +1,34 @@
 name: Android Release
 
-# 打 Tag（如 v1.0.0）时触发：构建三个签名 Release APK
-#   - universal : arm64-v8a + x86_64，含 arm + x86 两套容器镜像（通用，体积最大）
-#   - armsolo    : 仅 arm64-v8a，仅含 arm 镜像（真机首选，体积约为 universal 的一半）
-#   - x86solo    : 仅 x86_64，仅含 x86 镜像（x86 模拟器/Chromebook，体积约为 universal 的一半）
-# 创建 GitHub Release 并把三个 APK 作为资产发布。
+# 构建三个签名 Release APK 并创建 GitHub Release：
+#   - arm64      : 仅 arm64-v8a（真机首选）
+#   - x86_64     : 仅 x86_64（模拟器/Chromebook）
+#   - universal  : 两个架构都含（不确定时用，体积最大）
+#
+# 触发方式：
+#   1. workflow_dispatch + 手动填 release_tag —— 主路径
+#   2. push tag v* —— 保留兼容，但 fork 仓库上 GitHub 不为 tag push 触发 workflow
+#
+# 为什么主路径是手动触发：
+#   本仓库是 Nox 的 fork。GitHub 对 fork 仓库的 push（含 tag）事件不启动 workflow，
+#   这是平台行为，无法用仓库设置绕过（除非脱离 fork 网络，那会破坏与上游的关系）。
+#   因此改为「手动触发 + 输入 tag 名」，由 CI 自己创建 tag 与 Release。
+#   做法与 DSHA 项目一致（参考 steveneng2020/DSH-Android 的 release-official.yml）。
 on:
   push:
     tags:
       - 'v*'
-  # 允许在 Actions 页面手动触发，便于验证构建链路。
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: '要发布的版本 tag，如 v1.0.0（须与 versionName 对应）'
+        required: true
+        type: string
+      prerelease:
+        description: '标记为预发布（RC/测试版）'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -178,18 +196,32 @@ jobs:
       - name: Determine release name
         id: release
         run: |
-          # 手动触发（无 tag）时用 run id 作为临时名，避免破坏 tag 发布。
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=manual-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          # 优先用手动输入；其次 tag 触发时用 ref 名。
+          tag="${{ inputs.release_tag }}"
+          if [[ -z "$tag" && "${{ github.ref }}" == refs/tags/* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
           fi
+          if [[ -z "$tag" ]]; then
+            echo "::error::未提供 release_tag。手动触发时必须填写，如 v1.0.0"
+            exit 1
+          fi
+          # 统一补 v 前缀并校验格式
+          [[ "$tag" != v* ]] && tag="v${tag}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::tag 格式不合法：$tag（应形如 v1.0.0 或 v1.0.0-rc1）"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release tag = $tag"
 
       - name: Determine prerelease flag
         id: prerelease
         run: |
           tag="${{ steps.release.outputs.tag }}"
-          if [[ "$tag" =~ -(rc|dev|beta|alpha)([.0-9]*)?$ ]]; then
+          if [[ "${{ inputs.prerelease }}" == "true" ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "手动标记为 pre-release"
+          elif [[ "$tag" =~ -(rc|dev|beta|alpha)([.0-9]*)?$ ]]; then
             echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
             echo "检测到预发布后缀，标记为 pre-release"
           else
@@ -201,9 +233,8 @@ jobs:
       # 本仓库在 main 上直接 commit，不走 PR 流程，所以手动用 git log 生成 changelog。
       - name: Generate changelog from git log
         id: changelog
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          cur_tag="${GITHUB_REF_NAME}"
+          cur_tag="${{ steps.release.outputs.tag }}"
           # 正式版（vX.Y.Z 无后缀）从上一个正式版起算，包含整个发布周期（含全部 RC）的提交，
           # 保证应用内检测更新能看到完整日志；RC/预发布从最近创建的 tag 起算（增量）。
           if [[ "$cur_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -243,7 +274,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
-          name: Release ${{ steps.release.outputs.tag }}
+          # CI 自己创建 tag（指向本次构建的 commit）：fork 仓库的 tag push 不会触发
+          # workflow，所以 tag 由这里创建，本地不需要预先打 tag。
+          target_commitish: ${{ github.sha }}
+          name: AiGo ${{ steps.release.outputs.tag }}
           body: ${{ steps.changelog.outputs.body }}
           prerelease: ${{ steps.prerelease.outputs.is_prerelease }}
           # 产物名约定 AiGo-<abi>-<版本>-<摘要>.apk（见 Rename 步骤），故 glob 把 ABI 段放 AiGo- 紧后、版本段用 * 兜底。
