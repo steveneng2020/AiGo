@@ -360,7 +360,7 @@ android {
 
     // targetSdk 故意锁定 28（原因见 defaultConfig 处注释），代价是不进 Google Play——故关闭该平台的过期 targetSdk 检查。
     // 同时关闭 release 构建的 lint 检查：本仓库只出 GitHub Release 不上 Play，
-    // lintVital 在 R8/打包阶段额外吃 CPU 与内存（2 核 7GB runner 易 OOM），且其发现不阻塞发布。
+    // lintVital 在 R8/打包阶段额外吃 CPU 与内存（4 核 16GB runner 上仍明显拖慢），且其发现不阻塞发布。
     lint {
         disable += "ExpiredTargetSdkVersion"
         checkReleaseBuilds = false
@@ -536,3 +536,9 @@ tasks.register<Exec>("checkMigrations") {
 
 // assets 合并前必须先生成文档，否则首次构建（或 clean 后）APK 里会没有 docs/。
 tasks.named("preBuild") { dependsOn(syncAiDocs) }
+
+// 同理：changelog.json 由 generateChangelog 产出到 build/generated/changelog，
+// 再经 sourceSets 的 assets.srcDir 进包。只注册不接线的话任务永远不执行，
+// clean 构建后 APK 里就没有 changelog.json，关于页在断网时只能空白
+// （UpdateCheckService 读不到资产会吞异常返回空列表）。
+tasks.named("preBuild") { dependsOn(genChangelog) }

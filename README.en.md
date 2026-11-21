@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/icon-nox.webp" width="112" alt="AiGo" />
+  <img src="docs/icon-aigo.webp" width="112" alt="AiGo" />
   <h1 align="center">AiGo</h1>
   <p align="center">
     AI coding tool and mobile workstation for Android, a fork of Nox
@@ -24,6 +24,35 @@
   <a href="https://github.com/steveneng2020/AiGo/releases"><img src="https://img.shields.io/github/v/release/steveneng2020/AiGo?display_name=tag&include_prereleases" alt="Latest Release" /></a>
 </p>
 
+<p align="center">
+  <table>
+    <tr>
+      <td align="center"><img src="docs/screenshots/home.jpg" alt="AiGo new session - pick a model and start" width="210"/></td>
+      <td align="center"><img src="docs/screenshots/chat.jpg" alt="AiGo chat - tool calls and reasoning" width="210"/></td>
+      <td align="center"><img src="docs/screenshots/container.jpg" alt="AiGo containers - any distro" width="210"/></td>
+      <td align="center"><img src="docs/screenshots/models.jpg" alt="AiGo providers - any vendor" width="210"/></td>
+    </tr>
+    <tr>
+      <td align="center">New session · pick a model</td>
+      <td align="center">Chat · tool calls</td>
+      <td align="center">Containers · any distro</td>
+      <td align="center">Models · any provider</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="docs/screenshots/git.jpg" alt="AiGo Git - status, branches and commits" width="210"/></td>
+      <td align="center"><img src="docs/screenshots/drawer.jpg" alt="AiGo sidebar - sessions and entries" width="210"/></td>
+      <td align="center"><img src="docs/screenshots/settings.jpg" alt="AiGo settings - preferences and AI config" width="210"/></td>
+      <td align="center"><img src="docs/screenshots/about.jpg" alt="AiGo about - version and updates" width="210"/></td>
+    </tr>
+    <tr>
+      <td align="center">Git · status &amp; commits</td>
+      <td align="center">Sidebar · sessions</td>
+      <td align="center">Settings · preferences</td>
+      <td align="center">About · version &amp; updates</td>
+    </tr>
+  </table>
+</p>
+
 ---
 
 ## Overview
@@ -31,6 +60,45 @@
 AiGo is a universal AI coding agent that runs on Android, packing a full Linux development environment into your phone: it bundles a terminal, and the AI agent can read and write files, run shell commands and run build tools, so writing, debugging and building all happen on-device. A remote SSH server can also serve as the execution backend, turning your phone into a mobile workstation for remote projects.
 
 There is nothing to set up beforehand: install the app and configure a model under AI Vendors. Container images are added or downloaded manually the first time. AiGo ships no models and locks you into no vendor: it supports the OpenAI / Anthropic / Gemini protocols plus custom providers, with models, keys and endpoints all configured by you.
+
+## Relationship to upstream
+
+AiGo is built on [Nox](https://github.com/xzyy03/Nox), which in turn is built on
+[AiCode](https://github.com/jieapi/aicode). Every layer in that chain is GPL-3.0, and the
+modifications are open source as well:
+
+```
+jieapi/aicode  ──▶  xzyy03/Nox  ──▶  steveneng2020/AiGo
+  original           direct upstream        this project
+```
+
+AiGo and Nox **can coexist on the same device** (different package names, neither overwrites
+the other). Upstream Nox updates keep flowing into AiGo.
+
+## What AiGo changes
+
+### Differences from Nox
+
+| Item | Nox | AiGo |
+| --- | --- | --- |
+| App name | Nox | AiGo |
+| Package | `com.nox` | `com.aigo` (can coexist) |
+| Update check | points at Nox | points at this project |
+| Contact | QQ group | steveneng@163.com |
+
+### Additions and improvements
+
+- **Attach files while the AI is working** — the `+` button in the composer no longer greys out
+  during a run. Add images or files while waiting; they go out with the queued message.
+- **Notification icon follows the app icon** — notification and foreground-service icons follow
+  whichever icon is selected under Icon Settings; existing notifications refresh after a switch
+  instead of showing a fixed system placeholder.
+- **Plugin group in the sidebar** — plugin entries are grouped separately, with a group header
+  and a "more plugins" entry.
+- **Changelog card on the About page** — shows what changed in recent versions, expandable to
+  the full history, and readable offline.
+- **Multiple app icons** — three built-in icon sets, switchable, with launcher and notification
+  icons staying in sync.
 
 ## Features
 
@@ -57,7 +125,7 @@ There is nothing to set up beforehand: install the app and configure a model und
 - **Remote SSH Mode** — Use a remote SSH server as the execution backend: commands, files and terminal all act on the remote project
 - **Shizuku backend** — With Shizuku, the AI can run shell and adb commands on the host Android system to debug or operate other devices (requires per-call approval)
 - **File tree & code editor** — An indented file tree that opens files in a full-screen editor with syntax highlighting for mainstream languages and Markdown preview; `file:line` links in AI replies jump straight to that line, in both local and remote SSH workspaces
-- **Git Integration** — Visual management of status, branches, commit history, diffs and tags, plus staging/discarding changes, sign-off and credentials
+- **Git Integration** — See what the AI changed, commit to leave a restore point, switch branches, push to remote. Status, diffs, history and tags are all visual; if the AI goes off track, roll back to the previous commit
 - **Workspace Sync** — SFTP / FTP synchronization with a built-in FTP server for desktop file management
 
 ### Experience
@@ -80,63 +148,16 @@ There is nothing to set up beforehand: install the app and configure a model und
 
 ## Versioning
 
-The single source of truth for versions is Git — never edit `build.gradle.kts` by hand.
+Released builds use the tag itself as the version, e.g. `1.0.0`. Builds you compile yourself
+carry a `+date` suffix (e.g. `1.0.0+20261121`) to tell one build from another; the date does not
+participate in comparison and does not affect update prompts.
 
-| Field | Source | Rule |
-| --- | --- | --- |
-| `versionCode` | `git rev-list --count HEAD` | total commit count, +1 per commit |
-| `versionName` | `git describe --tags --always --dirty` | see below, build date always appended |
-
-Three shapes of `versionName`:
-
-| State of current commit | versionName | Example |
-| --- | --- | --- |
-| Exactly on a tag | `<tag>+<buildDate>` | `1.0.0+20261121` |
-| N commits past a tag | `<tag>-dev.N+<hash>.<buildDate>` | `1.0.0-dev.9+350da83.20261121` |
-| No tag at all | `1.0.0-dev+<hash>.<buildDate>` | `1.0.0-dev+350da83.20261121` |
-
-- **The build date comes from the git commit date**, not the machine clock — the same commit
-  always yields the same version, on CI and locally.
-- The date sits after `+` (SemVer build metadata) so it **does not participate in comparison**
-  and cannot break update detection. Putting it after `-` would make the build older than the
-  matching release.
-- If the tag already contains an 8-digit date (e.g. `v1.0.0-20261121`), no date is appended.
-
-Pin the version for local rebuilds:
-
-```bash
-sh gradlew :app:assembleUniversalDebug \
-  -PversionCodeOverride=14 -PversionNameOverride=1.0.0-dev
-```
-
-**Never rebase / squash / force-push `main`** — `versionCode` derives from the commit count,
-so rewriting history makes it go backwards and new builds stop installing.
-
-## Release
-
-This repository is a fork of Nox, and **GitHub does not trigger workflows on tag pushes to
-forked repositories**. Releases are therefore started manually; CI creates the tag and the
-GitHub Release itself.
-
-Trigger from the Actions page (or via API) with `release_tag=v1.0.0` and one of:
-
-| `flavors` | Artifacts | Use case |
-| --- | --- | --- |
-| `all` | universal + arm64 + x86_64 | public release |
-| `arm64` | arm64 only | your own device |
-| `x86_64` | x86_64 only | emulators |
-
-Run `aigo release-check` first to clear stray temporary tags, otherwise `git describe` is
-polluted and `versionName` comes out as `manual-2-6-gxxxx`.
-
-Artifacts are named `AiGo-<abi>-<versionName>-<summary>.apk`. The **summary is ASCII-only**:
-the GitHub Release Assets API rewrites non-ASCII characters to `-`, so the human-readable
-notes live in the first line of the release body instead.
+The in-app **About** page lists what changed in each version. Those notes ship inside the APK,
+so they work offline too.
 
 ## Star
 
 If AiGo is helpful to you, give it a [Star](https://github.com/steveneng2020/AiGo).
-
 
 ## Feedback & Contribution
 

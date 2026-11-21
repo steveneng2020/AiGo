@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import com.nox.MainActivity
 import com.nox.R
 
 /**
@@ -39,17 +40,36 @@ object AppIconManager {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)
         )
 
+    /**
+     * activity-alias 所在的包名，即 AndroidManifest 的 package（源码命名空间 com.nox），
+     * **不是** applicationId。二者在本项目里被刻意分开（applicationId=com.aigo，
+     * namespace=com.nox）。用 context.packageName 会拼出 com.aigo.MainActivityDefault，
+     * 而真实组件是 com.nox.MainActivityDefault，setComponentEnabledSetting 静默失败，
+     * 表现为切换图标后桌面毫无变化。
+     */
+    private fun aliasPackage(context: Context): String =
+        runCatching {
+            context.packageManager
+                .getActivityInfo(ComponentName(context, MainActivity::class.java), 0)
+                .packageName
+        }.getOrDefault(context.packageName)
+
     fun apply(context: Context, option: AppIconOption) {
         val pm = context.packageManager
+        val aliasPkg = aliasPackage(context)
         AppIconOption.entries.forEach { candidate ->
-            val component = ComponentName(context.packageName, context.packageName + candidate.aliasSuffix)
+            val component = ComponentName(aliasPkg, aliasPkg + candidate.aliasSuffix)
             val newState = if (candidate == option) {
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED
             } else {
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED
             }
+            // 切换失败不能静默吞掉：组件名拼错时 setComponentEnabledSetting 不报错也不生效，
+            // 用户只会看到「点了没反应」。失败时至少记录日志，便于定位。
             runCatching {
                 pm.setComponentEnabledSetting(component, newState, PackageManager.DONT_KILL_APP)
+            }.onFailure {
+                android.util.Log.w("AppIconManager", "切换图标失败: $component", it)
             }
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

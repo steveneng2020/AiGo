@@ -76,6 +76,7 @@ import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.Book
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.Download
+import compose.icons.feathericons.GitBranch
 import compose.icons.feathericons.Github
 import compose.icons.feathericons.Globe
 import compose.icons.feathericons.MessageCircle
@@ -102,6 +103,7 @@ internal fun AboutSection(
 ) {
     val context = LocalContext.current
     var showMirrorDialog by remember { mutableStateOf(false) }
+    var showChannelSheet by remember { mutableStateOf(false) }
     val termsUrl = stringResource(R.string.agreement_terms_url)
     val privacyUrl = stringResource(R.string.agreement_privacy_url)
 
@@ -188,6 +190,27 @@ internal fun AboutSection(
                 }
             )
             SettingsDivider()
+            // 更新通道：稳定版只看正式版，最新版含预发布。
+            // 之前 UpdateChannelSheet 与 updateCheckChannel 参数都存在但无人调用，
+            // 文档却写着「可切换到最新版」，用户找不到入口。
+            SettingsRow(
+                icon = FeatherIcons.GitBranch,
+                title = stringResource(R.string.about_update_channel),
+                onClick = { showChannelSheet = true },
+                trailing = {
+                    Text(
+                        text = stringResource(
+                            when (updateCheckChannel) {
+                                UpdateChannel.STABLE -> R.string.update_channel_stable
+                                UpdateChannel.LATEST -> R.string.update_channel_latest
+                            }
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.semanticColors.subtleText
+                    )
+                }
+            )
+            SettingsDivider()
             // 下载镜像源：更新包下载走它加速，留空表示直连 GitHub
             SettingsRow(
                 icon = FeatherIcons.Download,
@@ -250,6 +273,17 @@ internal fun AboutSection(
                 showMirrorDialog = false
             },
             onDismiss = { showMirrorDialog = false }
+        )
+    }
+
+    if (showChannelSheet) {
+        UpdateChannelSheet(
+            current = updateCheckChannel,
+            onSelect = {
+                onSelectChannel(it)
+                showChannelSheet = false
+            },
+            onDismiss = { showChannelSheet = false }
         )
     }
 }

@@ -179,19 +179,6 @@ export ANDROID_USER_HOME=/root/.android-home    # 默认 ~/.android 不可写，
 - 产物：`app/build/outputs/apk/<flavor>/release/app-<flavor>-release.apk`、`.../bundle/<flavor>/release/app-<flavor>-release.aab`。
 - flavor 按 ABI 拆分：`universal`（arm64-v8a + x86_64）、`armsolo`（仅 arm64-v8a）、`x86solo`（仅 x86_64）。
 - release 签名凭据读 `app/keystore.properties`（`storeFile` / `storePassword` / `keyAlias` / `keyPassword`）；本地通常不存放签名文件，CI 从 GitHub secret 还原到 `app/aicode.jks`。
-- ## 开发流程（按此执行，不要自创）
-
-完整流程见技能 `aigo-dev-workflow`，速查：
-
-```
-aigo status → 拉上游 → 定位代码 → 改
-  → aigo gate（敏感信息/迁移/品牌/编译/单测）
-  → aigo apk → 真机验收 → 用户确认
-  → commit → push → 打 tag → CI 出包
-```
-
-**`targetSdk` 锁定 28**（`minSdk = 26`）：PRoot 需在 App 可写目录执行二进制，Android 10+ 的 W^X / SELinux 禁止该行为，别升。
-
 ## 开发流程（按此执行，不要自创）
 
 完整流程见技能 `aigo-dev-workflow`。速查：
@@ -250,7 +237,7 @@ Room（`feature/agent/data/local/database/AgentDatabase.kt` + 各 DAO），迁�
 - **提供商预设只在仓库数据文件维护**：新增或调整内置 AI 供应商，**只改 `data/providers.json`**（App 启动时从仓库动态拉取的源）；**不要**同步改 `app/src/main/assets/providers.json`（内置兜底快照，随发版固化）与 `docs-site/` 文档。
 - **容器镜像目录由脚本生成，禁止手改**：`data/container-images.json` 由 CI（`sync-container-images.yml`，每日）跑 `scripts/sync-container-images.py` 抓上游生成后发布到 `data` 分支；`app/src/main/assets/container-images.json` 是内置兜底快照，**发版前用同一脚本刷新**（`python3 scripts/sync-container-images.py --out app/src/main/assets/container-images.json`）——它承载离线可用的版本号与 SHA-256 校验和，与 providers 快照「不维护」的策略刻意不同。要增删发行版或改镜像源，改脚本里的配置或 `sources` 表，不要改生成结果。
 
-- **更新日记必须内置，不能只靠网络**：`assets/changelog.json` 由 Gradle 任务 `generateChangelog` 在构建时从 git tag + 提交标题生成。关于页先读内置（离线可读），联网成功再覆盖。GitHub API 匿名限流 60 次/小时，只走网络会导致断网/限流时关于页显示「暂无发布记录」。改动关于页更新日记逻辑时，必须保证内置路径仍然有效。
+- **更新日记必须内置，不能只靠网络**：`assets/changelog.json` 由 Gradle 任务 `generateChangelog` 在构建时解析仓库根 `CHANGELOG.md` 生成（人工撰写、面向用户；不从 git log 生成）。关于页先读内置（离线可读），联网成功再覆盖。GitHub API 匿名限流 60 次/小时，只走网络会导致断网/限流时关于页显示「暂无发布记录」。改动关于页更新日记逻辑时，必须保证内置路径仍然有效。
 
 **文档目录约定**：`docs-site/docs/` 是文档唯一事实源，`guide/` 放功能说明、`advanced/` 放环境搭建与进阶教程。构建时由 `syncAiDocs` task 复制到 `assets/docs/`，AI 在容器内看到的是 `~/.nox/docs/{guide,advanced}/*.md`。**面向用户书写**：讲清怎么做、会看到什么、出错怎么办；变量名、错误码、内部实现路径属于 `prompts/`，别写进用户文档。
 
@@ -322,8 +309,8 @@ Tag 驱动发版，平时 `main` 上的提交不影响发布包。
 ### 步骤
 
 0. **更新内置模型数据（仅打 Tag 前执行）**：`python3 scripts/update-models-dev-assets.py` 从 models.dev 刷新 `app/src/main/assets/api.official.json`（只保留内置 12 个官方 provider、不引入新 provider，现有 provider 下可扩充模型与单价）。**该脚本只在打 Tag 发版前手动执行；日常提交 / 推 main / 其它开发流程一律不跑**。**失败时脚本非零退出且不改快照——直接跳过此步发版，不要重试或手改文件**；成功则把快照改动一并提交到即将打 Tag 的分支。
-1. **在 `main` 最新提交上打 Tag 并推送**：`git tag v1.7.0-rc1 && git push origin v1.7.0-rc1`。**严禁在 `feat/*` / `refactor/*` 上打 Tag 发版**，必须先合入 `main`。
-2. CI 捕获 `v*` Tag 后自动推导版本、构建 APK、发布 Release。
+1. **在 GitHub Actions 页面手动触发 `android-release.yml`（workflow_dispatch）**，输入 `release_tag`（如 `v1.0.0`）。**不要本地打 tag 再 push**——本仓库是 fork，GitHub 不为 fork 的 tag push 触发 workflow，打了也不会跑。
+2. CI 自己创建 tag 与 Release，并用输入的 tag 覆盖 versionName（避免构建时仓库无 tag 导致版本号落到 dev 形态）。
 3. **真机装 RC 包**，至少跑通 AI 对话 + 终端 + 容器启动三条主线。
 4. **有问题**：从该 RC Tag 拉 `hotfix/xxx` 修复（**勿从最新 `main` 或功能分支拉**，否则会把已合入的未发版功能带进修复包）→ 升 rc 序号打 Tag 重发 → 修复合回 `main` 并推送 → 删 hotfix 分支。这是允许在非 `main` 分支打 Tag 的唯一例外。**无问题**：直接打正式 Tag（`v1.7.0`）转正。
    - 若 hotfix 带数据库迁移：迁移号随 tag 发布即冻结（发布即冻结），合回 `main` 时 `main` 上编号更小的未发布迁移必须后移（见〈数据库与迁移〉合流后移），push 前先跑 `check_migrations.py`，CI 兜底拦截。

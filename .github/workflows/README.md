@@ -1,6 +1,6 @@
 # CI 签名密钥配置
 
-CI 构建与产物说明见仓库根 [README.md](../../README.md) 的「CI 自动构建」「Known Limitations」。本文件只讲一件主 README 没覆盖的事：**如何把本地 release 签名密钥交给 GitHub Actions**。
+发版流程见仓库根 [README.md](../../README.md) 的「版本说明」一节（面向用户）；发版的工程细节见 [CLAUDE.md](../../CLAUDE.md)。本文件只讲一件主 README 没覆盖的事：**如何把本地 release 签名密钥交给 GitHub Actions**。
 
 ## 需要配置的 GitHub Secrets
 

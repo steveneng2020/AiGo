@@ -6,11 +6,13 @@ App 内关于页与 GitHub Release 页都从同一份 CHANGELOG.md 读取，
 保证两处内容一致，且每条都带具体说明（而不是只有一个标题）。
 
 用法：
-  python3 scripts/parse-changelog.py                 # 输出全部版本
-  python3 scripts/parse-changelog.py --latest        # 只输出最新一个版本
-  python3 scripts/parse-changelog.py --markdown      # 输出 Release 用的 Markdown
+  python3 scripts/parse-changelog.py                  # 输出全部版本
+  python3 scripts/parse-changelog.py --latest         # 只输出最新一个版本
+  python3 scripts/parse-changelog.py --markdown       # 输出 Release 用的 Markdown
+  python3 scripts/parse-changelog.py --markdown-for v1.0.0   # 指定版本的 Markdown
+  python3 scripts/parse-changelog.py --summary-for v1.0.0    # 指定版本的首条要点（APK 文件名用）
 
-输出 JSON 结构：
+输出 JSON 结构（items 是平铺数组，没有 sections 层级）：
   {
     "version": 1,
     "entries": [
@@ -18,9 +20,7 @@ App 内关于页与 GitHub Release 页都从同一份 CHANGELOG.md 读取，
         "tag": "v1.0.0",
         "date": "2026-11-21",
         "summary": "一句话概括",
-        "sections": [
-          { "title": "新增", "items": [{"title": "...", "detail": "..."}] }
-        ]
+        "items": [{"title": "短语", "detail": "具体说明"}]
       }
     ]
   }
@@ -115,6 +115,15 @@ def main() -> int:
         sys.stderr.write("CHANGELOG.md 里没有解析到任何版本（检查标题格式 ## vX.Y.Z — YYYY-MM-DD）\n")
         return 1
 
+    if "--summary-for" in args:
+        # 取指定 tag 的首条要点短语，供 APK 文件名用（面向用户，非开发提交标题）。
+        # 找不到该 tag 时返回空串，由调用方兜底。
+        idx = args.index("--summary-for")
+        want = args[idx + 1] if len(args) > idx + 1 else ""
+        entry = next((e for e in data["entries"] if e["tag"] == want), None)
+        if entry and entry.get("items"):
+            sys.stdout.write(entry["items"][0]["title"])
+        return 0
     if "--markdown-for" in args:
         # 取指定 tag 的版本段落（Release 页用）
         idx = args.index("--markdown-for")

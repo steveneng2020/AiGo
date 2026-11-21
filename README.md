@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/icon-nox.webp" width="112" alt="AiGo" />
+  <img src="docs/icon-aigo.webp" width="112" alt="AiGo" />
   <h1 align="center">AiGo</h1>
   <p align="center">
     手机上的 AI 编程工具与移动工作站 · 基于 Nox（<a href="https://github.com/xzyy03/Nox">xzyy03/Nox</a>）二次开发
@@ -12,16 +12,44 @@
 > **AiGo 是 Nox 的二次开发版（非官方），遵循 GPL-3.0 开源。**
 >
 > - **本项目**：[github.com/steveneng2020/AiGo](https://github.com/steveneng2020/AiGo)
-> - **直接上游**：[github.com/xzyy03/Nox](https://github.com/xzyy03/Nox)（AiGo 的 fork 源，保持 fork 关系）
-> - **更上游**：[github.com/jieapi/aicode](https://github.com/jieapi/aicode)（Nox 的二改基础）
-> - **许可证**：[GPL-3.0](LICENSE)（与上游一致，二次开发同样开源）
-> - **包名**：`com.aigo`（与 Nox 的 `com.nox` 不同，两者可同机共存）
+> - **上游**：[xzyy03/Nox](https://github.com/xzyy03/Nox) → [jieapi/aicode](https://github.com/jieapi/aicode)
+> - **许可证**：[GPL-3.0](LICENSE)（与上游一致，改动同样开源）
+> - **包名**：`com.aigo`（与 Nox 的 `com.nox` 不同，可同机共存）
 > - **联系邮箱**：steveneng@163.com
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License GPL-3.0" /></a>
   <img src="https://img.shields.io/badge/Platform-Android-green.svg" alt="Android Platform" />
   <a href="https://github.com/steveneng2020/AiGo/releases"><img src="https://img.shields.io/github/v/release/steveneng2020/AiGo?display_name=tag&include_prereleases" alt="Latest Release" /></a>
+</p>
+
+<p align="center">
+  <table>
+    <tr>
+      <td align="center"><img src="docs/screenshots/home.jpg" alt="AiGo 新会话 - 选择模型直接开聊" width="210"/></td>
+      <td align="center"><img src="docs/screenshots/chat.jpg" alt="AiGo 对话 - 工具调用与思考过程" width="210"/></td>
+      <td align="center"><img src="docs/screenshots/container.jpg" alt="AiGo 容器与镜像 - 多发行版任选" width="210"/></td>
+      <td align="center"><img src="docs/screenshots/models.jpg" alt="AiGo 供应商与模型 - 任意供应商" width="210"/></td>
+    </tr>
+    <tr>
+      <td align="center">新会话 · 选模型开聊</td>
+      <td align="center">对话 · 工具调用</td>
+      <td align="center">容器 · 多发行版</td>
+      <td align="center">模型 · 任意供应商</td>
+    </tr>
+    <tr>
+      <td align="center"><img src="docs/screenshots/git.jpg" alt="AiGo Git - 状态、分支与提交记录" width="210"/></td>
+      <td align="center"><img src="docs/screenshots/drawer.jpg" alt="AiGo 侧栏 - 会话与功能入口" width="210"/></td>
+      <td align="center"><img src="docs/screenshots/settings.jpg" alt="AiGo 设置 - 偏好、外观与 AI 配置" width="210"/></td>
+      <td align="center"><img src="docs/screenshots/about.jpg" alt="AiGo 关于 - 版本、更新与开源仓库" width="210"/></td>
+    </tr>
+    <tr>
+      <td align="center">Git · 状态与提交</td>
+      <td align="center">侧栏 · 会话与入口</td>
+      <td align="center">设置 · 偏好与配置</td>
+      <td align="center">关于 · 版本与更新</td>
+    </tr>
+  </table>
 </p>
 
 ---
@@ -34,36 +62,33 @@ AiGo 是运行在 Android 上的通用 AI Coding Agent，把一套完整的 Linu
 
 ## 与上游的关系
 
-AiGo 的代码来源是一条两层的二改链：
+AiGo 源自 [Nox](https://github.com/xzyy03/Nox)，Nox 又源自 [AiCode](https://github.com/jieapi/aicode)。这条链上每一层都遵循 GPL-3.0，改动同样开源：
 
 ```
-jieapi/aicode  ──(Nox 二次开发)──▶  xzyy03/Nox  ──(AiGo 二次开发)──▶  steveneng2020/AiGo
-   原始项目                          直接上游（fork 源）                  本项目
+jieapi/aicode  ──▶  xzyy03/Nox  ──▶  steveneng2020/AiGo
+  原始项目            直接上游              本项目
 ```
 
-- AiGo 从 Nox 直接 fork，**保持完整的 fork 关系**，上游 Nox 的更新可以持续合入。
-- AiGo 相对 Nox 的改动集中在**应用层品牌**与**实用功能优化**，源码包名（`com.nox`）保持不变，以此换取与上游合并的低冲突成本。
-- 如需跟进更上游（AiCode）的改动，正规路径是等 Nox 合入后再同步；跨层直接合并会破坏与 Nox 的 fork 关系，本项目不做。
+AiGo 与 Nox **可以同机共存**（包名不同，互不覆盖），装了两个也能各自使用。Nox 后续的更新会持续合入 AiGo。
 
-## 相对上游 Nox 的改动
+## AiGo 做了什么
 
-### 品牌
+### 与 Nox 的区别
 
 | 项 | Nox | AiGo |
 | --- | --- | --- |
 | 应用名 | Nox | AiGo |
-| 包名 | `com.nox` | `com.aigo` |
-| 更新检查 | 指向 xzyy03/Nox | 指向本仓库 |
-| 关于页链接 | 上游仓库 | 本项目仓库 |
+| 包名 | `com.nox` | `com.aigo`（可同机共存） |
+| 更新检查 | 指向 Nox 仓库 | 指向本项目 |
 | 联系渠道 | QQ 群 | 邮箱 steveneng@163.com |
 
-### 功能
+### 新增与改进
 
 - **运行中也能添加附件** — AI 正在处理时，输入框的 `+` 不再置灰。可以边等边补图片或文件，随排队消息一起提交，不必等本轮结束。
-- **通知栏图标跟随应用图标** — 通知与后台服务的小图标改为按「图标设置」里选中的图标解析，换图标后已发出的通知会自动重建，不再是固定的系统占位图。
-- **侧边栏插件分组** — 插件入口从设置组中独立成组，带分组标题、来源插件副标题与「更多插件」入口。
-- **关于页更新内容卡片** — 展示最近版本的更新日志，可展开查看全部历史版本。
-- **版本号由 git 驱动** — `versionName` 由 tag 推导、`versionCode` 由提交数递增，发版不再手改版本号；支持本地调试时用 `-PversionCodeOverride` / `-PversionNameOverride` 固定版本号反复覆盖安装。
+- **通知栏图标跟随应用图标** — 通知与后台服务的小图标跟随「图标设置」里选中的图标，换图标后已发出的通知会自动刷新，不再是固定的系统占位图。
+- **侧边栏插件分组** — 插件入口从设置组中独立成组，带分组标题与「更多插件」入口。
+- **关于页更新内容卡片** — 展示最近版本的更新内容，可展开查看全部历史版本，断网也能看。
+- **多套应用图标** — 内置三套图标可自由切换，桌面与通知栏同步变化。
 
 ## 功能特性
 
@@ -89,7 +114,7 @@ jieapi/aicode  ──(Nox 二次开发)──▶  xzyy03/Nox  ──(AiGo 二次
 - **远程 SSH 模式** — 把远程服务器作为执行后端，命令、文件与终端都作用于远端项目
 - **Shizuku 执行后端** — 借助 Shizuku，AI 可在宿主 Android 系统上执行 shell 与 adb 命令，用于调试或操作其他设备（需逐次授权确认）
 - **文件树与代码编辑器** — 缩进式文件树点开即进全屏编辑器，支持主流语言语法高亮与 Markdown 预览；AI 回复里的 `文件:行号` 链接可直接跳转到对应行
-- **Git 集成** — 可视化管理状态、分支、提交历史、差异与标签，支持暂存与回退改动、署名与凭据配置
+- **Git 集成** — 看 AI 改了哪些文件、提交一次留个还原点、切分支、推送到远程。状态、差异、历史、标签都能可视化查看，AI 改乱了直接退回上一个提交
 - **工作区同步** — 支持 SFTP / FTP 同步，内置 FTP 服务端方便电脑端管理文件
 
 ### 使用体验
@@ -110,67 +135,11 @@ jieapi/aicode  ──(Nox 二次开发)──▶  xzyy03/Nox  ──(AiGo 二次
 | 更新记录 | [Releases](https://github.com/steveneng2020/AiGo/releases)，App 内「关于」页也可查看 |
 | 使用文档 | [docs-site/docs](docs-site/docs)（与 App 内置文档同源） |
 
-## 版本号规则
+## 版本说明
 
-版本号的唯一事实源是 Git，不需要手改 `build.gradle.kts`。
+正式版的版本号就是 tag 本身，如 `1.0.0`。自己从源码构建的版本会带 `+日期` 后缀（如 `1.0.0+20261121`），用来区分是哪一次构建；日期不参与新旧比较，不影响更新提示。
 
-| 字段 | 来源 | 规则 |
-| --- | --- | --- |
-| `versionCode` | `git rev-list --count HEAD` | 提交总数，每次提交 +1 |
-| `versionName` | `git describe --tags --always --dirty` | 见下表，末尾统一追加构建日期 |
-
-`versionName` 的三种形态：
-
-| 当前提交状态 | versionName | 示例 |
-| --- | --- | --- |
-| 正好有 tag | `<tag>+<构建日期>` | `1.0.0+20261121` |
-| 领先上个 tag N 个提交 | `<tag>-dev.N+<hash>.<构建日期>` | `1.0.0-dev.9+350da83.20261121` |
-| 完全没有 tag | `1.0.0-dev+<hash>.<构建日期>` | `1.0.0-dev+350da83.20261121` |
-
-几点说明：
-
-- **构建日期取 git 提交日期**（`git log -1 --date=format:%Y%m%d`），不是机器当前时间。同一提交在任何机器、任何时间构建都得到相同值，CI 与本地产物一致。
-- 日期放在 `+` 之后（SemVer 的构建元数据段），**不参与版本比较**，不影响「是否有新版本」的判定。放在 `-` 之后会小于同号正式版，导致正式版发布后更新检测失效。
-- tag 里若已含 8 位日期（如 `v1.0.0-20261121`）就不再追加，避免重复。
-
-本地反复构建又不升版本：
-
-```bash
-sh gradlew :app:assembleUniversalDebug \
-  -PversionCodeOverride=14 -PversionNameOverride=1.0.0-dev
-```
-
-**注意**：不要对 `main` 做 rebase / squash / force push——`versionCode` 由提交数计算，改写历史会导致版本号回退、新包装不上。
-
-## 发版
-
-本仓库是 Nox 的 fork，**GitHub 不会为 fork 仓库的 tag push 触发 workflow**，所以发版走手动触发，由 CI 自己创建 tag 与 Release：
-
-```bash
-# 在 GitHub Actions 页面触发，或用 API
-# 输入 release_tag=v1.0.0，flavors=all|arm64|x86_64
-```
-
-可选 `flavors`：
-
-| 值 | 产物 | 用途 |
-| --- | --- | --- |
-| `all` | universal + arm64 + x86_64 | 对外发布 |
-| `arm64` | 仅 arm64 | 真机自用 |
-| `x86_64` | 仅 x86_64 | 模拟器 |
-
-发版前先跑 `aigo release-check` 清理临时 tag（否则 `git describe` 会被污染，`versionName` 变成 `manual-2-6-gxxxx`）。
-
-产物命名：`AiGo-<架构>-<versionName>-<摘要>.apk`。**摘要限定 ASCII**——GitHub 的 Release Assets API 会把中文改写成 `-`，中文要点改放在 Release 正文首行。
-
-## 构建
-
-```bash
-./gradlew :app:assembleUniversalDebug     # 通用调试包（arm64 + x86_64）
-./gradlew :app:assembleArmsoloDebug       # 仅 arm64
-```
-
-发布签名读取 `app/keystore.properties`，CI 从 GitHub Secrets 还原。
+App 内「关于」页可以查看每个版本的更新内容，断网也能看——这些说明随安装包一起下载到本地。
 
 ## 反馈与贡献
 

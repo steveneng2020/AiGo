@@ -204,7 +204,9 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          # verify job 已经预热过缓存，三个 build job 都读缓存；写入交给 verify。
+          # 缓存由 ci.yml（push main）播种；verify 与 build 均只读。
+          # 发版只在 tag ref 上跑，而 GitHub 缓存按 ref 隔离，
+          # tag 作用域写入的条目除同 tag 重跑外永远无人读取。
           cache-read-only: true
 
       - name: Resolve release tag
@@ -242,8 +244,20 @@ jobs:
         run: chmod +x ./gradlew
 
       # 只编这一个 flavor。三个 job 并行，各自跑自己的 KSP + Kotlin + R8。
+      #
+      # 必须显式传 versionNameOverride：
+      # tag 是 release job 在构建**之后**才创建的，构建时仓库里没有该 tag，
+      # git describe 只能返回裸 hash，gitVersionName() 落到 dev 分支，
+      # 正式包的 versionName 于是变成 1.0.0-dev+<hash>，比 tag 的 1.0.0 小。
+      # 后果：用户装上后检查更新永远提示有新版本（1.0.0 > 1.0.0-dev），
+      # 点安装又因 versionCode 相同被拒，形成死循环误报。
       - name: Build ${{ matrix.flavor }} Release APK
-        run: ./gradlew :app:${{ matrix.gradle }} --stacktrace
+        run: |
+          VERSION="${{ steps.tag.outputs.tag }}"
+          VERSION="${VERSION#v}"
+          echo "versionNameOverride=$VERSION"
+          ./gradlew :app:${{ matrix.gradle }} --stacktrace \
+            -PversionNameOverride="$VERSION"
 
       # 重命名：AiGo-<abi>-<versionName>-<更新摘要>.apk
       # 版本取自 APK 自身（aapt2 dump badging），不依赖 tag 命名习惯。
@@ -260,25 +274,30 @@ jobs:
           VERSION_NAME=$("$AAPT2" dump badging "$SRC" | head -1 | grep -o "versionName='[^']*'" | cut -d"'" -f2)
           echo "versionName from APK: $VERSION_NAME"
 
-          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
-            SUMMARY=$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME" 2>/dev/null | head -1)
+          # 摘要优先级：CHANGELOG 的版本要点 > tag 注释 > 提交标题。
+          # 前两者面向用户；提交标题是开发语言（如 "revert: 恢复 enableJetifier"），
+          # 一旦落到资产名里就把内部实验暴露给下载者，只在万不得已时兜底。
+          # 注意 tag 是轻量 tag（无注释）时 %(contents:subject) 会返回提交标题，
+          # 所以不能只靠 tag 注释判断。
+          SUMMARY=$(python3 scripts/parse-changelog.py --summary-for "${{ steps.tag.outputs.tag }}" 2>/dev/null || true)
+          if [[ -z "$SUMMARY" ]]; then
+            SUMMARY=$(git tag -l --format='%(contents:subject)' "${{ steps.tag.outputs.tag }}" 2>/dev/null | head -1)
           fi
-          if [[ -z "${SUMMARY:-}" ]]; then
+          if [[ -z "$SUMMARY" ]]; then
             SUMMARY=$(git log -1 --format=%s)
           fi
-          SUMMARY_RAW="$SUMMARY"
           SUMMARY=$(printf '%s' "$SUMMARY" | python3 scripts/apk-name-summary.py)
-          # 纯中文标题经 ASCII 化后为空，用短 commit 兜底，避免文件名缺段
-          [[ -z "$SUMMARY" ]] && SUMMARY="build-$(git rev-parse --short HEAD)"
-          echo "summary: $SUMMARY"
-          # 中文原始摘要写进 job summary，release 阶段拼进正文
-          {
-            echo "SUMMARY_RAW<<EOF_SUM"
-            echo "$SUMMARY_RAW"
-            echo "EOF_SUM"
-          } >> "$GITHUB_OUTPUT"
+          # 摘要经 ASCII 化后可能为空（CHANGELOG 要点是中文时必然为空）。
+          # 此时不拼摘要段，而不是塞 build-<sha>：短 hash 对下载者是纯噪音，
+          # 且会把「这是哪一版」的信息藏在文件名里而不是 tag 里。
+          # 中文要点由 Release 正文承载（见 release job）。
+          echo "summary: ${SUMMARY:-<无>}"
 
-          out="dist/AiGo-${{ matrix.abi }}-${VERSION_NAME}-${SUMMARY}.apk"
+          if [[ -n "$SUMMARY" ]]; then
+            out="dist/AiGo-${{ matrix.abi }}-${VERSION_NAME}-${SUMMARY}.apk"
+          else
+            out="dist/AiGo-${{ matrix.abi }}-${VERSION_NAME}.apk"
+          fi
           cp "$SRC" "$out"
           echo "packaged $out"
 
@@ -416,11 +435,11 @@ jobs:
           # 用与 App 相同的解析脚本，取与本次 tag 对应的版本段落
           notes=$(python3 scripts/parse-changelog.py --markdown-for "$tag" 2>/dev/null || true)
           if [[ -z "$notes" ]]; then
-            # tag 尚未写进 CHANGELOG.md 时退化为最新一段，并在正文里提示
-            notes=$(python3 scripts/parse-changelog.py --markdown 2>/dev/null || true)
-            notes="> 注意：CHANGELOG.md 里没有找到 $tag 的条目，以下是最新一版的内容。
-
-          $notes"
+            # tag 尚未写进 CHANGELOG.md 时退化为最新一段，并在正文里提示。
+            # 不能用多行字符串拼：续行前那 10 个空格会原样进正文，
+            # 被 Markdown 当成缩进代码块渲染成等宽字体。
+            latest=$(python3 scripts/parse-changelog.py --markdown 2>/dev/null || true)
+            notes=$(printf '> 注意：CHANGELOG.md 里没有找到 %s 的条目，以下是最新一版的内容。\n\n%s' "$tag" "$latest")
           fi
 
           delimiter="EOF_$(date +%s)"

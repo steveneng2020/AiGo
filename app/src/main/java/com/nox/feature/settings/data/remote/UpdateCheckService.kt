@@ -107,7 +107,7 @@ class UpdateCheckService @Inject constructor(
     /**
      * 更新日记：优先用 APK 内置的历史（离线可用），联网成功时再用远端数据覆盖。
      *
-     * 内置数据由 Gradle 任务 `generateChangelog` 在构建时从 git tag + 提交标题生成，
+     * 内置数据由 Gradle 任务 `generateChangelog` 在构建时解析仓库根 `CHANGELOG.md` 生成，
      * 写入 assets/changelog.json。这样断网或 GitHub API 被限流（匿名 60 次/小时）
      * 时仍能看到历史，不会出现「暂无发布记录」这种误导性空态。
      *

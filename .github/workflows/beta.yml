@@ -1,7 +1,8 @@
 name: Beta Build
 
 # push 到 main 时自动构建一个测试包：universal flavor、正式签名、与 release 同配置（R8/资源压缩），
-# 仅 applicationId 后缀 .beta（com.nox.beta，可与正式版同机共存）。
+# 与正式版同包名 com.aigo（不加 applicationIdSuffix），可覆盖安装、数据保留。
+# 注意：不要改回加后缀——两个包名会让容器 rootfs 与工作区分裂。
 # 产物上传到 Actions Artifacts（默认保留 90 天），不进 GitHub Release。
 # 打 v* tag 的正式发版走 android-release.yml；合入前门禁走 ci.yml。
 on:
