@@ -152,36 +152,42 @@ jobs:
         run: ./gradlew :app:testUniversalDebugUnitTest --stacktrace
 
   # ── 2. 构建：按选择的架构并行 ──
-  # 用静态 matrix + if 条件，而不是单独一个 prepare job 动态生成：
-  # prepare 只花 3 秒，但多一次 runner 调度（约 10-15 秒），不值得。
+  # 用 prepare 生成 matrix 而不是静态 include：job 级的 if 不能引用 matrix.*
+  # （报 Unrecognized named-value: 'matrix'），静态 matrix 无法按输入跳过 flavor，
+  # 会让未选中的架构也白跑一遍。prepare 只花 3 秒，换来正确的按需构建。
   # 「all」时三个 flavor 在独立 runner 并行，墙钟取决于最慢的那个；
   # 合并成单 job 串行实测 17 分 47 秒，因为每个 flavor 都要独立跑一遍 R8。
+  prepare:
+    name: Prepare matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - name: Build matrix
+        id: m
+        run: |
+          sel="${{ inputs.flavors }}"
+          [[ -z "$sel" ]] && sel="all"
+          universal='{"flavor":"universal","gradle":"assembleUniversalRelease","apk":"app-universal-release.apk","abi":"universal"}'
+          armsolo='{"flavor":"armsolo","gradle":"assembleArmsoloRelease","apk":"app-armsolo-release.apk","abi":"arm64"}'
+          x86solo='{"flavor":"x86solo","gradle":"assembleX86soloRelease","apk":"app-x86solo-release.apk","abi":"x86_64"}'
+          case "$sel" in
+            arm64)  list="[$armsolo]" ;;
+            x86_64) list="[$x86solo]" ;;
+            *)      list="[$universal,$armsolo,$x86solo]" ;;
+          esac
+          echo "matrix={\"include\":$list}" >> "$GITHUB_OUTPUT"
+          echo "flavors: $sel -> $list"
+
   build:
     name: Build ${{ matrix.flavor }}
-    # 只用选中的架构出包，未选中的直接跳过（不占 runner）
-    if: matrix.enabled
+    needs: prepare
     runs-on: ubuntu-latest
     permissions:
       contents: read
     strategy:
       fail-fast: true
-      matrix:
-        include:
-          - flavor: universal
-            gradle: assembleUniversalRelease
-            apk: app-universal-release.apk
-            abi: universal
-            enabled: ${{ inputs.flavors == 'all' || inputs.flavors == '' }}
-          - flavor: armsolo
-            gradle: assembleArmsoloRelease
-            apk: app-armsolo-release.apk
-            abi: arm64
-            enabled: ${{ inputs.flavors == 'all' || inputs.flavors == 'arm64' || inputs.flavors == '' }}
-          - flavor: x86solo
-            gradle: assembleX86soloRelease
-            apk: app-x86solo-release.apk
-            abi: x86_64
-            enabled: ${{ inputs.flavors == 'all' || inputs.flavors == 'x86_64' || inputs.flavors == '' }}
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
 
     steps:
       - name: Checkout
