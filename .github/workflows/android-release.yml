@@ -262,7 +262,10 @@ jobs:
           # release 阶段按映射还原。
           ascii="AiGo-${{ matrix.abi }}-${VERSION_NAME}.apk"
           cp "$SRC" "dist/$ascii"
-          printf '%s\t%s\n' "$ascii" "$(basename "$out")" > "dist/MANIFEST.txt"
+          # MANIFEST 内容也会被 artifact 往返改写（实测中文变成 '-'），
+          # 所以真实文件名先 URL 编码成纯 ASCII 再落盘，读取端解码还原。
+          real_encoded=$(printf '%s' "$(basename "$out")" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))')
+          printf '%s\t%s\n' "$ascii" "$real_encoded" > "dist/MANIFEST.txt"
           rm -f "$out"
           echo "artifact file: $ascii"
           echo "real name: $(basename "$out")"
@@ -272,7 +275,8 @@ jobs:
             MAPPING="app/build/outputs/mapping/universalRelease/mapping.txt"
             if [[ -f "$MAPPING" ]]; then
               gzip -c "$MAPPING" > "dist/AiGo-universal-${VERSION_NAME}-mapping.txt.gz"
-              echo "AiGo-universal-${VERSION_NAME}-mapping.txt.gz" >> "dist/MANIFEST.txt"
+              enc=$(printf '%s' "AiGo-universal-${VERSION_NAME}-mapping.txt.gz" | python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(), safe=""))')
+              printf '%s\t%s\n' "AiGo-universal-${VERSION_NAME}-mapping.txt.gz" "$enc" >> "dist/MANIFEST.txt"
               echo "packaged mapping"
             fi
           fi
@@ -313,11 +317,13 @@ jobs:
           mkdir -p dist
           # artifact 内是 ASCII 名 + MANIFEST.txt（ASCII->真实名），逐个还原。
           # 中文名直接走 artifact 往返会被替换成 '-'，见 build job 里的说明。
-          while IFS=$'\t' read -r ascii real; do
-            [[ -z "$ascii" || -z "$real" ]] && continue
+          while IFS=$'\t' read -r ascii encoded; do
+            [[ -z "$ascii" || -z "$encoded" ]] && continue
+            real=$(printf '%s' "$encoded" | python3 -c 'import sys,urllib.parse; print(urllib.parse.unquote(sys.stdin.read()))')
             src=$(find dist-tmp -type f -name "$ascii" | head -1)
             if [[ -n "$src" ]]; then
               cp "$src" "dist/$real"
+              echo "restored: $real"
             else
               echo "::warning::未找到 $ascii"
             fi
