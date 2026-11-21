@@ -143,9 +143,18 @@ jobs:
           if [[ -z "${SUMMARY:-}" ]]; then
             SUMMARY=$(git log -1 --format=%s)
           fi
-          # 文件名安全化：去掉路径分隔符与常见非法字符，截断到 40 字符
-          SUMMARY=$(printf '%s' "$SUMMARY" | tr '/:|*?"<>\\' '--------' | tr -s ' ' | cut -c1-40)
-          SUMMARY=$(printf '%s' "$SUMMARY" | sed -E 's/^[[:space:]-]+|[[:space:]-]+$//g')
+          # 文件名安全化：
+          #   1. 去掉 conventional commit 前缀（feat: / fix(x): 等）
+          #   2. 非法字符换 '-'，压缩空白
+          #   3. 按「字符」截断而非字节——cut -c 对中文会切断多字节序列产生乱码
+          SUMMARY=$(printf '%s' "$SUMMARY" | python3 -c '
+import re, sys
+s = sys.stdin.read().strip()
+s = re.sub(r"^[a-z]+(\([^)]*\))?:\s*", "", s)          # 去前缀
+s = re.sub(r"[\\/:|*?\"<>]", "-", s)                    # 非法字符
+s = re.sub(r"\s+", " ", s).strip(" -")                    # 压缩空白
+print(s[:32])                                             # 按字符截断
+' 2>/dev/null)
           [[ -z "$SUMMARY" ]] && SUMMARY="update"
           echo "summary: $SUMMARY"
 
