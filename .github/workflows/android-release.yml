@@ -377,6 +377,25 @@ jobs:
           echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${prev_tag:-HEAD}...${cur_tag}" >> "$GITHUB_OUTPUT"
           echo "${delimiter}" >> "$GITHUB_OUTPUT"
 
+      # 提前检查 tag / Release 是否已被占用，给出可操作的提示。
+      # 否则 action-gh-release 会以一段难懂的 API 错误失败。
+      - name: Check tag availability
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "::error::Release $tag 已存在。要重新发布请先在 GitHub 删除该 Release 与对应 tag："
+            echo "  https://github.com/${{ github.repository }}/releases"
+            exit 1
+          fi
+          if git ls-remote --tags origin "refs/tags/$tag" | grep -q .; then
+            echo "::error::tag $tag 已存在但无对应 Release。请先删除该 tag 再重试："
+            echo "  git push --delete origin $tag   # 或到 GitHub Tags 页面删除"
+            exit 1
+          fi
+          echo "✓ tag $tag 可用"
+
       - name: Create GitHub Release & Upload assets
         uses: softprops/action-gh-release@v2
         with:
