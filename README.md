@@ -112,15 +112,26 @@ jieapi/aicode  ──(Nox 二次开发)──▶  xzyy03/Nox  ──(AiGo 二次
 
 ## 版本号规则
 
-版本号的唯一事实源是 Git，不需要手改 `build.gradle.kts`：
+版本号的唯一事实源是 Git，不需要手改 `build.gradle.kts`。
 
-| 场景 | versionName | versionCode |
+| 字段 | 来源 | 规则 |
 | --- | --- | --- |
-| 打 tag `v1.2.3` | `1.2.3` | 该提交的提交总数 |
-| 无 tag（日常提交） | `1.0.0-dev.N+<hash>` | 提交总数 |
-| 本地调试（固定版本） | `-PversionNameOverride` 指定 | `-PversionCodeOverride` 指定 |
+| `versionCode` | `git rev-list --count HEAD` | 提交总数，每次提交 +1 |
+| `versionName` | `git describe --tags --always --dirty` | 见下表，末尾统一追加构建日期 |
 
-发版：`git tag -a v1.0.0 && git push origin v1.0.0`，CI 自动构建三种架构并发布 Release。
+`versionName` 的三种形态：
+
+| 当前提交状态 | versionName | 示例 |
+| --- | --- | --- |
+| 正好有 tag | `<tag>+<构建日期>` | `1.0.0+20261121` |
+| 领先上个 tag N 个提交 | `<tag>-dev.N+<hash>.<构建日期>` | `1.0.0-dev.9+350da83.20261121` |
+| 完全没有 tag | `1.0.0-dev+<hash>.<构建日期>` | `1.0.0-dev+350da83.20261121` |
+
+几点说明：
+
+- **构建日期取 git 提交日期**（`git log -1 --date=format:%Y%m%d`），不是机器当前时间。同一提交在任何机器、任何时间构建都得到相同值，CI 与本地产物一致。
+- 日期放在 `+` 之后（SemVer 的构建元数据段），**不参与版本比较**，不影响「是否有新版本」的判定。放在 `-` 之后会小于同号正式版，导致正式版发布后更新检测失效。
+- tag 里若已含 8 位日期（如 `v1.0.0-20261121`）就不再追加，避免重复。
 
 本地反复构建又不升版本：
 
@@ -130,6 +141,27 @@ sh gradlew :app:assembleUniversalDebug \
 ```
 
 **注意**：不要对 `main` 做 rebase / squash / force push——`versionCode` 由提交数计算，改写历史会导致版本号回退、新包装不上。
+
+## 发版
+
+本仓库是 Nox 的 fork，**GitHub 不会为 fork 仓库的 tag push 触发 workflow**，所以发版走手动触发，由 CI 自己创建 tag 与 Release：
+
+```bash
+# 在 GitHub Actions 页面触发，或用 API
+# 输入 release_tag=v1.0.0，flavors=all|arm64|x86_64
+```
+
+可选 `flavors`：
+
+| 值 | 产物 | 用途 |
+| --- | --- | --- |
+| `all` | universal + arm64 + x86_64 | 对外发布 |
+| `arm64` | 仅 arm64 | 真机自用 |
+| `x86_64` | 仅 x86_64 | 模拟器 |
+
+发版前先跑 `aigo release-check` 清理临时 tag（否则 `git describe` 会被污染，`versionName` 变成 `manual-2-6-gxxxx`）。
+
+产物命名：`AiGo-<架构>-<versionName>-<摘要>.apk`。**摘要限定 ASCII**——GitHub 的 Release Assets API 会把中文改写成 `-`，中文要点改放在 Release 正文首行。
 
 ## 构建
 

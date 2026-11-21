@@ -78,19 +78,65 @@ There is nothing to set up beforehand: install the app and configure a model und
 | Changelog | [Releases](https://github.com/steveneng2020/AiGo/releases) (all versions & notes) |
 | User guide | [Online docs](https://github.com/steveneng2020/AiGo/tree/main/docs-site/docs): quick start, user manual and advanced guides (same content as the in-app docs) |
 
+## Versioning
+
+The single source of truth for versions is Git — never edit `build.gradle.kts` by hand.
+
+| Field | Source | Rule |
+| --- | --- | --- |
+| `versionCode` | `git rev-list --count HEAD` | total commit count, +1 per commit |
+| `versionName` | `git describe --tags --always --dirty` | see below, build date always appended |
+
+Three shapes of `versionName`:
+
+| State of current commit | versionName | Example |
+| --- | --- | --- |
+| Exactly on a tag | `<tag>+<buildDate>` | `1.0.0+20261121` |
+| N commits past a tag | `<tag>-dev.N+<hash>.<buildDate>` | `1.0.0-dev.9+350da83.20261121` |
+| No tag at all | `1.0.0-dev+<hash>.<buildDate>` | `1.0.0-dev+350da83.20261121` |
+
+- **The build date comes from the git commit date**, not the machine clock — the same commit
+  always yields the same version, on CI and locally.
+- The date sits after `+` (SemVer build metadata) so it **does not participate in comparison**
+  and cannot break update detection. Putting it after `-` would make the build older than the
+  matching release.
+- If the tag already contains an 8-digit date (e.g. `v1.0.0-20261121`), no date is appended.
+
+Pin the version for local rebuilds:
+
+```bash
+sh gradlew :app:assembleUniversalDebug \
+  -PversionCodeOverride=14 -PversionNameOverride=1.0.0-dev
+```
+
+**Never rebase / squash / force-push `main`** — `versionCode` derives from the commit count,
+so rewriting history makes it go backwards and new builds stop installing.
+
+## Release
+
+This repository is a fork of Nox, and **GitHub does not trigger workflows on tag pushes to
+forked repositories**. Releases are therefore started manually; CI creates the tag and the
+GitHub Release itself.
+
+Trigger from the Actions page (or via API) with `release_tag=v1.0.0` and one of:
+
+| `flavors` | Artifacts | Use case |
+| --- | --- | --- |
+| `all` | universal + arm64 + x86_64 | public release |
+| `arm64` | arm64 only | your own device |
+| `x86_64` | x86_64 only | emulators |
+
+Run `aigo release-check` first to clear stray temporary tags, otherwise `git describe` is
+polluted and `versionName` comes out as `manual-2-6-gxxxx`.
+
+Artifacts are named `AiGo-<abi>-<versionName>-<summary>.apk`. The **summary is ASCII-only**:
+the GitHub Release Assets API rewrites non-ASCII characters to `-`, so the human-readable
+notes live in the first line of the release body instead.
+
 ## Star
 
-If AiGo is helpful to you, give it a [Star](https://github.com/xzyy03/Nox).
+If AiGo is helpful to you, give it a [Star](https://github.com/steveneng2020/AiGo).
 
-## Star History
-
-<a href="https://www.star-history.com/?repos=steveneng2020%2FAiGo&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=steveneng2020/AiGo&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=steveneng2020/AiGo&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=steveneng2020/AiGo&type=date&legend=top-left" />
- </picture>
-</a>
 
 ## Feedback & Contribution
 
