@@ -131,6 +131,9 @@ internal fun ReasoningEffortSelector(
     protocol: ReasoningProtocol,
     model: String,
     onChange: (ReasoningEffort) -> Unit,
+    fastMode: Boolean,
+    showFastMode: Boolean,
+    onFastModeChange: (Boolean) -> Unit,
     enabled: Boolean
 ) {
     var showSheet by remember { mutableStateOf(false) }
@@ -276,6 +279,35 @@ internal fun ReasoningEffortSelector(
                             text = stringResource(R.string.chat_reasoning_default_tag),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                if (showFastMode) {
+                    Spacer(Modifier.height(Spacing.sm))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.chat_fast_mode_title),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.chat_fast_mode_cost_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.width(Spacing.md))
+                        AppSwitch(
+                            checked = fastMode,
+                            enabled = enabled,
+                            onCheckedChange = onFastModeChange
                         )
                     }
                 }

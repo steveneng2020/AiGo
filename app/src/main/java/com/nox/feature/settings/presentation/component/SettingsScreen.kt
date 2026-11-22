@@ -116,6 +116,7 @@ import compose.icons.feathericons.Download
 import compose.icons.feathericons.FileText
 import compose.icons.feathericons.Globe
 import compose.icons.feathericons.HardDrive
+import compose.icons.feathericons.Heart
 import compose.icons.feathericons.Image
 import compose.icons.feathericons.Info
 import compose.icons.feathericons.Lock
@@ -189,6 +190,8 @@ internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
     BackgroundRun(R.string.settings_category_background),
     RemoteServers(R.string.settings_remote_servers),
     Storage(R.string.settings_storage),
+    SessionManagement(R.string.settings_session_management),
+    SessionDetail(R.string.settings_session_detail),
     TokenStats(R.string.settings_token_stats_title),
     Backup(R.string.settings_backup),
     About(R.string.settings_about)
@@ -227,7 +230,10 @@ fun SettingsScreen(
     onOnboardingModelAdded: (() -> Unit)? = null,
     onOnboardingDismissFetchDialog: (() -> Unit)? = null,
     /** 从外部（如聊天输入区长按模型）直接跳到某个二级页；null 回菜单首页。 */
-    initialSectionKey: String? = null
+    initialSectionKey: String? = null,
+    onOpenSessionInWorkspace: (com.nox.feature.workspace.domain.model.Workspace, String) -> Unit = { _, _ -> },
+    onFollowMovedSession: (com.nox.feature.workspace.domain.model.Workspace, String) -> Unit = { _, _ -> },
+    onSessionsMutated: () -> Unit = {}
 ) {
     val providers by viewModel.providers.collectAsStateWithLifecycle()
     val logLevel by viewModel.logLevel.collectAsStateWithLifecycle()
@@ -335,11 +341,17 @@ fun SettingsScreen(
         mutableStateOf(shortcutEntrySection ?: SettingsSection.Menu)
     }
     var logReturnSection by remember { mutableStateOf(SettingsSection.Menu) }
+    var showLogLevelSheet by remember { mutableStateOf(false) }
+    var showSponsorSheet by remember { mutableStateOf(false) }
     // 各列表页的多选状态：顶栏「多选」开关在本页 Scaffold 里，所以状态必须提到这里统一持有。
     // 用普通 map（非 snapshot）新建容器，避免在组合期写快照状态；Compose 状态在 ListSelectionState 内部。
     val listSelections = remember { mutableMapOf<SettingsSection, ListSelectionState>() }
     fun selectionFor(target: SettingsSection): ListSelectionState =
         listSelections.getOrPut(target) { ListSelectionState() }
+    val sessionManagementViewModel: com.nox.feature.settings.presentation.SessionManagementViewModel? =
+        if (section == SettingsSection.SessionManagement || section == SettingsSection.SessionDetail) {
+            androidx.hilt.navigation.compose.hiltViewModel()
+        } else null
     var editingProvider by remember { mutableStateOf<AIProviderConfig?>(null) }
     var showAddProviderSheet by remember { mutableStateOf(false) }
     var providerPresetPrefill by remember { mutableStateOf<ProviderPreset?>(null) }
@@ -1479,10 +1491,16 @@ fun SettingsScreen(
                 )
                 SettingsSection.Log -> LogSection(
                     current = logLevel,
-                    onSelect = { viewModel.setLogLevel(it) },
+                    onOpenLevelSheet = { showLogLevelSheet = true },
                     state = logViewerState,
+                    onSelectSource = { viewModel.selectLogSource(it) },
                     onSelectFile = { viewModel.selectLogFile(it) },
-                    onClearFilter = { viewModel.refreshLogs(filterServerName = null) },
+                    onDeleteFile = { viewModel.deleteLogFile(it) },
+                    onSelectLevelFilter = { viewModel.setLogLevelFilter(it) },
+                    onSelectTagFilter = { viewModel.setLogTagFilter(it) },
+                    onClearMcpFilter = { viewModel.refreshLogs(filterServerName = null) },
+                    onLoadEarlier = { viewModel.loadEarlierLogs() },
+                    onLoadAiDetail = { viewModel.loadAiBlockDetail(it) },
                     onRefresh = { viewModel.refreshLogs(silent = true) }
                 )
                 SettingsSection.Permissions -> PermissionsSection(
@@ -1538,6 +1556,27 @@ fun SettingsScreen(
                     onClearFilters = { viewModel.clearTokenStatsFilters() }
                 )
                 SettingsSection.Storage -> storageViewModel?.let { StorageSectionHost(viewModel = it) }
+                SettingsSection.SessionManagement -> sessionManagementViewModel?.let { vm ->
+                    SessionManagementSectionHost(
+                        viewModel = vm,
+                        selection = selectionFor(SettingsSection.SessionManagement),
+                        onOpenDetail = { section = SettingsSection.SessionDetail },
+                        onOpenInChat = onOpenSessionInWorkspace,
+                        onFollowMovedSession = onFollowMovedSession,
+                        onStopAllAndCloseTerminal = onStopAllAndCloseTerminal,
+                        onSessionsMutated = onSessionsMutated
+                    )
+                }
+                SettingsSection.SessionDetail -> sessionManagementViewModel?.let { vm ->
+                    SessionDetailSectionHost(
+                        viewModel = vm,
+                        onOpenInChat = onOpenSessionInWorkspace,
+                        onFollowMovedSession = onFollowMovedSession,
+                        onStopAllAndCloseTerminal = onStopAllAndCloseTerminal,
+                        onSessionsMutated = onSessionsMutated,
+                        onDeletedNavigateBack = { section = SettingsSection.SessionManagement }
+                    )
+                }
                 SettingsSection.ProviderEditor -> {} // 已在上方 early return 处理
                 SettingsSection.SkillEditor -> {} // 已在上方 early return 处理
                 SettingsSection.SubAgentEditor -> {} // 已在上方 early return 处理
@@ -2074,6 +2113,17 @@ fun SettingsScreen(
             onClose = { activePluginPage = null }
         )
     }
+
+    if (showLogLevelSheet) {
+        LogLevelSheet(
+            current = logLevel,
+            onSelect = {
+                viewModel.setLogLevel(it)
+                showLogLevelSheet = false
+            },
+            onDismiss = { showLogLevelSheet = false }
+        )
+    }
 }
 
 /** 大屏右栏未选中分区时的占位提示。 */
@@ -2120,6 +2170,7 @@ internal fun SettingsMenu(
     val appIconContext = LocalContext.current
     var appIcon by remember { mutableStateOf(AppIconManager.current(appIconContext)) }
     var showAppIconSheet by remember { mutableStateOf(false) }
+    var showSponsorSheet by remember { mutableStateOf(false) }
     val appIconScope = rememberCoroutineScope()
     Column(
         modifier = Modifier
@@ -2354,6 +2405,12 @@ internal fun SettingsMenu(
             )
             SettingsDivider()
             SettingsRow(
+                icon = FeatherIcons.MessageSquare,
+                title = stringResource(SettingsSection.SessionManagement.titleRes),
+                onClick = { onOpen(SettingsSection.SessionManagement) }
+            )
+            SettingsDivider()
+            SettingsRow(
                 icon = FeatherIcons.Save,
                 title = stringResource(SettingsSection.Backup.titleRes),
                 onClick = { onOpen(SettingsSection.Backup) }
@@ -2397,6 +2454,12 @@ internal fun SettingsMenu(
             )
             SettingsDivider()
             SettingsRow(
+                icon = FeatherIcons.Heart,
+                title = stringResource(R.string.settings_sponsor),
+                onClick = { showSponsorSheet = true }
+            )
+            SettingsDivider()
+            SettingsRow(
                 icon = FeatherIcons.Info,
                 title = stringResource(SettingsSection.About.titleRes),
                 onClick = { onOpen(SettingsSection.About) }
@@ -2424,6 +2487,10 @@ internal fun SettingsMenu(
                 }
             }
         )
+    }
+
+    if (showSponsorSheet) {
+        SponsorSheet(onDismiss = { showSponsorSheet = false })
     }
 }
 

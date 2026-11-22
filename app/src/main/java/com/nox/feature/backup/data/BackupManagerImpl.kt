@@ -317,6 +317,9 @@ class BackupManagerImpl @Inject constructor(
                     if (options.plugins) {
                         writePluginEntries(tar)
                     }
+                    if (options.skills) {
+                        writeSkillsEntries(tar)
+                    }
                     if (options.chatHistory) {
                         writeJsonlFileEntry(tar, FILE_SESSIONS) { writer ->
                             var lastTs = 0L
@@ -642,6 +645,8 @@ class BackupManagerImpl @Inject constructor(
                 else -> {
                     if (entry.name.startsWith(MEMORY_PREFIX)) {
                         stats += restoreMemoryEntry(tar, entry.name)
+                    } else if (entry.name.startsWith(SKILLS_PREFIX)) {
+                        stats += restoreSkillEntry(tar, entry.name)
                     } else if (entry.name.startsWith(WORKSPACE_PREFIX)) {
                         stats += restoreWorkspaceEntry(tar, entry.name, selectedWorkspaces, restoreMapping)
                     }
@@ -1011,6 +1016,28 @@ class BackupManagerImpl @Inject constructor(
             }
     }
 
+    /** 用户技能：`~/.nox/skills` 下的 SKILL.md 与附属文件按相对路径写入 tar。 */
+    private fun writeSkillsEntries(tar: TarArchiveOutputStream) {
+        val root = File(containerInstaller.noxDir, "skills")
+        if (!root.isDirectory) return
+        root.walkTopDown()
+            .filter { it.isFile }
+            .forEach { file ->
+                val rel = file.relativeTo(root).invariantSeparatorsPath
+                writeTarEntry(tar, SKILLS_PREFIX + rel, file.readBytes())
+            }
+    }
+
+    private fun restoreSkillEntry(tar: TarArchiveInputStream, entryName: String): RestoreStats {
+        val rel = entryName.removePrefix(SKILLS_PREFIX)
+        if (rel.isBlank() || rel.split('/').any { it == ".." }) return RestoreStats()
+        val root = File(containerInstaller.noxDir, "skills")
+        val dest = File(root, rel)
+        dest.parentFile?.mkdirs()
+        dest.writeBytes(tar.readBytes())
+        return RestoreStats(skills = 1)
+    }
+
     private fun restoreMemoryEntry(tar: TarArchiveInputStream, entryName: String): RestoreStats {
         val rel = entryName.removePrefix(MEMORY_PREFIX)
         if (rel.isBlank() || rel.split('/').any { it == ".." }) return RestoreStats()
@@ -1031,6 +1058,7 @@ class BackupManagerImpl @Inject constructor(
         const val FILE_LEGACY_SNAPSHOT = "snapshot.json"
         const val WORKSPACE_PREFIX = "workspaces/"
         const val MEMORY_PREFIX = "memories/"
+        const val SKILLS_PREFIX = "skills/"
         /** 插件本体作为一个内嵌 zip 存放，内容就是导入侧认的组合包格式。 */
         const val FILE_PLUGINS = "plugins.zip"
     }

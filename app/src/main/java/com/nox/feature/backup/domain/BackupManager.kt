@@ -67,7 +67,9 @@ data class BackupOptions(
     val memories: Boolean = true,
     val workspaceFiles: Boolean = false,
     /** 已安装插件本体（不含插件数据与密钥）。 */
-    val plugins: Boolean = true
+    val plugins: Boolean = true,
+    /** 用户技能（~/.nox/skills 下的 SKILL.md 与附属文件）。 */
+    val skills: Boolean = true
 )
 
 data class RestoreStats(
@@ -81,6 +83,7 @@ data class RestoreStats(
     val globalPermissionRules: Int = 0,
     val memories: Int = 0,
     val plugins: Int = 0,
+    val skills: Int = 0,
     val workspaceFiles: Int = 0
 ) {
     operator fun plus(other: RestoreStats) = RestoreStats(
@@ -93,6 +96,8 @@ data class RestoreStats(
         mcpServers = mcpServers + other.mcpServers,
         globalPermissionRules = globalPermissionRules + other.globalPermissionRules,
         memories = memories + other.memories,
+        plugins = plugins + other.plugins,
+        skills = skills + other.skills,
         workspaceFiles = workspaceFiles + other.workspaceFiles
     )
 }

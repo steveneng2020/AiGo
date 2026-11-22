@@ -1,5 +1,7 @@
 package com.nox.feature.agent.domain.model
 
+import com.nox.feature.workspace.domain.model.WorkspaceRef
+
 /**
  * Agent 的工作模式。
  */
@@ -62,6 +64,7 @@ data class ChatSession(
     /** 设定 goal 时本会话累计输出 token 快照。 */
     val goalStartOutputTokens: Int = 0,
     val reasoningEffort: ReasoningEffort = ReasoningEffort.MEDIUM,
+    val fastMode: Boolean = false,
     val providerId: String? = null,
     val model: String? = null,
     val totalInputTokens: Int = 0,
@@ -71,5 +74,10 @@ data class ChatSession(
     /** 子代理会话：父会话 id；null 表示普通根会话。 */
     val parentId: String? = null,
     /** 子代理会话：派生子代理的类型（如 coder / researcher）；null 表示普通根会话。 */
-    val subagentType: String? = null
+    val subagentType: String? = null,
+    /** 会话绑定的工作流 ID；null 表示使用默认内置工作流。 */
+    val workflowId: String? = null,
+    /** 会话绑定的工作流持久化状态；null 表示无状态。 */
+    val workflowState: String? = null,
+    val workspaceRef: WorkspaceRef? = null
 )

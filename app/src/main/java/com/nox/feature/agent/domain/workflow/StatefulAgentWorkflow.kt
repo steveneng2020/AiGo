@@ -615,7 +615,7 @@ class StatefulAgentWorkflow @Inject constructor(
                             // 发送前按实际模型的视觉能力处理图片（同 execute 路径）。
                             val supportsVision = activeModelSupportsVision(currentContext.sessionId)
                             val messagesToSend = sanitizeImagesForModel(compactedMessages, supportsVision)
-                            providerInUse.completeStream(systemPrompt, messagesToSend, currentTools, currentContext.reasoningEffort)
+                            providerInUse.completeStream(systemPrompt, messagesToSend, currentTools, currentContext.reasoningEffort, fastMode = currentContext.fastMode)
                                 .collect { stream.onChunk(it) }
                             // 节流窗口内可能还压着最新累积文本：补发，保证 UI 尾巴拿到完整文本再交接落库。
                             stream.flush()

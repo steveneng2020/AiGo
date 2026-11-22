@@ -924,6 +924,10 @@ class AIAgentViewModel @Inject constructor(
         currentSessionState.map { it?.reasoningEffort ?: ReasoningEffort.MEDIUM }
             .stateIn(viewModelScope, SharingStarted.Eagerly, ReasoningEffort.MEDIUM)
 
+    val currentSessionFastMode: StateFlow<Boolean> = currentSessionState
+        .map { it?.fastMode ?: false }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     /** 当前会话绑定的 providerId/model（null 表示未绑定，回退全局 active provider）。 */
     val currentSessionProviderModel: StateFlow<Pair<String?, String?>> =
         currentSessionState.map { s -> (s?.providerId ?: "") to (s?.model ?: "") }
@@ -2011,6 +2015,7 @@ class AIAgentViewModel @Inject constructor(
                 goal = sessionDomain?.goal,
                 goalStatus = sessionDomain?.goalStatus,
                 reasoningEffort = sessionDomain?.reasoningEffort?.apiValue,
+                fastMode = sessionDomain?.fastMode ?: false,
                 agentDefinition = agentDefinition
             )
 
@@ -2590,6 +2595,37 @@ class AIAgentViewModel @Inject constructor(
     fun setCurrentSessionId(id: String) {
         if (_currentSessionId.value == id) return
         _currentSessionId.value = id
+    }
+
+    fun setSessionFastMode(enabled: Boolean) {
+        val sid = _currentSessionId.value ?: return
+        viewModelScope.launch {
+            sessionUseCase.updateFastMode(sid, enabled)
+        }
+    }
+
+    /** 从设置→会话管理页打开或跟随移动后的会话时，记录目标工作区与会话。 */
+    @Volatile
+    private var pendingFollowSession: Pair<String, String>? = null
+
+    fun prepareFollowSession(workspacePath: String, sessionId: String) {
+        if (workspacePath.isBlank() || sessionId.isBlank()) return
+        if (_currentWorkspace.value == workspacePath) {
+            selectSession(sessionId)
+            return
+        }
+        pendingFollowSession = workspacePath to sessionId
+    }
+
+    /** 当前本地会话被删除或移走后，切到当前工作区其余会话，没有则补建空会话。 */
+    fun ensureCurrentSessionStillInWorkspace() = viewModelScope.launch {
+        val ws = _currentWorkspace.value
+        if (ws.isBlank()) return@launch
+        val curId = _currentSessionId.value
+        val cur = curId?.let { sessionUseCase.getSessionById(it) }
+        if (cur != null && cur.workspacePath == ws) return@launch
+        val nextId = sessionUseCase.getFirstSessionOfWorkspace(ws)?.id ?: createAndUpsertSession(ws)
+        selectSession(nextId)
     }
 
     fun setSessionReasoningEffort(effort: ReasoningEffort) {

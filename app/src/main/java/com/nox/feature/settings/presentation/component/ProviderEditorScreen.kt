@@ -52,6 +52,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ButtonDefaults
@@ -117,6 +118,7 @@ import com.nox.core.theme.Radius
 import com.nox.core.theme.Spacing
 import com.nox.core.theme.semanticColors
 import com.nox.core.ui.AppTextField
+import com.nox.core.ui.SegmentedTabs
 import com.nox.core.ui.FloatingTabBar
 import com.nox.core.ui.FloatingTabItem
 import com.nox.feature.settings.data.local.CustomModelMetadataStore
@@ -209,6 +211,7 @@ fun ProviderEditorScreen(
     var baseUrl by remember { mutableStateOf(initialProvider?.baseUrl ?: presetPrefill?.baseUrl ?: "") }
     var useFullUrl by remember { mutableStateOf(initialProvider?.useFullUrl ?: false) }
     var useResponseApi by remember { mutableStateOf(initialProvider?.useResponseApi ?: false) }
+    var useResponseWebSocket by remember { mutableStateOf(initialProvider?.useResponseWebSocket ?: false) }
     var anthropicCacheBreakpoints by remember { mutableStateOf(initialProvider?.anthropicCacheBreakpoints ?: true) }
     var openaiChatCacheKey by remember { mutableStateOf(initialProvider?.openaiChatCacheKey ?: false) }
     var dashboardScriptPath by remember { mutableStateOf(initialProvider?.dashboardScriptPath ?: "") }
@@ -321,6 +324,7 @@ fun ProviderEditorScreen(
         models = models.toList(),
         selectedModel = initialProvider?.selectedModel ?: "",
         useResponseApi = useResponseApi,
+        useResponseWebSocket = useResponseWebSocket,
         anthropicCacheBreakpoints = anthropicCacheBreakpoints,
         openaiChatCacheKey = openaiChatCacheKey,
         dashboardScriptPath = dashboardScriptPath,
@@ -583,6 +587,15 @@ fun ProviderEditorScreen(
                                 ),
                                 checked = useResponseApi,
                                 onCheckedChange = { useResponseApi = it }
+                            )
+                        }
+                        if (type == ProviderType.OPENAI && useResponseApi) {
+                            SettingsDivider()
+                            ProviderSwitchRow(
+                                title = stringResource(R.string.provider_response_websocket_title),
+                                subtitle = stringResource(R.string.provider_response_websocket_subtitle),
+                                checked = useResponseWebSocket,
+                                onCheckedChange = { useResponseWebSocket = it }
                             )
                         }
                         if (type == ProviderType.OPENAI) {
@@ -2894,6 +2907,11 @@ private fun ProviderHeadersSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
+    val gson = remember { com.google.gson.GsonBuilder().setPrettyPrinting().create() }
+    var jsonMode by remember { mutableStateOf(false) }
+    var jsonText by remember { mutableStateOf("{}") }
+    var jsonError by remember { mutableStateOf<String?>(null) }
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
     AdaptiveModalBottomSheet(
@@ -2943,7 +2961,69 @@ private fun ProviderHeadersSheet(
                     .padding(horizontal = 20.dp)
                     .padding(bottom = 8.dp)
             )
+            SegmentedTabs(
+                selected = if (jsonMode) 1 else 0,
+                labels = listOf(
+                    stringResource(R.string.provider_headers_mode_form),
+                    stringResource(R.string.provider_headers_mode_json)
+                ),
+                onSelect = { index ->
+                    if (index == 1) {
+                        if (!jsonMode) {
+                            jsonText = gson.toJson(headers.filter { it.first.isNotBlank() }.toMap())
+                            jsonError = null
+                            jsonMode = true
+                        }
+                    } else if (jsonMode) {
+                        val parsed = runCatching { parseProviderHeadersJson(jsonText) }.getOrNull()
+                        if (parsed == null) {
+                            jsonError = context.getString(R.string.provider_headers_json_invalid)
+                        } else {
+                            headers.clear()
+                            headers.addAll(parsed)
+                            jsonError = null
+                            jsonMode = false
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 8.dp)
+            )
 
+            if (jsonMode) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp)
+                        .navigationBarsPadding()
+                ) {
+                    OutlinedTextField(
+                        value = jsonText,
+                        onValueChange = {
+                            jsonText = it
+                            jsonError = null
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 180.dp),
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                        isError = jsonError != null,
+                        minLines = 8
+                    )
+                    Spacer(Modifier.height(Spacing.xs))
+                    Text(
+                        text = jsonError ?: stringResource(R.string.provider_headers_json_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (jsonError != null) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(Spacing.xs))
+                }
+            } else {
             // 列表编辑区：可滚动，超出弹窗高度可滚动查看。
             Column(
                 modifier = Modifier
@@ -3016,6 +3096,7 @@ private fun ProviderHeadersSheet(
                 }
                 Spacer(Modifier.height(Spacing.xs))
             }
+            }
 
             // 底部：添加一行 + 完成按钮。
             Column(
@@ -3052,7 +3133,21 @@ private fun ProviderHeadersSheet(
                     }
                 }
                 Button(
-                    onClick = onDismiss,
+                    onClick = {
+                        if (!jsonMode) {
+                            onDismiss()
+                        } else {
+                            val parsed = runCatching { parseProviderHeadersJson(jsonText) }.getOrNull()
+                            if (parsed == null) {
+                                jsonError = context.getString(R.string.provider_headers_json_invalid)
+                            } else {
+                                headers.clear()
+                                headers.addAll(parsed)
+                                jsonError = null
+                                onDismiss()
+                            }
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(44.dp),
@@ -3242,4 +3337,16 @@ private fun ProviderScriptParamsSheet(
             }
         }
     }
+}
+
+
+/** 解析 JSON 对象形式的自定义请求头；非对象或值非字符串时返回 null。 */
+private fun parseProviderHeadersJson(raw: String): List<Pair<String, String>>? {
+    return runCatching {
+        val element = com.google.gson.JsonParser.parseString(raw)
+        if (!element.isJsonObject) return@runCatching null
+        element.asJsonObject.entrySet().map { (key, value) ->
+            key to (if (value.isJsonPrimitive) value.asString else value.toString())
+        }
+    }.getOrNull()
 }

@@ -1,25 +1,39 @@
 package com.nox.core.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -27,14 +41,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nox.R
+import com.nox.core.theme.Radius
 import com.nox.core.theme.Spacing
+import com.nox.core.theme.semanticColors
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.CheckSquare
 import compose.icons.feathericons.X
@@ -69,6 +89,13 @@ class ListSelectionState {
 
     fun enter() {
         isActive = true
+    }
+
+    /** 进入多选并默认选中单个条目（如长按某条打开批量选择）。 */
+    fun enterWith(key: String) {
+        isActive = true
+        _selected.clear()
+        _selected.add(key)
     }
 
     fun exit() {
@@ -271,4 +298,150 @@ fun BatchDeleteConfirmDialog(
             }
         }
     )
+}
+
+@Composable
+fun FloatingSelectionBar(
+    visible: Boolean,
+    selectedCount: Int,
+    allSelected: Boolean,
+    onToggleSelectAll: () -> Unit,
+    onExit: () -> Unit,
+    modifier: Modifier = Modifier,
+    showCloseButton: Boolean = false,
+    selectedCountText: String = stringResource(R.string.common_selected_count, selectedCount),
+    selectAllText: String = stringResource(
+        if (allSelected) R.string.common_deselect_all else R.string.common_select_all
+    ),
+    outerPadding: PaddingValues = PaddingValues(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.md),
+    actions: @Composable RowScope.() -> Unit = {}
+) {
+    BackHandler(enabled = visible) { onExit() }
+
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = slideInVertically { it } + fadeIn(),
+        exit = slideOutVertically { it } + fadeOut()
+    ) {
+        val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
+        val shape = RoundedCornerShape(Radius.lg)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(outerPadding)
+                .shadow(
+                    elevation = 6.dp,
+                    shape = shape,
+                    ambientColor = if (isLight) Color.Black.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.36f),
+                    spotColor = if (isLight) Color.Black.copy(alpha = 0.14f) else Color.Black.copy(alpha = 0.50f)
+                )
+                .clip(shape)
+                .background(MaterialTheme.semanticColors.cardSurface)
+                .border(1.dp, MaterialTheme.semanticColors.subtleBorder, shape)
+                .padding(horizontal = Spacing.md, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                if (showCloseButton) {
+                    IconButton(onClick = onExit, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            FeatherIcons.X,
+                            contentDescription = stringResource(R.string.common_cancel),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = selectedCountText,
+                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                SelectionActionButton(
+                    text = selectAllText,
+                    onClick = onToggleSelectAll
+                )
+                actions()
+            }
+        }
+    }
+}
+
+/** 底部悬浮条内的紧凑圆角填充按钮（用于「全选 / 取消全选」及常规批量操作）。 */
+@Composable
+fun SelectionActionButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    loading: Boolean = false,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+    icon: ImageVector? = null
+) {
+    val shape = RoundedCornerShape(Radius.sm)
+    val bgAlpha = if (enabled) 1f else 0.5f
+    val contentColor = if (enabled) tint else tint.copy(alpha = 0.45f)
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = bgAlpha),
+        contentColor = contentColor,
+        border = BorderStroke(1.dp, MaterialTheme.semanticColors.subtleBorder.copy(alpha = bgAlpha)),
+        modifier = modifier.height(36.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            if (loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
+                    color = contentColor
+                )
+                Spacer(Modifier.width(Spacing.xs))
+            } else if (icon != null) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(Spacing.xs))
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/** 底部悬浮条内的危险文本按钮（无填充底，红色高亮，用于单个危险动作如「删除」）。 */
+@Composable
+fun SelectionActionDangerButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        contentPadding = PaddingValues(horizontal = Spacing.sm, vertical = 0.dp),
+        colors = ButtonDefaults.textButtonColors(
+            contentColor = MaterialTheme.colorScheme.error,
+            disabledContentColor = MaterialTheme.colorScheme.error.copy(alpha = 0.38f)
+        ),
+        modifier = modifier.height(36.dp)
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+            maxLines = 1
+        )
+    }
 }
