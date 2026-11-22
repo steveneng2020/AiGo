@@ -912,6 +912,20 @@ fun AppNavigation(
                         if (!expanded && !fromChat) scope.launch { drawerState.open() }
                     },
                     onStopAllAndCloseTerminal = { agentViewModel.stopAllAndCloseTerminal() },
+                    onOpenSessionInWorkspace = { targetWs, sessionId ->
+                        agentViewModel.prepareFollowSession(targetWs.path, sessionId)
+                        if (currentWorkspace?.path != targetWs.path) {
+                            workspaceViewModel.selectWorkspace(targetWs.name)
+                        }
+                        navController.popBackStack()
+                    },
+                    onFollowMovedSession = { targetWs, sessionId ->
+                        agentViewModel.prepareFollowSession(targetWs.path, sessionId)
+                        if (currentWorkspace?.path != targetWs.path) {
+                            workspaceViewModel.selectWorkspace(targetWs.name)
+                        }
+                    },
+                    onSessionsMutated = { agentViewModel.ensureCurrentSessionStillInWorkspace() },
                     onRerunOnboarding = {
                         // 从设置页「重新运行引导」：清状态回 in_progress、激活引导并回聊天页。
                         scope.launch {

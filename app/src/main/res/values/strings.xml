@@ -230,6 +230,8 @@
 
     <!-- 存储空间页 -->
     <string name="settings_storage">存储空间</string>
+    <string name="settings_session_management">会话管理</string>
+    <string name="settings_session_detail">会话内容</string>
     <string name="storage_refresh">重新统计</string>
     <string name="storage_total_title">应用占用</string>
     <string name="storage_scanning">统计中…</string>
@@ -425,6 +427,11 @@
     <string name="settings_category_background">后台运行</string>
     <string name="settings_category_system_permissions">系统权限</string>
     <string name="settings_user_guide">使用手册</string>
+    <string name="settings_sponsor">赞助</string>
+    <string name="sponsor_title">支持 Nox</string>
+    <string name="sponsor_desc">如果 Nox 对你有帮助，欢迎请我喝一杯咖啡</string>
+    <string name="sponsor_qr_desc">赞赏码</string>
+    <string name="sponsor_thanks">感谢您的支持</string>
 
     <!-- i18n: UI 文案 -->
     <!-- Common -->
@@ -524,6 +531,10 @@
     <string name="chat_open_sidebar">打开侧边栏</string>
     <string name="chat_add_attachment">添加附件</string>
     <string name="chat_take_photo">拍照</string>
+    <string name="chat_fast_mode_title">快速模式</string>
+    <string name="chat_fast_mode_label">Fast</string>
+    <string name="chat_fast_mode_cost_hint">响应更快，可能产生额外费用</string>
+    <string name="chat_fast_mode_active_description">Fast 模式已开启，思考强度 %1$s</string>
     <string name="chat_reasoning_effort">思考强度</string>
     <string name="chat_reasoning_effort_none">不思考</string>
     <string name="chat_reasoning_effort_minimal">极低</string>
@@ -674,8 +685,11 @@
     <string name="backup_data_memory">记忆</string>
     <string name="backup_data_plugins">插件</string>
     <string name="backup_stat_plugins">插件 %1$d 个</string>
+    <string name="backup_data_skills">技能</string>
+    <string name="backup_stat_skills">技能 %1$d 个</string>
     <string name="backup_data_workspace">工作区文件</string>
     <string name="backup_workspace_git_hint">工作区文件建议通过 Git 提交备份，导出备份仅作备用</string>
+    <string name="log_share_failed">分享日志失败：%1$s</string>
     <string name="backup_password_label">口令（可选）</string>
     <string name="backup_processing">处理中</string>
     <string name="backup_processing_data">正在处理数据…</string>
@@ -1588,6 +1602,10 @@
     <string name="provider_full_url_desc">Base URL 即完整请求地址，不自动拼接默认路径</string>
     <string name="provider_headers_title">自定义请求头</string>
     <string name="provider_headers_desc">完全覆盖该供应商请求的同名默认头</string>
+    <string name="provider_headers_mode_form">表单</string>
+    <string name="provider_headers_mode_json">JSON</string>
+    <string name="provider_headers_json_hint">按 {"Header": "值"} 填写，值支持 {{SESSION_ID}} / {{API_KEY}}</string>
+    <string name="provider_headers_json_invalid">JSON 格式不正确：需为对象，值用字符串</string>
     <string name="provider_headers_name">Header 名</string>
     <string name="provider_headers_name_hint">例如 Authorization</string>
     <string name="provider_headers_value">值</string>
@@ -1598,6 +1616,8 @@
     <string name="provider_headers_empty">暂无请求头，点击下方添加</string>
     <string name="provider_headers_count">已配置 %1$d 个请求头</string>
     <string name="provider_response_api">Response API (新版)</string>
+    <string name="provider_response_websocket_title">Responses WebSocket</string>
+    <string name="provider_response_websocket_subtitle">长任务复用连接并续传响应状态，减少重复上下文传输</string>
     <string name="provider_interactions_api">Interactions API (新版)</string>
     <string name="provider_models_count">模型（%1$s）</string>
     <string name="provider_models_count_tag">%1$d 个模型</string>
@@ -2262,4 +2282,72 @@
     <string name="plugins_tool_added">已添加</string>
     <string name="plugins_update_available">可更新</string>
     <string name="plugins_update_version_transition">v%1$s → v%2$s</string>
+    <string name="log_ai_calls_count">共 %1$d 次调用</string>
+    <string name="log_ai_empty">暂无 AI 请求日志</string>
+    <string name="log_ai_empty_body">(空)</string>
+    <string name="log_ai_error_body">错误详情</string>
+    <string name="log_ai_level_hint">仅 DEBUG 或 VERBOSE 等级下记录新的 AI 请求（当前为 %1$s）</string>
+    <string name="log_ai_request_body">请求体</string>
+    <string name="log_ai_response_body">响应内容</string>
+    <string name="log_ai_stream_badge">SSE</string>
+    <string name="log_crash_empty">暂无崩溃追踪记录</string>
+    <string name="log_delete_file">删除此文件</string>
+    <string name="log_delete_file_confirm">确认删除？</string>
+    <string name="log_detail_title">日志详情</string>
+    <string name="log_filter_all">全部</string>
+    <string name="log_filter_error">Error</string>
+    <string name="log_filter_errors_only">仅失败</string>
+    <string name="log_filter_info_plus">Info+</string>
+    <string name="log_filter_this_tag">仅看 [%1$s] 日志</string>
+    <string name="log_filter_warn_plus">Warn+</string>
+    <string name="log_find_counter">%1$d/%2$d</string>
+    <string name="log_find_no_match">0/0</string>
+    <string name="log_load_earlier">加载更早</string>
+    <string name="log_scroll_bottom">回到底部</string>
+    <string name="log_scroll_top">回到顶部</string>
+    <string name="log_search_mode_filter">过滤</string>
+    <string name="log_search_mode_find">定位</string>
+    <string name="log_source_ai">AI 请求</string>
+    <string name="log_source_app">应用日志</string>
+    <string name="log_source_crash">崩溃追踪</string>
+    <string name="log_stack_lines">%1$d 行堆栈</string>
+    <string name="log_tag_prefix">Tag: %1$s</string>
+    <string name="log_view_detail">查看完整详情</string>
+    <string name="log_wrap_lines">折行</string>
+    <string name="chat_batch_move">移动</string>
+    <string name="chat_drawer_current_workspace_badge">当前</string>
+    <string name="chat_move_done_followed">已移至「%1$s」并切换工作区</string>
+    <string name="chat_move_done_multiple">已移动 %1$d 个会话至「%2$s」</string>
+    <string name="chat_move_done_partial">已移动 %1$d 个会话至「%2$s」，跳过 %3$d 个运行中的会话</string>
+    <string name="chat_move_done_single">已移至「%1$s」</string>
+    <string name="chat_move_running_blocked">请先停止正在运行的会话后再移动</string>
+    <string name="chat_move_to_workspace">移动到工作区</string>
+    <string name="chat_move_workspace_sheet_title">选择目标工作区</string>
+    <string name="session_mgmt_cross_env_confirm">目标路径不属于当前可用环境，移动 %1$d 个会话仅变更本地记录所属工作区「%2$s」，不会搬运磁盘文件。确定继续吗？</string>
+    <string name="session_mgmt_cross_env_title">跨环境移动会话</string>
+    <string name="session_mgmt_empty">暂无可管理的会话</string>
+    <string name="session_mgmt_empty_messages">暂无消息内容</string>
+    <string name="session_mgmt_filter_all">全部</string>
+    <string name="session_mgmt_filter_current_env">当前环境</string>
+    <string name="session_mgmt_filter_remote_offline">远程/离线</string>
+    <string name="session_mgmt_hide_reasoning">收起思考过程</string>
+    <string name="session_mgmt_message_hits_header">消息内容命中</string>
+    <string name="session_mgmt_msg_count">%1$d 条消息</string>
+    <string name="session_mgmt_not_found">会话不存在或已被删除</string>
+    <string name="session_mgmt_offline_readonly_hint">该工作区当前离线或属于其他执行环境，仅可只读查看或调整所属工作区。</string>
+    <string name="session_mgmt_open_in_chat">在聊天中打开</string>
+    <string name="session_mgmt_role_assistant">助手</string>
+    <string name="session_mgmt_role_tool">工具</string>
+    <string name="session_mgmt_role_user">用户</string>
+    <string name="session_mgmt_running_tag">运行中</string>
+    <string name="session_mgmt_search_hint">搜索会话标题、路径或消息内容</string>
+    <string name="session_mgmt_show_reasoning">展开思考过程</string>
+    <string name="session_mgmt_subagent_count">%1$d 个子代理</string>
+    <string name="session_mgmt_tag_external">本机目录</string>
+    <string name="session_mgmt_tag_external_offline">外部目录·离线</string>
+    <string name="session_mgmt_tag_local">本地</string>
+    <string name="session_mgmt_tag_local_offline">本地·其他环境</string>
+    <string name="session_mgmt_tag_remote_connected">远程·已连接</string>
+    <string name="session_mgmt_tag_remote_offline">远程/离线</string>
+    <string name="session_mgmt_view_content">查看会话内容</string>
 </resources>

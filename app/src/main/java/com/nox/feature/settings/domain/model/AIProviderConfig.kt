@@ -26,11 +26,13 @@ data class AIProviderConfig(
     val isEnabled: Boolean = true,
     val useFullUrl: Boolean = false,
     val useResponseApi: Boolean = false,
+    /** OpenAI Responses 长链工作流通过持久 WebSocket 续传。 */
+    val useResponseWebSocket: Boolean = false,
     /** Anthropic 显式缓存断点（cache_control）。仅 ANTHROPIC 类型生效，默认开启。 */
     val anthropicCacheBreakpoints: Boolean = true,
     /** Chat Completion 路径发送 prompt_cache_key（shard 路由）。仅 OPENAI 类型生效，默认关闭。 */
     val openaiChatCacheKey: Boolean = false,
-    /** 自定义面板脚本路径（位于 ~/.nox/scripts/，或绝对路径/自定义命令）。 */
+    /** 自定义面板脚本路径（位于 ~/.aicode/scripts/，或绝对路径/自定义命令）。 */
     val dashboardScriptPath: String = "",
     /** 自定义面板自动刷新间隔（分钟），0 表示仅进入时/手动刷新，支持 1, 3, 5, 10 等。默认 5 分钟。 */
     val dashboardRefreshInterval: Int = 5,
@@ -51,7 +53,7 @@ data class AIProviderConfig(
     val proxyPassword: String = "",
     /**
      * 自定义面板 (DIY) 脚本参数（Key-Value）。
-     * 执行面板脚本时注入为额外环境变量 `NOX_KEY_<KEY>`，
+     * 执行面板脚本时注入为额外环境变量 `AICODE_KEY_<KEY>`，
      * 值支持引用提供商配置占位符，如 `{{PROVIDER_API_KEY}}`、`{{BASE_URL}}`。
      */
     val scriptParams: Map<String, String> = emptyMap()
@@ -71,7 +73,7 @@ data class AIProviderConfig(
             listOf(ProviderKey(apiKey)).filter { it.value.isNotBlank() }
         }
 
-    /** 是否已配置至少一个可用 Key。 */
+    /** 是否已配置至少一个可用 Key。插件提供商默认带占位 Key，使用者可改成服务要求的凭据。 */
     val hasUsableApiKey: Boolean get() = effectiveApiKeys.isNotEmpty()
 
     /** 实际生效的切换状态码：留空回退默认集合。 */
@@ -81,16 +83,28 @@ data class AIProviderConfig(
 
     /** 拉取模型列表 / 连通性测试等无会话上下文的请求用第一个可用 Key。 */
     val firstUsableApiKey: String get() = effectiveApiKeys.firstOrNull()?.value ?: ""
+
+    /**
+     * 指定 Key 实际使用的 Base URL：多 Key 模式下该 Key 自带覆盖优先，否则回落到提供商主地址。
+     * [key] 缺省取首个可用 Key，供拉模型 / 测连通 / 余额等无会话上下文的旁路请求使用。
+     */
+    fun effectiveBaseUrl(key: String = firstUsableApiKey): String {
+        val override = if (multiKeyEnabled) apiKeys.firstOrNull { it.value == key }?.baseUrl else null
+        return override?.takeIf { it.isNotBlank() } ?: baseUrl
+    }
 }
 
 /**
- * 多 Key 模式下的一条候选 Key：值 + 调度权重。
+ * 多 Key 模式下的一条候选 Key：值 + 调度权重 + 可选的地址覆盖。
  *
  * [weight] 参与轮询调度：越大被分到的新会话越多；≤ 0 表示该 Key 暂不参与调度（保留但不选用）。
+ * [baseUrl] 为该 Key 专用的 Base URL：填了就用它发请求（适配「不同 Key 走不同中转 / 反代」的场景），
+ * 留空则沿用提供商自身的 [AIProviderConfig.baseUrl]。
  */
 data class ProviderKey(
     val value: String,
-    val weight: Int = DEFAULT_KEY_WEIGHT
+    val weight: Int = DEFAULT_KEY_WEIGHT,
+    val baseUrl: String = ""
 )
 
 /** 调度权重默认值与上限。 */
@@ -113,7 +127,14 @@ fun AIProviderConfig.sanitized(): AIProviderConfig = copy(
     name = name.stripLineBreaks(),
     apiKey = apiKey.stripAllWhitespace(),
     apiKeys = apiKeys
-        .map { it.copy(value = it.value.stripAllWhitespace(), weight = it.weight.coerceIn(0, MAX_KEY_WEIGHT)) }
+        .map {
+            it.copy(
+                value = it.value.stripAllWhitespace(),
+                weight = it.weight.coerceIn(0, MAX_KEY_WEIGHT),
+                // Base URL 里不允许出现空白与 `|`：前者会拼出非法 URL，后者会破坏存储串的分段。
+                baseUrl = it.baseUrl.stripAllWhitespace().filterNot { ch -> ch == '|' }
+            )
+        }
         .filter { it.value.isNotEmpty() }
         .distinctBy { it.value },
     keySwitchStatusCodes = keySwitchStatusCodes.filter { it in 100..599 }.distinct(),

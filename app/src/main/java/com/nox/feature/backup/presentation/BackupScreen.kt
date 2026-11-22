@@ -544,6 +544,16 @@ private fun LocalBackupTab(
             )
             SettingsDivider()
             SettingsRow(
+                title = stringResource(R.string.backup_data_skills),
+                trailing = {
+                    AppSwitch(
+                        checked = exportOptions.skills,
+                        onCheckedChange = { onUpdateOptions(exportOptions.copy(skills = it)) }
+                    )
+                }
+            )
+            SettingsDivider()
+            SettingsRow(
                 title = stringResource(R.string.backup_data_workspace),
                 trailing = {
                     AppSwitch(

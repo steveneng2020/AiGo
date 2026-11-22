@@ -177,6 +177,8 @@ internal fun ChatInputBar(
     onClearGoal: () -> Unit = {},
     reasoningEffort: ReasoningEffort,
     onReasoningEffortChange: (ReasoningEffort) -> Unit,
+    fastMode: Boolean = false,
+    onFastModeChange: (Boolean) -> Unit = {},
     pendingAttachments: List<PendingUploadAttachment>,
     onRemoveAttachment: (Int) -> Unit,
     canUploadFiles: Boolean,
@@ -654,6 +656,9 @@ internal fun ChatInputBar(
                                 protocol = activeProvider?.let { reasoningProtocolOf(it) } ?: ReasoningProtocol.OPENAI_CHAT,
                                 model = activeProvider?.effectiveModel.orEmpty(),
                                 onChange = onReasoningEffortChange,
+                                fastMode = fastMode,
+                                showFastMode = activeProvider?.type == com.nox.feature.settings.domain.model.ProviderType.OPENAI,
+                                onFastModeChange = onFastModeChange,
                                 enabled = !isBusy
                             )
                         }
