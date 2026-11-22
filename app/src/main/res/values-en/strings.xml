@@ -779,7 +779,7 @@
     <string name="chat_drawer_more_plugins">More plugins</string>
     <string name="chat_touch_lock">Touch lock</string>
     <string name="touch_lock_active_title">Touch lock is on</string>
-    <string name="touch_lock_unlock_hint">Hold for 0.5s to unlock</string>
+    <string name="touch_lock_unlock_hint">Hold to unlock</string>
     <string name="touch_lock_brightness_denied">Without the “Modify system settings” permission, touch lock only blocks touches and will not dim the screen.</string>
     <string name="plugin_menu_export">Export plugin package</string>
     <string name="plugin_menu_share">Share plugin package (without user data)</string>

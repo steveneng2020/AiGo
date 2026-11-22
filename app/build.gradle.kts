@@ -26,9 +26,13 @@ if (keystorePropertiesFile.exists()) {
 //   3. 若无 git 环境或报错，fallback 到默认版本号 "1.0.0-dev"。
 // providers.exec 而非 Runtime.exec：配置缓存要求配置阶段的外部进程调用登记为 provider 输入，
 // 直接 fork 会让缓存条目被丢弃（external process started）。
+// 只匹配 v* 版本 tag。
+// 不加 --match 时 git describe 会取最近的任意 tag：本地有保护 tag
+// （pre-merge-upstream-b240c97）时，versionName 会变成
+// 1.0.0-dev-pre-merge-upstream-b240c97-10-gxxxx，产物名与版本号双双失真。
 val gitDescribeOutput = providers.exec {
     workingDir = rootProject.projectDir
-    commandLine("git", "describe", "--tags", "--always", "--dirty")
+    commandLine("git", "describe", "--tags", "--always", "--dirty", "--match", "v[0-9]*")
     isIgnoreExitValue = true
 }.standardOutput.asText
 

@@ -116,8 +116,10 @@ def main() -> int:
         return 1
 
     if "--summary-for" in args:
-        # 取指定 tag 的首条要点短语，供 APK 文件名用（面向用户，非开发提交标题）。
-        # 找不到该 tag 时返回空串，由调用方兜底。
+        # 取指定版本「最主要的更新」作为文件名片段。
+        # 用首条 item 的标题（如「新增鲲六套图标」）而不是版本概述：
+        # 概述是一整句话（"插件用起来更顺手，图标多了六种配色…"），
+        # 落进文件名会被截断成半句话，反而看不清改了什么。
         idx = args.index("--summary-for")
         want = args[idx + 1] if len(args) > idx + 1 else ""
         entry = next((e for e in data["entries"] if e["tag"] == want), None)
