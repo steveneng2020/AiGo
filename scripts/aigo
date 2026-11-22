@@ -250,11 +250,15 @@ print(s[:16])
   outdir="$HOME/workspace/build-output"
   mkdir -p "$outdir"
 
-  # 同一版本同类别只保留最新一份：否则目录会堆出多个同版本包，装包时不知该用哪个。
-  ver_core=$(printf '%s' "$ver" | sed 's/-[0-9]*$//')
-  for old in "$outdir"/AiGo-"$build"-"$ver_core"-*.apk; do
-    [ -f "$old" ] && rm -f "$old" && echo "清理同版本旧包: $(basename "$old")"
-  done
+  # 清理策略：
+  #   release —— 每个版本都保留，不删。正式包是发版存档，旧版本要能随时取回。
+  #   debug   —— 只保留同版本最新一份，避免目录堆出多个同版本测试包分不清。
+  ver_core=$(printf '%s' "$ver" | sed 's/-.*$//')
+  if [ "$build" = "debug" ]; then
+    for old in "$outdir"/AiGo-debug-"$ver_core"-*.apk; do
+      [ -f "$old" ] && rm -f "$old" && echo "清理同版本旧测试包: $(basename "$old")"
+    done
+  fi
 
   stamp=$(date +%Y%m%d-%H%M)
   out="$outdir/AiGo-${build}-${ver}-${stamp}-${summary}.apk"
