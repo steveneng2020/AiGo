@@ -188,14 +188,20 @@ cmd_build() {
 cmd_test() { cmd_build :app:testUniversalDebugUnitTest; }
 
 # 本地要出可安装包时用这个：debug 变体，无需 R8，缓存命中约 30~60 秒。
-# 出包后按「AiGo-架构-版本-摘要」重命名并复制到 build-output，便于与 CI 产物区分。
+# 出包后按统一规则重命名并复制到 build-output。
 cmd_apk() {
-  cmd_build :app:assembleArmsoloDebug "$@"
-  copy_apk armsolo debug
+  cmd_build :app:assembleUniversalDebug "$@"
+  copy_apk universal debug
 }
 
-# 出包后统一命名：AiGo-<abi>-<versionName>-<摘要>.apk
-# 摘要取最近一次提交的标题，与 CI 的命名逻辑保持一致。
+# 出包后统一命名与归档。
+#
+# 目录：/storage/emulated/0/Download/AiGo/AiGo开发/build-output（容器内即 ~/workspace/build-output）
+# 命名：AiGo-<类别>-<版本号>-<构建日期>-<更新摘要>.apk
+#   <类别>：debug（测试包）/ release（正式包）
+#   <构建日期>：YYYYMMDD-HHMM
+#   <更新摘要>：取 CHANGELOG 对应版本首条要点，没有则退回提交标题
+# 例：AiGo-debug-1.0.1-20261123-0215-插件导出与图标修复.apk
 copy_apk() {
   flavor="${1:-armsolo}"
   build="${2:-debug}"
@@ -231,24 +237,27 @@ print(s[:30])
 ' 2>/dev/null)
   [ -n "$summary" ] || summary="update"
 
-  outdir="$(dirname "$SRC")/build-output"
-  # 同一 versionName 只保留最新一份：否则目录会堆出
-  # AiGo-arm64-1.0.0.apk / -可切换更新通道.apk / -更新日记排序.apk 等多份同版本包，
-  # 装包时不知道该用哪个。
+  # 统一输出目录：宿主 /storage/emulated/0/Download/AiGo/AiGo开发/build-output
+  # 容器内同路径即 ~/workspace/build-output。
+  outdir="$HOME/workspace/build-output"
+  mkdir -p "$outdir"
+
+  # 同一版本同类别只保留最新一份：否则目录会堆出多个同版本包，装包时不知该用哪个。
   ver_core=$(printf '%s' "$ver" | sed 's/-[0-9]*$//')
-  for old in "$outdir"/AiGo-"$flavor"-"$ver_core"*.apk; do
+  for old in "$outdir"/AiGo-"$build"-"$ver_core"-*.apk; do
     [ -f "$old" ] && rm -f "$old" && echo "清理同版本旧包: $(basename "$old")"
   done
 
-  out="$outdir/AiGo-${flavor}-${ver}-${summary}.apk"
+  stamp=$(date +%Y%m%d-%H%M)
+  out="$outdir/AiGo-${build}-${ver}-${stamp}-${summary}.apk"
   cp "$src" "$out" && echo "产物: $out"
 }
 
 # 本地要 release 包但不想等 R8：跳过混淆与资源压缩，快 3~5 分钟。
 # 仅用于自测；正式发版走 CI，不要带 skipMinify。
 cmd_fast() {
-  cmd_build :app:assembleArmsoloRelease -PskipMinify "$@"
-  copy_apk armsolo release
+  cmd_build :app:assembleUniversalRelease -PskipMinify "$@"
+  copy_apk universal release
 }
 
 cmd_status() {

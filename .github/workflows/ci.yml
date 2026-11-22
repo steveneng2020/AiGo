@@ -1,19 +1,12 @@
 name: CI
 
-# push 到 main 或 PR 时触发：构建 universal debug（单 flavor 冒烟）+ 跑单元测试。
-# 目的是合入前的兜底门禁，避免编译错误/回归推迟到打 tag 发版当天才暴露。
-# 打 v* tag 的发版构建走 android-release.yml，不在这里。
+# 只在 PR 与手动触发时跑：验证冒烟编译 + 单元测试。
+#
+# push 到 main 不再触发本 workflow，改由 beta.yml 一并承担：
+# 两个 workflow 都挂 push 时，同一个 commit 会出两条同名 run（GitHub 用
+# commit 标题作显示名），Gradle 编译跑两遍，白等 6 分钟。
+# 现在 push 只跑 beta.yml（出包 + 单测），本文件负责 PR 门禁与手动复验。
 on:
-  push:
-    branches: [ main ]
-    # 纯文档/资源改动不影响构建产物，跳过 CI 省时间（public 仓库虽不扣额度，但省 11 分钟等待）。
-    # 注意：只要本次 push 含任一非忽略路径的改动，CI 仍会触发。
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'docs-site/**'
-      - 'LICENSE'
-      - '.gitignore'
   pull_request:
     branches: [ main ]
     paths-ignore:
@@ -22,8 +15,7 @@ on:
       - 'docs-site/**'
       - 'LICENSE'
       - '.gitignore'
-  # 允许在 Actions 页面手动触发：fork 仓库的 push 默认不投递事件，
-  # 没有这个入口就只能靠 beta.yml 验证链路。
+  # 允许在 Actions 页面手动触发，便于单独验证编译与单测。
   workflow_dispatch:
 
 # 同分支新提交到来时取消正在跑的旧 run，省 CI 额度。
