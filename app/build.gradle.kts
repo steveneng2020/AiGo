@@ -546,3 +546,17 @@ tasks.named("preBuild") { dependsOn(syncAiDocs) }
 // clean 构建后 APK 里就没有 changelog.json，关于页在断网时只能空白
 // （UpdateCheckService 读不到资产会吞异常返回空列表）。
 tasks.named("preBuild") { dependsOn(genChangelog) }
+
+// CI 上排除依赖联网下载 android-all jar 的 MigrationTest。
+//
+// 该测试要 Robolectric 联网从 Maven 拉 android-all，CI 偶发 IOException
+// （MavenArtifactFetcher: AssertionError -> ExecutionException -> IOException），
+// 表现为 classMethod FAILED，与代码本身无关。本地网络正常时可完整跑。
+// 用法：./gradlew :app:testUniversalDebugUnitTest -PexcludeMigrationTest
+if ((project.findProperty("excludeMigrationTest") as String?)?.toBoolean() == true) {
+    tasks.withType<Test>().configureEach {
+        filter {
+            excludeTestsMatching("*MigrationTest")
+        }
+    }
+}
