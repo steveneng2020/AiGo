@@ -2180,4 +2180,5 @@
     <string name="session_mgmt_tag_remote_connected">Remote · Connected</string>
     <string name="session_mgmt_tag_remote_offline">Remote / Offline</string>
     <string name="session_mgmt_view_content">View Messages</string>
+    <string name="chat_clipboard_image_hint">Image in clipboard — tap to attach</string>
 </resources>

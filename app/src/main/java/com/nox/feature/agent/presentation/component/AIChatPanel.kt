@@ -48,6 +48,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -83,6 +84,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nox.R
 import com.nox.feature.settings.data.repository.ChatBubbleStyle
@@ -1088,6 +1090,27 @@ fun AIChatPanel(
         pendingAttachments = pendingAttachments.filterIndexed { i, _ -> i != index }
     }
 
+    // 剪贴板图片监听：截图后系统会把 PNG 放进剪贴板。
+    // 窗口重新获得焦点时重查（从截图/相册回到 AiGo 即触发），
+    // 同时每 1.5 秒轻量轮询一次：部分 ROM 在应用前台时截图不触发焦点变化。
+    var clipboardImageAvailable by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                clipboardImageAvailable = clipboardHasImage(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            clipboardImageAvailable = clipboardHasImage(context)
+            kotlinx.coroutines.delay(1500)
+        }
+    }
+
     fun handlePickedAttachments(uris: List<Uri>, images: Boolean) {
         if (uris.isEmpty()) return
         if (projectRoot.isBlank()) {
@@ -1971,6 +1994,8 @@ fun AIChatPanel(
                 onFastModeChange = { viewModel.setSessionFastMode(it) },
                 pendingAttachments = pendingAttachments,
                 onRemoveAttachment = ::removePendingAttachment,
+                clipboardImageAvailable = clipboardImageAvailable,
+                onPasteClipboardImage = { uri: android.net.Uri -> handlePickedAttachments(listOf(uri), images = true) },
                 canUploadFiles = canUploadFiles,
                 canUploadImages = canUploadImages,
                 onUploadFile = { filePicker.launch("*/*") },

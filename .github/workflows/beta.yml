@@ -79,10 +79,15 @@ jobs:
         run: ./gradlew :app:assembleUniversalBeta --stacktrace
 
       # 单测并在这里跑：ci.yml 已不再响应 push，否则同一个 commit 会出两条
-      # 同名 run、Gradle 编译跑两遍。beta 包的编译产物已缓存，单测直接复用。
+      # 同名 run、Gradle 编译跑两遍。
+      #
+      # 必须跑 **debug** 变体，不能用 beta：MigrationTest 靠 Robolectric 从合并后的
+      # assets 读 Room 导出的 schema，而 AGP 只把 assets 合进 debug 变体
+      # （test_config.properties 指向 mergeUniversalDebugAssets）。
+      # 跑 beta 会 FileNotFoundException，实测 3 个迁移用例失败。
       # --continue：多个测试类失败时一次全跑完，不用反复推。
       - name: Run unit tests
-        run: ./gradlew :app:testUniversalBetaUnitTest --stacktrace --continue
+        run: ./gradlew :app:testUniversalDebugUnitTest --stacktrace --continue
 
       # 产物重命名为 AiGo-universal-beta-<版本>-<sha7>.apk：
       # 短 sha 便于区分每次构建，版本名（含日期）便于对照是哪次提交出的包。

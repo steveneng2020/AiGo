@@ -543,3 +543,36 @@ private fun AttachmentSheetItem(
         )
     }
 }
+
+/**
+ * 「剪贴板里有图片」提示条。
+ *
+ * 截图后系统会把 PNG 放进剪贴板，输入法顶部会出现「图片」建议词；点它通常
+ * 只把文本贴进输入框，拿不到二进制内容。这里自己给一行可点提示，点一下就把
+ * 图作为附件插入，省掉「+ → 选图片 → 图库里翻」三步。
+ */
+@Composable
+internal fun ClipboardImageHint(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.xs)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = Spacing.sm, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = compose.icons.FeatherIcons.Image,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = stringResource(R.string.chat_clipboard_image_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}

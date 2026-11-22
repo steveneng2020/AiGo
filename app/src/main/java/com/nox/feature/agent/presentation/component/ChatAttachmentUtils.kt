@@ -335,3 +335,42 @@ internal suspend fun uploadApkFile(
         image = null
     )
 }
+
+/**
+ * 剪贴板里是否有图片。
+ *
+ * 安卓截图后系统会把 PNG 放进剪贴板，输入法因此会显示「图片」快捷建议；
+ * 点击它通常只是把 ClipData 贴进输入框，纯文本输入框拿不到二进制内容。
+ * 这里主动读一次剪贴板，让聊天页能自己把图片作为附件插入。
+ */
+internal fun clipboardHasImage(context: Context): Boolean {
+    val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+        ?: return false
+    val clip = manager.primaryClip ?: return false
+    if (clip.itemCount == 0) return false
+    val desc = clip.description
+    if (desc.hasMimeType("image/*")) return true
+    // 部分 ROM 只给 text/uri-list，实际是 content:// 图片
+    for (i in 0 until clip.itemCount) {
+        val uri = clip.getItemAt(i).uri ?: continue
+        val type = context.contentResolver.getType(uri) ?: continue
+        if (type.startsWith("image/")) return true
+    }
+    return false
+}
+
+/** 取出剪贴板里的图片 Uri（取第一张）。没有则返回 null。 */
+internal fun clipboardImageUri(context: Context): Uri? {
+    val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+        ?: return null
+    val clip = manager.primaryClip ?: return null
+    for (i in 0 until clip.itemCount) {
+        val item = clip.getItemAt(i)
+        val uri = item.uri
+        if (uri != null) {
+            val type = context.contentResolver.getType(uri)
+            if (type == null || type.startsWith("image/")) return uri
+        }
+    }
+    return null
+}

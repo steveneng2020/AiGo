@@ -1,6 +1,7 @@
 package com.nox.feature.agent.presentation.component
 
 import android.content.ClipData
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -180,6 +181,9 @@ internal fun ChatInputBar(
     fastMode: Boolean = false,
     onFastModeChange: (Boolean) -> Unit = {},
     pendingAttachments: List<PendingUploadAttachment>,
+    /** 剪贴板里有图片时显示一行提示，点一下直接把图插入附件。 */
+    clipboardImageAvailable: Boolean = false,
+    onPasteClipboardImage: (android.net.Uri) -> Unit = {},
     onRemoveAttachment: (Int) -> Unit,
     canUploadFiles: Boolean,
     canUploadImages: Boolean,
@@ -523,6 +527,18 @@ internal fun ChatInputBar(
                     )
                     .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
+                // 剪贴板里有图片时给一行提示：点一下直接作为附件插入，
+                // 省掉「+ → 选图片 → 在图库里找」三步。截图后系统会把 PNG
+                // 放进剪贴板，输入法只显示文字建议，拿不到二进制内容。
+                if (clipboardImageAvailable) {
+                    ClipboardImageHint(
+                        onClick = {
+                            clipboardImageUri(context)?.let { uri -> onPasteClipboardImage(uri) }
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+
                 PendingAttachmentPreviewList(
                     attachments = pendingAttachments,
                     onRemoveAttachment = onRemoveAttachment

@@ -274,6 +274,10 @@ jobs:
           VERSION_NAME=$("$AAPT2" dump badging "$SRC" | head -1 | grep -o "versionName='[^']*'" | cut -d"'" -f2)
           echo "versionName from APK: $VERSION_NAME"
 
+          # 构建日期（UTC，YYYYMMDD）：同名资产重复上传会 409，带上日期能区分同日多次构建。
+          BUILD_DATE=$(date -u +%Y%m%d)
+          echo "build date: $BUILD_DATE"
+
           # 摘要优先级：CHANGELOG 的版本要点 > tag 注释 > 提交标题。
           # 前两者面向用户；提交标题是开发语言（如 "revert: 恢复 enableJetifier"），
           # 一旦落到资产名里就把内部实验暴露给下载者，只在万不得已时兜底。
@@ -294,9 +298,9 @@ jobs:
           echo "summary: ${SUMMARY:-<无>}"
 
           if [[ -n "$SUMMARY" ]]; then
-            out="dist/AiGo-${{ matrix.abi }}-${VERSION_NAME}-${SUMMARY}.apk"
+            out="dist/AiGo-${{ matrix.abi }}-${VERSION_NAME}-${SUMMARY}-${BUILD_DATE}.apk"
           else
-            out="dist/AiGo-${{ matrix.abi }}-${VERSION_NAME}.apk"
+            out="dist/AiGo-${{ matrix.abi }}-${VERSION_NAME}-${BUILD_DATE}.apk"
           fi
           cp "$SRC" "$out"
           echo "packaged $out"
