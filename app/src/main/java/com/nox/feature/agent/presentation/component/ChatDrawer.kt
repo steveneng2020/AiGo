@@ -403,7 +403,11 @@ fun ChatDrawerContent(
         // 插件入口在前、应用功能（角色/浏览器/设置）在后：用户最常点的是插件入口，
         // 放在上方可减少一次滚动；应用功能固定在最底部作为出口。
         if (pluginEntries.isNotEmpty()) {
-            SettingsGroupHeader(stringResource(R.string.chat_drawer_plugin_section))
+            // 插件标题与上方会话列表拉开距离：会话列表可滚动，标题贴在它下面显得拥挤。
+            SettingsGroupHeader(
+                text = stringResource(R.string.chat_drawer_plugin_section),
+                topPadding = 40.dp
+            )
             SettingsGroup {
                 pluginEntries.forEachIndexed { index, entry ->
                     if (index > 0) SettingsDivider()
@@ -433,7 +437,8 @@ fun ChatDrawerContent(
                     )
                 }
             }
-            Spacer(Modifier.height(Spacing.md))
+            // 插件区与下方应用功能区的间距：原为 md(12dp)，观感偏空，减半。
+            Spacer(Modifier.height(6.dp))
         }
 
         SettingsGroup {

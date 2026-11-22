@@ -142,13 +142,17 @@ internal fun settingsPageBackground(): Color =
 
 /** 分组小标题：卡片上方灰色小字，左对齐。 */
 @Composable
-internal fun SettingsGroupHeader(text: String) {
+internal fun SettingsGroupHeader(
+    text: String,
+    // 默认 20dp 保持各处既有观感；抽屉里的插件标题需要与上方会话列表拉开距离时单独传值。
+    topPadding: androidx.compose.ui.unit.Dp = 20.dp
+) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodyMedium,
         fontWeight = FontWeight.Normal,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 0.dp, top = 20.dp, bottom = 8.dp)
+        modifier = Modifier.padding(start = 0.dp, top = topPadding, bottom = 8.dp)
     )
 }
 
