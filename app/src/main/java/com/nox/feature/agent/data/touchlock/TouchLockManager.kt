@@ -40,11 +40,11 @@ class TouchLockManager @Inject constructor(
         /**
          * 长按退出所需时长（毫秒）。
          *
-         * 防误触本身靠全屏遮罩拦截点击，不需要长按来防误触；长按只是为了
-         * 避免“随手一碰就解开”。500ms 足够区分有意按压与滑动误触，
-         * 又不会让用户觉得卡住。
+         * 防误触本身靠全屏遮罩拦截点击，长按只是为了避免“随手一碰就解开”。
+         * 1.5 秒：500ms 实测太短，手机在口袋里贴到衣物就能误触解锁；
+         * 3 秒又明显卡顿。1.5 秒能区分有意按压与无意接触。
          */
-        const val UNLOCK_HOLD_MS = 500L
+        const val UNLOCK_HOLD_MS = 1500L
 
         private val ACTIVE = booleanPreferencesKey("touch_lock_active")
         private val SAVED_BRIGHTNESS = intPreferencesKey("touch_lock_saved_brightness")

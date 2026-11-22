@@ -417,14 +417,13 @@ fun ChatDrawerContent(
                         subtitle = entry.pluginId.takeIf { it.isNotBlank() }
                             ?.let { stringResource(R.string.chat_drawer_plugin_source, it) },
                         title = entry.title.resolve(pluginLanguageTag),
-                        // 不传 onClick：SettingsRow 内部会在 modifier 之后又追加一个
-                        // clickable{onClick()}，它会消费掉点击事件，外层 combinedClickable
-                        // 的长按永远收不到。点击与长按统一交给下面的 combinedClickable。
+                        // 长按弹菜单：导出/分享安装包、从抽屉隐藏。
+                        // 用 SettingsRow 自己的 onLongClick，不从外部叠 combinedClickable：
+                        // 抽屉外层有 CompactTypography(0.9f) 改了 LocalDensity，
+                        // 外部挂的 combinedClickable 长按判定会失效。
                         iconBackground = true,
-                        modifier = Modifier.combinedClickable(
-                            onClick = { onPluginEntry(entry) },
-                            onLongClick = { menuPluginEntry = entry }
-                        )
+                        onClick = { onPluginEntry(entry) },
+                        onLongClick = { menuPluginEntry = entry }
                     )
                 }
                 if (onNavigateToPlugins != null && morePluginsRowVisible) {

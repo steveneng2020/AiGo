@@ -768,10 +768,11 @@ private fun ReleaseNotesCard(
             }
         }
 
-        // 只要有历史版本就给出展开入口。
-        // 之前用 `> PREVIEW_COUNT` 判断，版本数不足 5 个时入口直接消失，
-        // 用户看到的是「没有更多更新内容的入口」。
-        if (releases.size > 1) {
+        // 只在「确实还有未展示的版本」时给入口。
+        // 之前判据是 `releases.size > 1`，但默认已展示 PREVIEW_COUNT 条，
+        // 版本数少于等于它时展开与收起内容完全相同，入口点了没任何变化，
+        // 用户会以为按钮坏了。
+        if (releases.size > PREVIEW_COUNT) {
             Spacer(Modifier.height(Spacing.sm))
             Row(
                 modifier = Modifier

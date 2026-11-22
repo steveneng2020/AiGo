@@ -290,7 +290,9 @@ private fun OverlayMenuButton(
                     shadowElevation = 0.dp,
                     tonalElevation = 0.dp
                 ) {
-                    Column(modifier = Modifier.width(170.dp).padding(vertical = 4.dp)) {
+                    // 宽度 170dp -> 196dp：三项（Git / 终端 / 防误触）文字长短不一，
+                    // 170dp 下「防误触」几乎贴边，视觉上难判断行边界，容易点错。
+                    Column(modifier = Modifier.width(196.dp).padding(vertical = 4.dp)) {
                         HeaderMenuRow(
                             icon = FeatherIcons.GitBranch,
                             label = stringResource(R.string.chat_open_git),
@@ -360,7 +362,9 @@ private fun HeaderMenuRow(
                 indication = null,
                 onClick = onClick
             )
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            // 垂直 12dp -> 14dp：行高 44dp -> 48dp，达到 Material 最小点击目标。
+            // 三项相邻时 44dp 偏紧，实测容易点到邻项。
+            .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(

@@ -45,7 +45,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun TouchLockOverlay(
     onUnlock: () -> Unit,
-    holdMillis: Long = 500L
+    holdMillis: Long = 1500L
 ) {
     var pressing by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }

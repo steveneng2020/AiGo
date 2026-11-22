@@ -1487,12 +1487,14 @@ fun SettingsScreen(
                     onShowStorePreview = pluginsViewModel::showPreview,
                     onExportPackage = { plugin, share ->
                         scope.launch {
-                            val msg = exportInstalledPlugin(plugin.id, share)
+                            val msg = exportInstalledPlugin(plugin, share)
                             if (msg != null) {
+                                // LENGTH_LONG：导出成功时要展示完整保存路径，
+                                // SHORT（2 秒）根本读不完，用户只会看到一闪而过。
                                 android.widget.Toast.makeText(
                                     pluginDrawerAppContext,
                                     msg,
-                                    android.widget.Toast.LENGTH_SHORT
+                                    android.widget.Toast.LENGTH_LONG
                                 ).show()
                             }
                         }

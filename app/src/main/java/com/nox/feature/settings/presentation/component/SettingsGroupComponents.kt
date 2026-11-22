@@ -3,6 +3,7 @@ package com.nox.feature.settings.presentation.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -232,11 +233,29 @@ internal fun SettingsRow(
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
     iconTint: Color? = null,
-    iconBackground: Boolean = false
+    iconBackground: Boolean = false,
+    /**
+     * 长按回调。传了就用 combinedClickable 接管点击与长按，忽略 [onClick]。
+     *
+     * 为什么不能从外部传 modifier = Modifier.combinedClickable(...)：
+     * 抽屉外层包了 CompactTypography(0.9f)，它改了 LocalDensity；在密度变化
+     * 的上下文里从外部叠 combinedClickable，长按判定拿不到稳定坐标，表现为
+     * 「按多久都不弹菜单」。在 Row 自身挂载则不受影响。
+     */
+    onLongClick: (() -> Unit)? = null
 ) {
     val baseModifier = modifier
         .fillMaxWidth()
-        .let { if (onClick != null && enabled) it.clickable { onClick() } else it }
+        .let {
+            when {
+                onLongClick != null -> it.combinedClickable(
+                    onClick = { if (enabled && onClick != null) onClick() },
+                    onLongClick = { if (enabled) onLongClick() }
+                )
+                onClick != null && enabled -> it.clickable { onClick() }
+                else -> it
+            }
+        }
         .padding(horizontal = Spacing.lg, vertical = if (iconBackground) 10.dp else 14.dp)
     Row(
         modifier = baseModifier.alpha(if (enabled) 1f else 0.5f),
