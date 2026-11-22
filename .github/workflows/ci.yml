@@ -22,6 +22,9 @@ on:
       - 'docs-site/**'
       - 'LICENSE'
       - '.gitignore'
+  # 允许在 Actions 页面手动触发：fork 仓库的 push 默认不投递事件，
+  # 没有这个入口就只能靠 beta.yml 验证链路。
+  workflow_dispatch:
 
 # 同分支新提交到来时取消正在跑的旧 run，省 CI 额度。
 concurrency:
