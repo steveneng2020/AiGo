@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      鲲（《山海经》神兽）六套配色的 adaptive-icon 背景色。
+      mipmap-anydpi-v26/ic_launcher_*.xml 通过 @color/kun_launcher_background_*
+      引用这些名字，缺失时 aapt2 直接报 resource not found。
+      default 为金黄色，是默认图标。
+    -->
+    <color name="kun_launcher_background_default">#5C2E0A</color>
+    <color name="kun_launcher_background_moyu">#1A1A1A</color>
+    <color name="kun_launcher_background_tianqing">#14286B</color>
+    <color name="kun_launcher_background_zheshi">#4E0C0C</color>
+    <color name="kun_launcher_background_biyu">#0E3A1C</color>
+    <color name="kun_launcher_background_zishou">#3A1259</color>
+</resources>

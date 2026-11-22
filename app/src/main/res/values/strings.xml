@@ -286,6 +286,13 @@
     <string name="settings_app_icon">图标设置</string>
     <string name="app_icon_sheet_title">应用图标</string>
     <string name="app_icon_sheet_hint">切换后会自动回到桌面，部分启动器需要几秒刷新图标</string>
+    <string name="app_icon_kun_default">鲲 · 金黄</string>
+    <string name="app_icon_change_hint">点击更换应用图标</string>
+    <string name="app_icon_kun_moyu">鲲 · 墨羽</string>
+    <string name="app_icon_kun_tianqing">鲲 · 天青</string>
+    <string name="app_icon_kun_zheshi">鲲 · 赭石</string>
+    <string name="app_icon_kun_biyu">鲲 · 碧羽</string>
+    <string name="app_icon_kun_zishou">鲲 · 紫绶</string>
     <string name="app_icon_default">绿镜黑猫</string>
     <string name="app_icon_glasses">蓝底双猫</string>
     <string name="app_icon_wrench">扳手黑猫</string>    <string name="theme_auto">自动</string>
@@ -427,11 +434,6 @@
     <string name="settings_category_background">后台运行</string>
     <string name="settings_category_system_permissions">系统权限</string>
     <string name="settings_user_guide">使用手册</string>
-    <string name="settings_sponsor">赞助</string>
-    <string name="sponsor_title">支持 AiGo</string>
-    <string name="sponsor_desc">如果 AiGo 对你有帮助，欢迎请我喝一杯咖啡</string>
-    <string name="sponsor_qr_desc">赞赏码</string>
-    <string name="sponsor_thanks">感谢您的支持</string>
 
     <!-- i18n: UI 文案 -->
     <!-- Common -->
@@ -786,6 +788,21 @@
     <string name="chat_drawer_plugin_section">插件</string>
     <string name="chat_drawer_plugin_source">插件 %1$s</string>
     <string name="chat_drawer_more_plugins">更多插件</string>
+    <string name="chat_touch_lock">防误触</string>
+    <string name="touch_lock_active_title">防误触模式已开启</string>
+    <string name="touch_lock_unlock_hint">长按 3 秒退出防误触模式</string>
+    <string name="touch_lock_brightness_denied">未授予「修改系统设置」权限，防误触只拦截触摸，不会调暗屏幕</string>
+    <string name="plugin_menu_export">导出插件安装包</string>
+    <string name="plugin_menu_share">分享插件安装包（不含用户数据）</string>
+    <string name="plugin_menu_hide">从抽屉隐藏</string>
+    <string name="plugins_export_failed">导出失败，请确认插件已完整安装</string>
+    <string name="plugins_export_done">已导出到：%1$s</string>
+    <string name="plugins_share_failed">无法打开分享面板</string>
+    <string name="plugins_share_package">分享插件安装包</string>
+    <string name="plugins_drawer_visibility_title">抽屉显示</string>
+    <string name="plugins_drawer_visibility_hint">关闭后该入口不再出现在侧边抽屉里，插件本身仍正常工作</string>
+    <string name="plugins_drawer_more_row_hint">抽屉底部「更多插件」入口，关掉后可从设置重新打开</string>
+    <string name="plugins_store_export_share">下载并分享安装包</string>
     <string name="chat_pin_session">置顶</string>
     <string name="chat_unpin_session">取消置顶</string>
     <string name="chat_delete_session">删除会话</string>

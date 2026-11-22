@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,6 +26,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -37,10 +40,12 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,6 +63,7 @@ import com.nox.core.ui.ExpandableChevronIcon
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronUp
+import kotlinx.coroutines.launch
 
 
 /** 「其他」选项在选中集合内的内部哨兵：用 AI 不可能传出的控制字符前缀，避免与预设选项 label 撞车。 */
@@ -153,6 +159,10 @@ fun AskUserQuestionPanel(
                 Column(
                     modifier = Modifier
                         .heightIn(max = 480.dp)
+                        // imePadding 必须在 verticalScroll 之前：放在滚动内容内部时，
+                        // 键盘弹出只抬高内容底部内边距，滚动容器自身高度不变，
+                        // 「其他」输入框聚焦后仍会被键盘盖住。
+                        .imePadding()
                         .verticalScroll(rememberScrollState())
                 ) {
                     Spacer(Modifier.height(Spacing.md))
@@ -307,13 +317,23 @@ private fun QuestionCard(
             // 「其他」被选中时展开文本输入框
             if (isOther && isSelected) {
                 Spacer(Modifier.height(Spacing.xs))
+                val fieldRequester = remember { BringIntoViewRequester() }
+                val fieldScope = rememberCoroutineScope()
                 AppTextField(
                     value = customText,
                     onValueChange = onCustomTextChanged,
                     placeholder = stringResource(R.string.ask_input_hint),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 28.dp),
+                        .padding(start = 28.dp)
+                        .bringIntoViewRequester(fieldRequester)
+                        .onFocusChanged { state ->
+                            // 面板本身可滚动，键盘弹出后仅靠 imePadding 不会跟随焦点，
+                            // 底部问题的输入框仍可能在视口外，聚焦时主动滚过去。
+                            if (state.isFocused) {
+                                fieldScope.launch { fieldRequester.bringIntoView() }
+                            }
+                        },
                     textStyle = MaterialTheme.typography.bodySmall,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)

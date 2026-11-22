@@ -286,6 +286,13 @@
     <string name="settings_app_icon">App icon</string>
     <string name="app_icon_sheet_title">App icon</string>
     <string name="app_icon_sheet_hint">The app returns to the home screen after switching; some launchers take a few seconds to refresh.</string>
+    <string name="app_icon_kun_default">Kun · Gold</string>
+    <string name="app_icon_change_hint">Tap to change app icon</string>
+    <string name="app_icon_kun_moyu">Kun · Ink</string>
+    <string name="app_icon_kun_tianqing">Kun · Sky</string>
+    <string name="app_icon_kun_zheshi">Kun · Ochre</string>
+    <string name="app_icon_kun_biyu">Kun · Jade</string>
+    <string name="app_icon_kun_zishou">Kun · Violet</string>
     <string name="app_icon_default">Green glasses</string>
     <string name="app_icon_glasses">Blue cats</string>
     <string name="app_icon_wrench">Wrench cat</string>    <string name="theme_auto">Auto</string>
@@ -417,11 +424,6 @@
     <string name="settings_category_background">Background</string>
     <string name="settings_category_system_permissions">System permissions</string>
     <string name="settings_user_guide">User Guide</string>
-    <string name="settings_sponsor">Sponsor</string>
-    <string name="sponsor_title">Support AiGo</string>
-    <string name="sponsor_desc">If AiGo helps you, feel free to buy me a coffee</string>
-    <string name="sponsor_qr_desc">Sponsorship QR code</string>
-    <string name="sponsor_thanks">Thanks for your support</string>
 
     <!-- i18n: UI strings -->
     <!-- Common -->
@@ -775,6 +777,21 @@
     <string name="chat_drawer_plugin_section">Plugins</string>
     <string name="chat_drawer_plugin_source">Plugin %1$s</string>
     <string name="chat_drawer_more_plugins">More plugins</string>
+    <string name="chat_touch_lock">Touch lock</string>
+    <string name="touch_lock_active_title">Touch lock is on</string>
+    <string name="touch_lock_unlock_hint">Hold for 3 seconds to unlock</string>
+    <string name="touch_lock_brightness_denied">Without the “Modify system settings” permission, touch lock only blocks touches and will not dim the screen.</string>
+    <string name="plugin_menu_export">Export plugin package</string>
+    <string name="plugin_menu_share">Share plugin package (without user data)</string>
+    <string name="plugin_menu_hide">Hide from drawer</string>
+    <string name="plugins_export_failed">Export failed. Make sure the plugin is fully installed.</string>
+    <string name="plugins_export_done">Exported to: %1$s</string>
+    <string name="plugins_share_failed">Unable to open the share sheet</string>
+    <string name="plugins_share_package">Share plugin package</string>
+    <string name="plugins_drawer_visibility_title">Drawer visibility</string>
+    <string name="plugins_drawer_visibility_hint">Turned off, this entry disappears from the side drawer. The plugin itself keeps working.</string>
+    <string name="plugins_drawer_more_row_hint">The “More plugins” row at the bottom of the drawer. Turn it off and reopen from Settings.</string>
+    <string name="plugins_store_export_share">Download and share package</string>
     <string name="chat_pin_session">Pin to Top</string>
     <string name="chat_unpin_session">Unpin</string>
     <string name="chat_delete_session">Delete Session</string>

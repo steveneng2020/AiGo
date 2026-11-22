@@ -111,6 +111,8 @@ import com.nox.core.ui.ChevronRotationStyle
 import com.nox.core.ui.ExpandableChevronIcon
 import com.nox.core.ui.containerOsLogo
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.Share2
+import compose.icons.feathericons.EyeOff
 import compose.icons.feathericons.MoreHorizontal
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
@@ -146,6 +148,7 @@ import kotlinx.coroutines.delay
  * Tab0 为根会话列表，带子代理的会话行可就地展开；Tab1 为当前工作区的文件树。
  */
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun ChatDrawerContent(
     sessions: List<ChatSession>,
     currentSessionId: String?,
@@ -158,6 +161,15 @@ fun ChatDrawerContent(
     sessionPluginEntries: List<com.nox.feature.plugin.domain.PluginUiEntry> = emptyList(),
     pluginLanguageTag: String = "",
     onPluginEntry: (com.nox.feature.plugin.domain.PluginUiEntry) -> Unit = {},
+    /** 长按插件入口：弹菜单（导出/分享安装包、从抽屉隐藏）。 */
+    onExportPluginPackage: ((com.nox.feature.plugin.domain.PluginUiEntry) -> Unit)? = null,
+    onSharePluginPackage: ((com.nox.feature.plugin.domain.PluginUiEntry) -> Unit)? = null,
+    /** 长按菜单里「从抽屉隐藏」的回调；为 null 时不展示该项。 */
+    onHidePluginEntry: ((com.nox.feature.plugin.domain.PluginUiEntry) -> Unit)? = null,
+    /** 隐藏/显示抽屉里的「更多插件」固定行。 */
+    onHideMorePluginsRow: (() -> Unit)? = null,
+    /** 「更多插件」固定行是否显示（由插件设置里的开关控制）。 */
+    morePluginsRowVisible: Boolean = true,
     onSessionPluginEntry: (ChatSession, com.nox.feature.plugin.domain.PluginUiEntry) -> Unit = { _, _ -> },
     onDeleteSessions: ((Set<String>) -> Unit)? = null,
     onRename: (ChatSession, String) -> Unit,
@@ -204,6 +216,10 @@ fun ChatDrawerContent(
     var pendingDelete by remember { mutableStateOf<ChatSession?>(null) }
     var pendingRename by remember { mutableStateOf<ChatSession?>(null) }
     var menuSession by remember { mutableStateOf<ChatSession?>(null) }
+    // 长按插件入口后的操作菜单
+    var menuPluginEntry by remember {
+        mutableStateOf<com.nox.feature.plugin.domain.PluginUiEntry?>(null)
+    }
     val listState = rememberLazyListState()
 
     BackHandler(enabled = isSelectionMode) {
@@ -384,6 +400,42 @@ fun ChatDrawerContent(
         }
 
         CompactTypography(0.9f) {
+        // 插件入口在前、应用功能（角色/浏览器/设置）在后：用户最常点的是插件入口，
+        // 放在上方可减少一次滚动；应用功能固定在最底部作为出口。
+        if (pluginEntries.isNotEmpty()) {
+            SettingsGroupHeader(stringResource(R.string.chat_drawer_plugin_section))
+            SettingsGroup {
+                pluginEntries.forEachIndexed { index, entry ->
+                    if (index > 0) SettingsDivider()
+                    SettingsRow(
+                        icon = com.nox.feature.plugin.presentation.pluginPageIcon(entry.icon),
+                        // 副标题标出来源插件，与截图里 Beta 版的信息层级保持一致
+                        subtitle = entry.pluginId.takeIf { it.isNotBlank() }
+                            ?.let { stringResource(R.string.chat_drawer_plugin_source, it) },
+                        title = entry.title.resolve(pluginLanguageTag),
+                        // 不传 onClick：SettingsRow 内部会在 modifier 之后又追加一个
+                        // clickable{onClick()}，它会消费掉点击事件，外层 combinedClickable
+                        // 的长按永远收不到。点击与长按统一交给下面的 combinedClickable。
+                        iconBackground = true,
+                        modifier = Modifier.combinedClickable(
+                            onClick = { onPluginEntry(entry) },
+                            onLongClick = { menuPluginEntry = entry }
+                        )
+                    )
+                }
+                if (onNavigateToPlugins != null && morePluginsRowVisible) {
+                    SettingsDivider()
+                    SettingsRow(
+                        icon = FeatherIcons.MoreHorizontal,
+                        title = stringResource(R.string.chat_drawer_more_plugins),
+                        onClick = onNavigateToPlugins,
+                        iconBackground = true
+                    )
+                }
+            }
+            Spacer(Modifier.height(Spacing.md))
+        }
+
         SettingsGroup {
             if (onNavigateToRoles != null) {
                 SettingsRow(
@@ -410,36 +462,6 @@ fun ChatDrawerContent(
                 iconBackground = true,
                 modifier = Modifier.onboardingTarget(OnboardingStep.ENTER_SETTINGS)
             )
-        }
-
-        // 插件入口单独成组：之前与角色/浏览器/设置混在同一张卡片里，既没有分组标题，
-        // 也缺少「更多插件」出口，层级上分不出「应用功能」与「第三方扩展」。
-        if (pluginEntries.isNotEmpty()) {
-            Spacer(Modifier.height(Spacing.md))
-            SettingsGroupHeader(stringResource(R.string.chat_drawer_plugin_section))
-            SettingsGroup {
-                pluginEntries.forEachIndexed { index, entry ->
-                    if (index > 0) SettingsDivider()
-                    SettingsRow(
-                        icon = com.nox.feature.plugin.presentation.pluginPageIcon(entry.icon),
-                        // 副标题标出来源插件，与截图里 Beta 版的信息层级保持一致
-                        subtitle = entry.pluginId.takeIf { it.isNotBlank() }
-                            ?.let { stringResource(R.string.chat_drawer_plugin_source, it) },
-                        title = entry.title.resolve(pluginLanguageTag),
-                        onClick = { onPluginEntry(entry) },
-                        iconBackground = true
-                    )
-                }
-                if (onNavigateToPlugins != null) {
-                    SettingsDivider()
-                    SettingsRow(
-                        icon = FeatherIcons.MoreHorizontal,
-                        title = stringResource(R.string.chat_drawer_more_plugins),
-                        onClick = onNavigateToPlugins,
-                        iconBackground = true
-                    )
-                }
-            }
         }
         }
     }
@@ -480,6 +502,64 @@ fun ChatDrawerContent(
                 TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.common_cancel)) }
             }
         )
+    }
+
+    menuPluginEntry?.let { entry ->
+        AdaptiveModalBottomSheet(
+            onDismissRequest = { menuPluginEntry = null },
+            sheetState = rememberModalBottomSheetState(),
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = Spacing.xl)
+            ) {
+                Text(
+                    text = entry.title.resolve(pluginLanguageTag),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .padding(horizontal = Spacing.lg)
+                        .padding(bottom = Spacing.md)
+                )
+                if (onExportPluginPackage != null) {
+                    SheetActionRow(
+                        icon = FeatherIcons.Download,
+                        label = stringResource(R.string.plugin_menu_export),
+                        tint = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            menuPluginEntry = null
+                            onExportPluginPackage(entry)
+                        }
+                    )
+                }
+                if (onSharePluginPackage != null) {
+                    SheetActionRow(
+                        icon = FeatherIcons.Share2,
+                        label = stringResource(R.string.plugin_menu_share),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        onClick = {
+                            menuPluginEntry = null
+                            onSharePluginPackage(entry)
+                        }
+                    )
+                }
+                if (onHidePluginEntry != null) {
+                    SheetActionRow(
+                        icon = FeatherIcons.EyeOff,
+                        label = stringResource(R.string.plugin_menu_hide),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        onClick = {
+                            menuPluginEntry = null
+                            onHidePluginEntry(entry)
+                        }
+                    )
+                }
+            }
+        }
     }
 
     menuSession?.let { session ->

@@ -30,6 +30,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import compose.icons.feathericons.MoreVertical
+import compose.icons.feathericons.Lock
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -78,6 +79,8 @@ internal fun ChatHeader(
     onNavigateToTerminal: () -> Unit,
     onNavigateToGit: () -> Unit,
     onNavigateToBrowser: () -> Unit = {},
+    /** 顶栏菜单里的「防误触」；为 null 时不展示该项。 */
+    onEnableTouchLock: (() -> Unit)? = null,
     /** 聊天顶栏菜单里的插件入口（chat.header.menu 槽位）。 */
     pluginEntries: List<com.nox.feature.plugin.domain.PluginUiEntry> = emptyList(),
     pluginLanguageTag: String = "",
@@ -200,6 +203,7 @@ internal fun ChatHeader(
                     gitActive = gitActive,
                     onNavigateToTerminal = onNavigateToTerminal,
                     onNavigateToGit = onNavigateToGit,
+                    onEnableTouchLock = onEnableTouchLock,
                     pluginEntries = pluginEntries,
                     pluginLanguageTag = pluginLanguageTag,
                     onPluginEntry = onPluginEntry
@@ -254,6 +258,7 @@ private fun OverlayMenuButton(
     gitActive: Boolean,
     onNavigateToTerminal: () -> Unit,
     onNavigateToGit: () -> Unit,
+    onEnableTouchLock: (() -> Unit)? = null,
     pluginEntries: List<com.nox.feature.plugin.domain.PluginUiEntry> = emptyList(),
     pluginLanguageTag: String = "",
     onPluginEntry: (com.nox.feature.plugin.domain.PluginUiEntry) -> Unit = {}
@@ -303,6 +308,19 @@ private fun OverlayMenuButton(
                             active = terminalActive,
                             onClick = { expanded = false; onNavigateToTerminal() }
                         )
+                        if (onEnableTouchLock != null) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 46.dp, end = 14.dp),
+                                thickness = 1.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                            HeaderMenuRow(
+                                icon = FeatherIcons.Lock,
+                                label = stringResource(R.string.chat_touch_lock),
+                                active = false,
+                                onClick = { expanded = false; onEnableTouchLock() }
+                            )
+                        }
                         pluginEntries.forEach { entry ->
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 46.dp, end = 14.dp),

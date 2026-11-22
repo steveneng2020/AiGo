@@ -30,6 +30,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -411,6 +412,22 @@ fun AppNavigation(
     val drawerPluginEntries = remember(pluginSlotEntries) {
         pluginSlotEntries.filter { it.slot == com.nox.feature.plugin.domain.PluginUiSlots.DRAWER_FOOTER }
     }
+    // 抽屉只展示用户勾选的插件入口：隐藏集合保存在 DataStore，默认空集（全显示）。
+    // AppNavigation 是独立 Composable，拿不到 Activity 的 @Inject 字段，走 EntryPoint。
+    val pluginDrawerAppContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val pluginDrawerActivityContext = androidx.compose.ui.platform.LocalContext.current
+    val pluginDrawerDeps = remember(pluginDrawerAppContext) {
+        dagger.hilt.android.EntryPointAccessors
+            .fromApplication(
+                pluginDrawerAppContext,
+                com.nox.PluginDrawerEntryPoint::class.java
+            )
+    }
+    val hiddenDrawerPluginKeys by pluginDrawerDeps.pluginDrawerVisibilityRepository()
+        .hiddenKeysFlow.collectAsState(initial = emptySet())
+    val visibleDrawerPluginEntries = remember(drawerPluginEntries, hiddenDrawerPluginKeys) {
+        drawerPluginEntries.filter { it.key !in hiddenDrawerPluginKeys }
+    }
     val headerPluginEntries = remember(pluginSlotEntries) {
         pluginSlotEntries.filter { it.slot == com.nox.feature.plugin.domain.PluginUiSlots.CHAT_HEADER_MENU }
     }
@@ -457,6 +474,52 @@ fun AppNavigation(
             }
         }
     val rightDrawerState = com.nox.core.ui.rememberEndDrawerState()
+
+    /**
+     * 导出插件安装包，[share] 为 true 时直接拉起系统分享。
+     *
+     * 只打 `installed/<id>`，不含 `data/<id>` 里的用户数据，所以导出的包可以安全地发给别人。
+     * 返回非 null 表示需要提示用户（错误信息）。
+     */
+    val exportPluginPackage: suspend (String, Boolean) -> String? = { pluginId, share ->
+        val ctx = pluginDrawerAppContext
+        val activityCtx = pluginDrawerActivityContext
+        val zip = withContext(Dispatchers.IO) {
+            runCatching {
+                val plugin = installedPluginsForSlots.firstOrNull { it.id == pluginId }
+                    ?: return@runCatching null
+                val version = plugin.manifest?.version?.toString() ?: plugin.record.version
+                pluginDrawerDeps.pluginPackageExporter().export(
+                    pluginId,
+                    version,
+                    pluginDrawerDeps.pluginManager().installDirFor(pluginId)
+                )
+            }.getOrNull()
+        }
+        if (zip == null) {
+            ctx.getString(R.string.plugins_export_failed)
+        } else if (!share) {
+            null
+        } else {
+            val failed = withContext(Dispatchers.Main) {
+                runCatching {
+                    val uri = pluginDrawerDeps.pluginPackageExporter().shareUri(zip)
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "application/zip"
+                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    activityCtx.startActivity(
+                        android.content.Intent.createChooser(
+                            intent,
+                            ctx.getString(R.string.plugins_share_package)
+                        )
+                    )
+                }
+            }.isFailure
+            if (failed) ctx.getString(R.string.plugins_share_failed) else null
+        }
+    }
 
     // 从工具详情页返回时，若入口是右侧抽屉，要把抽屉重新弹出来——
     // 否则看完一个工具就退回聊天页，还得再滑一次抽屉。
@@ -745,11 +808,31 @@ fun AppNavigation(
                 navController.navigate("settings?section=plugins&from=chat")
                 if (!permanentDrawer) scope.launch { drawerState.snapTo(DrawerValue.Closed) }
             },
-            pluginEntries = drawerPluginEntries,
+            pluginEntries = visibleDrawerPluginEntries,
             filePluginEntries = fileTreePluginEntries,
             sessionPluginEntries = sessionPluginEntries,
             pluginLanguageTag = pluginLanguageTagForSlots,
             onPluginEntry = { entry -> runPluginEntry(entry, com.nox.feature.plugin.presentation.PluginEntryContext()) },
+            onExportPluginPackage = { entry ->
+                scope.launch {
+                    val msg = exportPluginPackage(entry.pluginId, false)
+                    if (msg != null) pluginActionMessage = msg
+                }
+            },
+            onSharePluginPackage = { entry ->
+                scope.launch {
+                    val msg = exportPluginPackage(entry.pluginId, true)
+                    if (msg != null) pluginActionMessage = msg
+                }
+            },
+            onHidePluginEntry = { entry ->
+                scope.launch {
+                    pluginDrawerDeps.pluginDrawerVisibilityRepository()
+                        .setVisible(entry.key, false)
+                }
+            },
+            morePluginsRowVisible = com.nox.feature.plugin.presentation.MORE_PLUGINS_ROW_KEY !in
+                hiddenDrawerPluginKeys,
             onSessionPluginEntry = { session, entry ->
                 runPluginEntry(
                     entry,
@@ -1424,4 +1507,16 @@ internal fun splitPathAndLine(path: String): Pair<String, Int> {
 @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
 interface BrowserUserAgentEntryPoint {
     fun browserManager(): com.nox.feature.agent.domain.tool.browser.BrowserManager
+}
+
+/** 抽屉插件区的可见性与插件包导出所需的单例。 */
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface PluginDrawerEntryPoint {
+    fun pluginDrawerVisibilityRepository():
+        com.nox.feature.settings.data.repository.PluginDrawerVisibilityRepository
+
+    fun pluginPackageExporter(): com.nox.feature.plugin.data.PluginPackageExporter
+
+    fun pluginManager(): com.nox.feature.plugin.domain.PluginManager
 }

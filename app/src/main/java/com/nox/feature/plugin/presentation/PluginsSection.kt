@@ -4,6 +4,7 @@ import android.provider.Settings
 import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
@@ -100,6 +104,8 @@ import com.nox.feature.settings.presentation.component.settingsPageBackground
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Activity
 import compose.icons.feathericons.Book
+import compose.icons.feathericons.Download
+import compose.icons.feathericons.Share2
 import compose.icons.feathericons.BookOpen
 import compose.icons.feathericons.Trash2
 import compose.icons.feathericons.ChevronRight
@@ -163,7 +169,9 @@ internal fun PluginsSection(
     onOpenDetail: (InstalledPlugin) -> Unit,
     onToggleEnabled: (InstalledPlugin, Boolean) -> Unit,
     onShowStorePreview: (PluginStorePreview) -> Unit,
-    onOpenStoreDetail: (PluginStoreItem) -> Unit
+    onOpenStoreDetail: (PluginStoreItem) -> Unit,
+    /** 长按已安装插件：导出（share=false）或分享（share=true）安装包。 */
+    onExportPackage: ((InstalledPlugin, Boolean) -> Unit)? = null
 ) {
     if (!loaded) return
 
@@ -207,7 +215,8 @@ internal fun PluginsSection(
                             storeViewModel.refresh()
                         },
                         onOpenDetail = onOpenDetail,
-                        onToggleEnabled = onToggleEnabled
+                        onToggleEnabled = onToggleEnabled,
+                        onExportPackage = onExportPackage
                     )
                     pageCount == 3 && page == 1 -> DevPluginsPage(
                         projects = devProjects,
@@ -258,8 +267,12 @@ private fun InstalledPluginsPage(
     refreshing: Boolean,
     onRefresh: () -> Unit,
     onOpenDetail: (InstalledPlugin) -> Unit,
-    onToggleEnabled: (InstalledPlugin, Boolean) -> Unit
+    onToggleEnabled: (InstalledPlugin, Boolean) -> Unit,
+    /** 长按插件：导出/分享安装包。为 null 时不启用长按。 */
+    onExportPackage: ((InstalledPlugin, Boolean) -> Unit)? = null
 ) {
+    // 长按选中的插件，用于弹操作菜单
+    var menuPlugin by remember { mutableStateOf<InstalledPlugin?>(null) }
     val filteredPlugins = remember(plugins, searchQuery, languageTag) {
         val query = searchQuery.trim().lowercase()
         if (query.isEmpty()) {
@@ -328,11 +341,94 @@ private fun InstalledPluginsPage(
                             languageTag = languageTag,
                             update = updates[plugin.id],
                             onToggleEnabled = { onToggleEnabled(plugin, it) },
-                            onClick = { onOpenDetail(plugin) }
+                            onClick = { onOpenDetail(plugin) },
+                            onLongClick = if (onExportPackage != null) {
+                                { menuPlugin = plugin }
+                            } else {
+                                null
+                            }
                         )
                     }
                 }
             }
+        }
+    }
+
+    // 长按已安装插件：导出/分享安装包（只打 installed 目录，不含用户数据）
+    menuPlugin?.let { plugin ->
+        com.nox.core.ui.AdaptiveModalBottomSheet(
+            onDismissRequest = { menuPlugin = null },
+            sheetState = androidx.compose.material3.rememberModalBottomSheetState(),
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = Spacing.xl)
+            ) {
+                Text(
+                    text = plugin.displayName(languageTag),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .padding(horizontal = Spacing.lg)
+                        .padding(bottom = Spacing.md)
+                )
+                InstalledPluginMenuRow(
+                    icon = FeatherIcons.Download,
+                    label = stringResource(R.string.plugin_menu_export),
+                    tint = MaterialTheme.colorScheme.primary,
+                    onClick = {
+                        menuPlugin = null
+                        onExportPackage?.invoke(plugin, false)
+                    }
+                )
+                InstalledPluginMenuRow(
+                    icon = FeatherIcons.Share2,
+                    label = stringResource(R.string.plugin_menu_share),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    onClick = {
+                        menuPlugin = null
+                        onExportPackage?.invoke(plugin, true)
+                    }
+                )
+            }
+        }
+    }
+}
+
+/** 已安装插件操作菜单的单行：图标 + 文字。 */
+@Composable
+private fun InstalledPluginMenuRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit
+) {
+    androidx.compose.material3.Surface(
+        onClick = onClick,
+        color = androidx.compose.ui.graphics.Color.Transparent
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(Spacing.md))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
@@ -387,7 +483,8 @@ private fun PluginRow(
     languageTag: String,
     update: PluginStoreItem?,
     onToggleEnabled: (Boolean) -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
 ) {
     val version = plugin.manifest?.version?.toString() ?: plugin.record.version
     val publisher = plugin.manifest?.publisher
@@ -396,7 +493,10 @@ private fun PluginRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
             .padding(horizontal = Spacing.lg, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1114,9 +1214,16 @@ internal fun PluginSettingsSheet(
     onAddIndexSource: suspend (String) -> Boolean,
     onRemoveIndexSource: suspend (String) -> Boolean,
     onSetDevMode: (Boolean) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** 抽屉插件入口（用于「抽屉显示」开关列表）；为 null 时不展示该分区。 */
+    drawerEntries: List<com.nox.feature.plugin.domain.PluginUiEntry> = emptyList(),
+    hiddenEntryKeys: Set<String> = emptySet(),
+    onToggleEntryVisible: ((com.nox.feature.plugin.domain.PluginUiEntry, Boolean) -> Unit)? = null,
+    onToggleMoreRow: ((Boolean) -> Unit)? = null,
+    pluginLanguageTag: String = ""
 ) {
     val sheetState = rememberModalBottomSheetState()
+
     AdaptiveModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1125,8 +1232,10 @@ internal fun PluginSettingsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                // imePadding 必须在 verticalScroll 之前：放在滚动内容内部时，键盘弹出只抬高
+                // 内容底部内边距，滚动容器自身高度不变，聚焦的输入框仍被键盘遮住。
                 .imePadding()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = Spacing.lg)
                 .padding(bottom = Spacing.xl)
         ) {
@@ -1150,6 +1259,16 @@ internal fun PluginSettingsSheet(
                 devRootPath = devRootPath,
                 onSetDevMode = onSetDevMode
             )
+            if (drawerEntries.isNotEmpty() && onToggleEntryVisible != null) {
+                Spacer(modifier = Modifier.height(Spacing.md))
+                PluginDrawerVisibilitySection(
+                    entries = drawerEntries,
+                    hiddenKeys = hiddenEntryKeys,
+                    languageTag = pluginLanguageTag,
+                    onToggle = onToggleEntryVisible,
+                    onToggleMoreRow = onToggleMoreRow
+                )
+            }
         }
     }
 }
@@ -1171,6 +1290,10 @@ private fun PluginIndexSettingsSection(
     }
     var draft by rememberSaveable { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
+    // 输入框聚焦时把它滚到可见区：键盘弹出后仅靠 imePadding 只保证面板不越过键盘，
+    // 但滚动位置不会自动跟随焦点，靠底部的输入框仍可能落在视口外。
+    val addFieldRequester = remember { BringIntoViewRequester() }
+    val addFieldScope = rememberCoroutineScope()
 
     SettingsGroup {
         Column(
@@ -1237,6 +1360,14 @@ private fun PluginIndexSettingsSection(
                 placeholder = "https://example.com/index.json",
                 singleLine = true,
                 enabled = !adding,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .bringIntoViewRequester(addFieldRequester)
+                    .onFocusChanged { state ->
+                        if (state.isFocused) {
+                            addFieldScope.launch { addFieldRequester.bringIntoView() }
+                        }
+                    },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
             )
             Button(
@@ -1300,6 +1431,91 @@ private fun PluginIndexSettingsSection(
         }
     }
 }
+
+@Composable
+private fun PluginDrawerVisibilitySection(
+    entries: List<com.nox.feature.plugin.domain.PluginUiEntry>,
+    hiddenKeys: Set<String>,
+    languageTag: String,
+    onToggle: (com.nox.feature.plugin.domain.PluginUiEntry, Boolean) -> Unit,
+    onToggleMoreRow: ((Boolean) -> Unit)? = null
+) {
+    Column {
+        Text(
+            text = stringResource(R.string.plugins_drawer_visibility_title),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = Spacing.sm)
+        )
+        Text(
+            text = stringResource(R.string.plugins_drawer_visibility_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = Spacing.sm)
+        )
+        SettingsGroup {
+            entries.forEachIndexed { index, entry ->
+                if (index > 0) SettingsDivider()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = entry.title.resolve(languageTag),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (entry.pluginId.isNotBlank()) {
+                            Text(
+                                text = entry.pluginId,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    AppSwitch(
+                        checked = entry.key !in hiddenKeys,
+                        onCheckedChange = { onToggle(entry, it) }
+                    )
+                }
+            }
+            // 「更多插件」固定行也受开关控制；它是进插件管理的唯一入口，
+            // 关掉后仍可从设置里回来，不会把自己锁死。
+            if (onToggleMoreRow != null) {
+                if (entries.isNotEmpty()) SettingsDivider()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.chat_drawer_more_plugins),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.plugins_drawer_more_row_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    AppSwitch(
+                        checked = MORE_PLUGINS_ROW_KEY !in hiddenKeys,
+                        onCheckedChange = onToggleMoreRow
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 「更多插件」固定行在可见性集合里的 key；与插件入口的 `pluginId:localId` 不冲突。 */
+internal const val MORE_PLUGINS_ROW_KEY = "\u0000more-plugins-row"
 
 @Composable
 private fun PluginDeveloperSection(

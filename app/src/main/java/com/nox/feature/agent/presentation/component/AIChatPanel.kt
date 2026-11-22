@@ -723,6 +723,15 @@ fun AIChatPanel(
     val sessionTitle = currentSession?.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_new_session_btn)
     // 点击标题重命名
     var showRenameDialog by remember { mutableStateOf(false) }
+    // 防误触：状态由 TouchLockManager 落盘，这里只做 UI 镜像与遮罩开关。
+    val touchLockContext = LocalContext.current
+    val touchLockManager = remember(touchLockContext) {
+        dagger.hilt.android.EntryPointAccessors
+            .fromApplication(touchLockContext.applicationContext, TouchLockEntryPoint::class.java)
+            .touchLockManager()
+    }
+    val touchLockActive by touchLockManager.activeFlow.collectAsStateWithLifecycle(initialValue = false)
+    val touchLockScope = rememberCoroutineScope()
     var renameText by remember(currentSession?.id) {
         mutableStateOf(currentSession?.title.orEmpty())
     }
@@ -1635,6 +1644,7 @@ fun AIChatPanel(
             onStop = { id -> viewModel.stopAgentSession(id) }
         )
     ) {
+        Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -1659,6 +1669,10 @@ fun AIChatPanel(
                 onNavigateToTerminal = onNavigateToTerminal,
                 onNavigateToGit = onNavigateToGit,
                 onNavigateToBrowser = onNavigateToBrowser,
+                onEnableTouchLock = {
+                    // 未授「修改系统设置」时仍允许开启，只是不调亮度。
+                    touchLockScope.launch { touchLockManager.enter() }
+                },
                 pluginEntries = pluginEntries,
                 pluginLanguageTag = pluginLanguageTag,
                 onPluginEntry = onPluginEntry,
@@ -2200,6 +2214,13 @@ fun AIChatPanel(
                 }
             )
         }
+        // 防误触遮罩盖在最上层：必须挡在 Scaffold 之上，否则底部的输入区仍能被点到。
+        if (touchLockActive) {
+            TouchLockOverlay(
+                onUnlock = { touchLockScope.launch { touchLockManager.exit() } }
+            )
+        }
+        }
     }
 }
 
@@ -2287,3 +2308,10 @@ private fun ScrollToBottomButton(
     }
 }
 
+
+/** 防误触管理器：Composable 里拿单例，避免沿 AIChatPanel 的调用链逐层传参。 */
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface TouchLockEntryPoint {
+    fun touchLockManager(): com.nox.feature.agent.data.touchlock.TouchLockManager
+}

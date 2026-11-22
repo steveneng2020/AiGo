@@ -48,6 +48,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -103,6 +104,7 @@ import com.nox.feature.settings.presentation.SubAgentUiEntry
 import com.nox.feature.plugin.presentation.displayName
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.BarChart2
@@ -342,7 +344,6 @@ fun SettingsScreen(
     }
     var logReturnSection by remember { mutableStateOf(SettingsSection.Menu) }
     var showLogLevelSheet by remember { mutableStateOf(false) }
-    var showSponsorSheet by remember { mutableStateOf(false) }
     // 各列表页的多选状态：顶栏「多选」开关在本页 Scaffold 里，所以状态必须提到这里统一持有。
     // 用普通 map（非 snapshot）新建容器，避免在组合期写快照状态；Compose 状态在 ListSelectionState 内部。
     val listSelections = remember { mutableMapOf<SettingsSection, ListSelectionState>() }
@@ -465,6 +466,123 @@ fun SettingsScreen(
     var showPluginUninstallConfirm by remember { mutableStateOf(false) }
     val pluginIndexSourceText by pluginsViewModel.indexSourceText.collectAsStateWithLifecycle()
     val pluginDownloadMirror by pluginsViewModel.downloadMirror.collectAsStateWithLifecycle()
+    // 抽屉「插件」区的可见性：用 EntryPoint 取单例，免得上层调用链逐层传参。
+    val pluginDrawerAppContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val pluginDrawerVisibility = remember(pluginDrawerAppContext) {
+        dagger.hilt.android.EntryPointAccessors
+            .fromApplication(pluginDrawerAppContext, PluginDrawerVisibilityEntryPoint::class.java)
+            .pluginDrawerVisibilityRepository()
+    }
+    // 导出/分享插件包需要 exporter 与 PluginManager（拿 installDirFor）
+    val pluginDrawerExportDeps = remember(pluginDrawerAppContext) {
+        dagger.hilt.android.EntryPointAccessors
+            .fromApplication(
+                pluginDrawerAppContext,
+                com.nox.PluginDrawerEntryPoint::class.java
+            )
+    }
+    val hiddenPluginEntryKeys by pluginDrawerVisibility.hiddenKeysFlow
+        .collectAsState(initial = emptySet())
+    val pluginDrawerLanguageTag = com.nox.feature.plugin.presentation.currentLanguageTag()
+
+    /**
+     * 导出/分享已安装插件的安装包。
+     *
+     * 只打 `installed/<id>`，不含 `data/<id>` 里的用户数据。
+     * 返回非 null 表示需要提示用户（错误信息）。
+     */
+    suspend fun exportInstalledPlugin(
+        plugin: com.nox.feature.plugin.domain.InstalledPlugin,
+        share: Boolean
+    ): String? {
+        val deps = pluginDrawerExportDeps
+        val zip = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val version = plugin.manifest?.version?.toString() ?: plugin.record.version
+                deps.pluginPackageExporter().export(
+                    plugin.id,
+                    version,
+                    deps.pluginManager().installDirFor(plugin.id)
+                )
+            }.getOrNull()
+        }
+        if (zip == null) return pluginDrawerAppContext.getString(R.string.plugins_export_failed)
+        if (!share) {
+            android.widget.Toast.makeText(
+                pluginDrawerAppContext,
+                pluginDrawerAppContext.getString(R.string.plugins_export_done, zip.name),
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+            return null
+        }
+        val failure = withContext(kotlinx.coroutines.Dispatchers.Main) {
+            runCatching {
+                val uri = deps.pluginPackageExporter().shareUri(zip)
+                val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "application/zip"
+                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(
+                    android.content.Intent.createChooser(
+                        intent,
+                        pluginDrawerAppContext.getString(R.string.plugins_share_package)
+                    )
+                )
+            }
+        }.exceptionOrNull()
+        return if (failure != null) pluginDrawerAppContext.getString(R.string.plugins_share_failed) else null
+    }
+    val pluginDrawerEntries = remember(plugins, pluginDrawerLanguageTag) {
+        plugins.filter { it.isActive }
+            .sortedBy { it.displayName(pluginDrawerLanguageTag) }
+            .flatMap { plugin ->
+                plugin.content.uiEntries.filter {
+                    it.slot == com.nox.feature.plugin.domain.PluginUiSlots.DRAWER_FOOTER
+                }
+            }
+    }
+
+    /**
+     * 导出已安装插件的安装包。只打 `installed/<id>`，不含 `data/<id>` 的用户数据。
+     * 返回非 null 表示需要提示用户（错误信息）。
+     */
+    val exportInstalledPlugin: suspend (String, Boolean) -> String? = { pluginId, share ->
+        val zip = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val plugin = plugins.firstOrNull { it.id == pluginId } ?: return@runCatching null
+                val version = plugin.manifest?.version?.toString() ?: plugin.record.version
+                pluginDrawerExportDeps.pluginPackageExporter().export(
+                    pluginId,
+                    version,
+                    pluginDrawerExportDeps.pluginManager().installDirFor(pluginId)
+                )
+            }.getOrNull()
+        }
+        if (zip == null) {
+            pluginDrawerAppContext.getString(R.string.plugins_export_failed)
+        } else if (!share) {
+            null
+        } else {
+            val failed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                runCatching {
+                    val uri = pluginDrawerExportDeps.pluginPackageExporter().shareUri(zip)
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "application/zip"
+                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(
+                        android.content.Intent.createChooser(
+                            intent,
+                            pluginDrawerAppContext.getString(R.string.plugins_share_package)
+                        )
+                    )
+                }
+            }.isFailure
+            if (failed) pluginDrawerAppContext.getString(R.string.plugins_share_failed) else null
+        }
+    }
     val pluginZipLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -1363,10 +1481,22 @@ fun SettingsScreen(
                         pluginsViewModel.setEnabled(plugin.id, enabled)
                     },
                     onShowStorePreview = pluginsViewModel::showPreview,
+                    onExportPackage = { plugin, share ->
+                        scope.launch {
+                            val msg = exportInstalledPlugin(plugin.id, share)
+                            if (msg != null) {
+                                android.widget.Toast.makeText(
+                                    pluginDrawerAppContext,
+                                    msg,
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    },
                     onOpenStoreDetail = {
                         selectedStoreItem = it
                         section = SettingsSection.PluginStoreDetail
-                    }
+                    },
                 )
                 SettingsSection.PluginDetail -> selectedPlugin?.let { plugin ->
                     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -1933,6 +2063,20 @@ fun SettingsScreen(
             onAddIndexSource = pluginsViewModel::addIndexSource,
             onRemoveIndexSource = pluginsViewModel::removeIndexSource,
             onSetDevMode = pluginsViewModel::setDevMode,
+            drawerEntries = pluginDrawerEntries,
+            hiddenEntryKeys = hiddenPluginEntryKeys,
+            onToggleEntryVisible = { entry, visible ->
+                scope.launch { pluginDrawerVisibility.setVisible(entry.key, visible) }
+            },
+            onToggleMoreRow = { visible ->
+                scope.launch {
+                    pluginDrawerVisibility.setVisible(
+                        com.nox.feature.plugin.presentation.MORE_PLUGINS_ROW_KEY,
+                        visible
+                    )
+                }
+            },
+            pluginLanguageTag = pluginDrawerLanguageTag,
             onDismiss = {
                 pluginsViewModel.savePluginSettings()
                 showPluginSettingsSheet = false
@@ -2170,7 +2314,6 @@ internal fun SettingsMenu(
     val appIconContext = LocalContext.current
     var appIcon by remember { mutableStateOf(AppIconManager.current(appIconContext)) }
     var showAppIconSheet by remember { mutableStateOf(false) }
-    var showSponsorSheet by remember { mutableStateOf(false) }
     val appIconScope = rememberCoroutineScope()
     Column(
         modifier = Modifier
@@ -2454,12 +2597,6 @@ internal fun SettingsMenu(
             )
             SettingsDivider()
             SettingsRow(
-                icon = FeatherIcons.Heart,
-                title = stringResource(R.string.settings_sponsor),
-                onClick = { showSponsorSheet = true }
-            )
-            SettingsDivider()
-            SettingsRow(
                 icon = FeatherIcons.Info,
                 title = stringResource(SettingsSection.About.titleRes),
                 onClick = { onOpen(SettingsSection.About) }
@@ -2487,10 +2624,6 @@ internal fun SettingsMenu(
                 }
             }
         )
-    }
-
-    if (showSponsorSheet) {
-        SponsorSheet(onDismiss = { showSponsorSheet = false })
     }
 }
 
@@ -2577,4 +2710,15 @@ private fun SkillImportError.messageRes(): Int = when (this) {
     SkillImportError.INVALID_ARCHIVE -> R.string.skills_import_error_invalid_archive
     SkillImportError.UNSUPPORTED_FILE -> R.string.skills_import_error_unsupported_file
     SkillImportError.IO_FAILED -> R.string.skills_import_error_io
+}
+
+/** 插件设置面板需要读抽屉可见性，用 EntryPoint 取单例，避免沿调用链传参。 */
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+@dagger.hilt.EntryPoint
+interface PluginDrawerVisibilityEntryPoint {
+    fun pluginDrawerVisibilityRepository(): com.nox.feature.settings.data.repository.PluginDrawerVisibilityRepository
+
+    fun pluginPackageExporter(): com.nox.feature.plugin.data.PluginPackageExporter
+
+    fun pluginManager(): com.nox.feature.plugin.domain.PluginManager
 }

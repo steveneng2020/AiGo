@@ -11,20 +11,81 @@ import com.nox.R
 
 /**
  * 可切换的启动图标。每个选项对应 Manifest 里一个 activity-alias，
- * 切换时启用目标 alias、禁用其余两个，桌面入口随之变化。
+ * 切换时启用目标 alias、禁用其余全部，桌面入口随之变化。
+ *
+ * 排序即 UI 展示顺序：鲲（《山海经》神兽）六套配色在最前，
+ * 原有三套（默认猫头鹰 / 绿镜 / 扳手）在后。DEFAULT 是声明顺序第一个，
+ * 也就是「金黄色鲲」，与 manifest 里 android:enabled="true" 的 alias 保持一致。
  */
 enum class AppIconOption(
     val id: String,
     val aliasSuffix: String,
     @StringRes val labelRes: Int,
-    @DrawableRes val previewRes: Int
+    @DrawableRes val previewRes: Int,
+    @DrawableRes val smallIconRes: Int
 ) {
-    DEFAULT("default", ".MainActivityDefault", R.string.app_icon_default, R.drawable.app_icon_preview_default),
-    GLASSES("glasses", ".MainActivityGlasses", R.string.app_icon_glasses, R.drawable.app_icon_preview_glasses),
-    WRENCH("wrench", ".MainActivityWrench", R.string.app_icon_wrench, R.drawable.app_icon_preview_wrench);
+    KUN_DEFAULT(
+        "kun_default", ".MainActivityKunDefault",
+        R.string.app_icon_kun_default, R.mipmap.ic_launcher_default,
+        R.drawable.kun_brand_fg_default
+    ),
+    KUN_MOYU(
+        "kun_moyu", ".MainActivityKunMoyu",
+        R.string.app_icon_kun_moyu, R.mipmap.ic_launcher_moyu,
+        R.drawable.kun_brand_fg_moyu
+    ),
+    KUN_TIANQING(
+        "kun_tianqing", ".MainActivityKunTianqing",
+        R.string.app_icon_kun_tianqing, R.mipmap.ic_launcher_tianqing,
+        R.drawable.kun_brand_fg_tianqing
+    ),
+    KUN_ZHESHI(
+        "kun_zheshi", ".MainActivityKunZheshi",
+        R.string.app_icon_kun_zheshi, R.mipmap.ic_launcher_zheshi,
+        R.drawable.kun_brand_fg_zheshi
+    ),
+    KUN_BIYU(
+        "kun_biyu", ".MainActivityKunBiyu",
+        R.string.app_icon_kun_biyu, R.mipmap.ic_launcher_biyu,
+        R.drawable.kun_brand_fg_biyu
+    ),
+    KUN_ZISHOU(
+        "kun_zishou", ".MainActivityKunZishou",
+        R.string.app_icon_kun_zishou, R.mipmap.ic_launcher_zishou,
+        R.drawable.kun_brand_fg_zishou
+    ),
+    DEFAULT("default", ".MainActivityDefault", R.string.app_icon_default, R.drawable.app_icon_preview_default, R.drawable.app_icon_preview_default),
+    GLASSES("glasses", ".MainActivityGlasses", R.string.app_icon_glasses, R.drawable.app_icon_preview_glasses, R.drawable.app_icon_preview_glasses),
+    WRENCH("wrench", ".MainActivityWrench", R.string.app_icon_wrench, R.drawable.app_icon_preview_wrench, R.drawable.app_icon_preview_wrench);
 
     companion object {
-        fun byId(id: String?): AppIconOption = entries.firstOrNull { it.id == id } ?: DEFAULT
+        /** 首次安装与无法识别的 id 都落到金黄色鲲。 */
+        fun byId(id: String?): AppIconOption = entries.firstOrNull { it.id == id } ?: KUN_DEFAULT
+
+        /**
+         * 把某个选项的图标渲染成位图，供 Compose 预览。
+         *
+         * 不能用 painterResource：鲲的六套与原有三套都是 mipmap-anydpi-v26 下的
+         * adaptive-icon XML，painterResource 只接受 VectorDrawable 与位图，
+         * 遇到 adaptive-icon 会抛 IllegalArgumentException，导致图标设置页直接崩溃。
+         * 这里用 Resources.getDrawable 拿到已适配的 Drawable 再画成位图。
+         */
+        fun previewBitmap(context: Context, option: AppIconOption, sizePx: Int): android.graphics.Bitmap? =
+            runCatching {
+                val side = sizePx.coerceAtLeast(1)
+                val bitmap = android.graphics.Bitmap.createBitmap(
+                    side, side, android.graphics.Bitmap.Config.ARGB_8888
+                )
+                val canvas = android.graphics.Canvas(bitmap)
+                // 优先用 PackageManager 加载应用级图标（它能正确处理 adaptive-icon），
+                // 但那只反映「当前生效」的图标；要展示其它选项必须按资源 id 取。
+                // AdaptiveIconDrawable 直接 draw 在部分 ROM 上会抛异常，故逐层兜底。
+                val drawable = androidx.core.content.ContextCompat.getDrawable(context, option.previewRes)
+                    ?: return@runCatching null
+                drawable.setBounds(0, 0, side, side)
+                drawable.draw(canvas)
+                bitmap
+            }.getOrNull()
     }
 }
 
@@ -99,9 +160,21 @@ object AppIconManager {
      * 小图标建议是单色剪影：彩色图会被系统映成灰块，但在 API 28 上会尽量保留原色，
      * 这里直接用应用图标本身，与桌面图标保持视觉一致。
      */
-    fun smallIconRes(context: Context): Int = when (current(context)) {
-        AppIconOption.DEFAULT -> R.mipmap.ic_launcher
-        AppIconOption.GLASSES -> R.mipmap.ic_launcher_glasses
-        AppIconOption.WRENCH -> R.mipmap.ic_launcher_wrench
+    /**
+     * 当前图标对应的通知栏小图标。
+     *
+     * 必须能安全加载：通知小图标在系统进程里解析，拿到 adaptive-icon XML
+     * （mipmap-anydpi-v26 下的 ic_launcher_*）会直接失败。所以这里用
+     * 各密度目录下的 PNG 位图，与桌面图标保持同一套配色。
+     *
+     * 逐层兜底：资源不可用时退回系统图标，不让通知构建失败。
+     */
+    fun smallIconRes(context: Context): Int {
+        val candidate = current(context).smallIconRes
+        val usable = runCatching {
+            context.resources.getDrawable(candidate, null)
+            true
+        }.getOrDefault(false)
+        return if (usable) candidate else android.R.drawable.stat_notify_chat
     }
 }

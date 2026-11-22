@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -72,6 +74,8 @@ import com.nox.feature.settings.presentation.component.SettingsRow
 import com.nox.feature.settings.presentation.component.openUrl
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Book
+import compose.icons.feathericons.Download
+import compose.icons.feathericons.Share2
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.CloudOff
 import compose.icons.feathericons.Github
@@ -97,6 +101,8 @@ internal fun PluginStoreSection(
     val context = LocalContext.current
     val languageTag = currentLanguageTag()
     var searchQuery by rememberSaveable { mutableStateOf("") }
+    // 长按商店里的插件条目：弹导出/分享菜单（不必先进详情页）
+    var menuItem by remember { mutableStateOf<PluginStoreItem?>(null) }
 
     LaunchedEffect(state.preview) {
         state.preview?.let { preview ->
@@ -218,13 +224,92 @@ internal fun PluginStoreSection(
                                 StorePluginRow(
                                     item = item,
                                     languageTag = languageTag,
-                                    onClick = { onOpenDetail(item) }
+                                    onClick = { onOpenDetail(item) },
+                                    onLongClick = { menuItem = item }
                                 )
                             }
                         }
                     }
                 }
             }
+        }
+    }
+
+    // 长按商店条目：直接下载并分享，不必先进详情页再找按钮。
+    menuItem?.let { item ->
+        com.nox.core.ui.AdaptiveModalBottomSheet(
+            onDismissRequest = { menuItem = null },
+            sheetState = androidx.compose.material3.rememberModalBottomSheetState(),
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = Spacing.xl)
+            ) {
+                Text(
+                    text = item.plugin.name.resolve(languageTag),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .padding(horizontal = Spacing.lg)
+                        .padding(bottom = Spacing.md)
+                )
+                StoreSheetActionRow(
+                    icon = FeatherIcons.Download,
+                    label = stringResource(R.string.plugin_menu_export),
+                    tint = MaterialTheme.colorScheme.primary,
+                    onClick = {
+                        menuItem = null
+                        viewModel.exportPackage(item, share = false)
+                    }
+                )
+                StoreSheetActionRow(
+                    icon = FeatherIcons.Share2,
+                    label = stringResource(R.string.plugin_menu_share),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    onClick = {
+                        menuItem = null
+                        viewModel.exportPackage(item, share = true)
+                    }
+                )
+            }
+        }
+    }
+}
+
+/** 商店页操作菜单的单行：图标 + 文字。 */
+@Composable
+private fun StoreSheetActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit
+) {
+    androidx.compose.material3.Surface(
+        onClick = onClick,
+        color = androidx.compose.ui.graphics.Color.Transparent
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.lg, vertical = Spacing.md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(Spacing.md))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
@@ -310,11 +395,19 @@ private const val STORE_ICON_MAX_PIXELS = 160L * 160L
 
 /** 商店列表与已安装列表同版式：图标 + 名称 + 描述；商店不需要开关，点击进入独立详情页。 */
 @Composable
-private fun StorePluginRow(item: PluginStoreItem, languageTag: String, onClick: () -> Unit) {
+private fun StorePluginRow(
+    item: PluginStoreItem,
+    languageTag: String,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
             .padding(horizontal = Spacing.lg, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -410,6 +503,30 @@ internal fun PluginStoreDetailSection(
             ?: return@LaunchedEffect
         onShowPreview(preview)
         viewModel.consumePreview()
+    }
+
+    // 商店页导出：下载完直接拉系统分享面板（可选微信/QQ 等）。
+    LaunchedEffect(state.exportShareFile) {
+        val file = state.exportShareFile ?: return@LaunchedEffect
+        runCatching {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "application/zip"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(
+                android.content.Intent.createChooser(
+                    intent,
+                    context.getString(R.string.plugins_share_package)
+                )
+            )
+        }
+        viewModel.consumeExportShareFile()
     }
 
     Column(
@@ -512,6 +629,24 @@ internal fun PluginStoreDetailSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = Spacing.sm, start = Spacing.xs, end = Spacing.xs)
             )
+        }
+        // 从商店直接拿安装包分享出去（不必先安装），装好再导出则由长按菜单提供。
+        OutlinedButton(
+            onClick = { viewModel.exportPackage(latest, share = true) },
+            enabled = latest.compatible && state.exportingPluginId == null,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = Spacing.sm)
+        ) {
+            if (state.exportingPluginId == latest.plugin.id) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(Spacing.sm))
+            }
+            Text(stringResource(R.string.plugins_store_export_share))
         }
         val installError = state.error?.takeIf {
             it.pluginId == latest.plugin.id &&

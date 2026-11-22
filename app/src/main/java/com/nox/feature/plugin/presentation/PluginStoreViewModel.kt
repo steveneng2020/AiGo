@@ -2,6 +2,8 @@ package com.nox.feature.plugin.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
 import com.nox.core.util.FileLogger
 import com.nox.feature.plugin.data.index.NoMatchingReleaseException
 import com.nox.feature.plugin.data.index.PluginIndexClient
@@ -77,11 +79,16 @@ data class PluginStoreUiState(
     val error: PluginStoreError? = null,
     val installingPluginId: String? = null,
     val installStage: PluginInstallStage = PluginInstallStage.IDLE,
-    val preview: PluginStorePreview? = null
+    val preview: PluginStorePreview? = null,
+    /** 正在导出（下载）安装包的插件 id，用于按钮转圈。 */
+    val exportingPluginId: String? = null,
+    /** 导出完成后的分享文件；UI 消费后置空。 */
+    val exportShareFile: File? = null
 )
 
 @HiltViewModel
 class PluginStoreViewModel @Inject constructor(
+    @param:ApplicationContext private val context: android.content.Context,
     private val client: PluginIndexClient,
     private val sourceRepository: PluginIndexSourceRepository,
     private val manager: PluginManager
@@ -309,6 +316,62 @@ class PluginStoreViewModel @Inject constructor(
 
     fun consumePreview() {
         _state.update { it.copy(preview = null) }
+    }
+
+    /** 分享文件已被 UI 消费（拉起分享面板），清空避免重复触发。 */
+    fun consumeExportShareFile() {
+        _state.update { it.copy(exportShareFile = null) }
+    }
+
+    /**
+     * 从商店下载安装包到本地，供导出/分享。
+     *
+     * 不复用 install 的暂存管线：那条路会解包并落盘成已安装状态。这里只要原始 zip，
+     * 所以下载后直接拷到 cacheDir 并清掉临时文件。
+     */
+    fun exportPackage(item: PluginStoreItem, share: Boolean) {
+        if (!item.compatible) return
+        if (_state.value.exportingPluginId != null) return
+        _state.update { it.copy(exportingPluginId = item.plugin.id, error = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val downloaded = runCatching {
+                val asset = client.resolveRelease(item.plugin)
+                val candidates = client.rankCandidates(asset)
+                client.download(asset, candidates)
+            }.getOrNull()
+            if (downloaded == null) {
+                _state.update {
+                    it.copy(
+                        exportingPluginId = null,
+                        error = PluginStoreError(
+                            code = PluginStoreErrorCode.NETWORK,
+                            pluginId = item.plugin.id
+                        )
+                    )
+                }
+                return@launch
+            }
+            val cached = runCatching {
+                val safeId = item.plugin.id.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                val target = File(context.cacheDir, "plugin-export/$safeId-${downloaded.asset.version}.zip")
+                target.parentFile?.mkdirs()
+                downloaded.file.copyTo(target, overwrite = true)
+                target
+            }.getOrNull()
+            // 下载的临时文件用完就删，避免 cache 里留两份。
+            runCatching { downloaded.file.delete() }
+            _state.update {
+                it.copy(
+                    exportingPluginId = null,
+                    exportShareFile = if (share) cached else null,
+                    error = if (cached == null) {
+                        PluginStoreError(PluginStoreErrorCode.NETWORK, pluginId = item.plugin.id)
+                    } else {
+                        it.error
+                    }
+                )
+            }
+        }
     }
 
     private fun isNewer(candidate: String?, installed: String?): Boolean {

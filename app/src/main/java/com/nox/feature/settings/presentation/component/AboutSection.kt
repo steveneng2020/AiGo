@@ -40,6 +40,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +68,7 @@ import com.nox.core.theme.semanticColors
 import com.nox.core.ui.AppTextField
 import com.nox.core.ui.dialogTextFieldColors
 import com.nox.feature.settings.data.repository.ALT_DOWNLOAD_MIRROR
+import com.nox.feature.settings.data.repository.AppIconManager
 import com.nox.feature.settings.data.repository.DEFAULT_DOWNLOAD_MIRROR
 import com.nox.feature.settings.data.repository.UpdateChannel
 import com.nox.feature.settings.data.repository.isValidDownloadMirror
@@ -124,7 +127,11 @@ internal fun AboutSection(
 
     // 应用图标：用 PackageManager.loadIcon 加载自适应图标，避免 mipmap-anydpi 的 XML
     // 在 Compose painterResource 中不被支持的问题（Only VectorDrawables and rasterized types）。
-    val appIcon = remember { loadAppIconBitmap(context) }
+    // 切换图标后要重新读一次，否则关于页头部仍显示旧图。
+    var iconRevision by remember { mutableStateOf(0) }
+    val appIcon = remember(iconRevision) { loadAppIconBitmap(context) }
+    var showIconSheet by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -134,7 +141,11 @@ internal fun AboutSection(
             .padding(bottom = Spacing.xl),
         verticalArrangement = Arrangement.spacedBy(Spacing.md)
     ) {
-        AboutHeaderCard(appName = stringResource(R.string.app_name), appIcon = appIcon)
+        AboutHeaderCard(
+            appName = stringResource(R.string.app_name),
+            appIcon = appIcon,
+            onIconClick = { showIconSheet = true }
+        )
 
         // 更新内容卡片：对齐截图里的形态——大字版本摘要 + 虚线框滚动的历史日志 + 更多入口。
         // 没有 Release 时也渲染卡片并给出空态说明，否则用户会以为功能缺失。
@@ -286,35 +297,69 @@ internal fun AboutSection(
             onDismiss = { showChannelSheet = false }
         )
     }
+
+    // 点关于页左上角图标直接换图标，不必再绕去设置页。
+    if (showIconSheet) {
+        AppIconSheet(
+            current = AppIconManager.current(context),
+            onDismiss = { showIconSheet = false },
+            onSelect = { option ->
+                AppIconManager.apply(context, option)
+                showIconSheet = false
+                // 重读图标位图，否则头部仍显示旧图
+                iconRevision++
+                scope.launch {
+                    kotlinx.coroutines.delay(400)
+                    AppIconManager.goHome(context)
+                }
+            }
+        )
+    }
 }
 
-/** 顶部信息卡：左 app 图标，右上 app 名，右下一句简介。 */
+/** 顶部信息卡：图标单独占一行居中，下方居中显示应用名与简介。 */
 @Composable
-private fun AboutHeaderCard(appName: String, appIcon: androidx.compose.ui.graphics.ImageBitmap?) {
+private fun AboutHeaderCard(
+    appName: String,
+    appIcon: androidx.compose.ui.graphics.ImageBitmap?,
+    onIconClick: (() -> Unit)? = null
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.semanticColors.cardSurface,
         shadowElevation = 0.dp
     ) {
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth().padding(Spacing.lg),
-            verticalAlignment = Alignment.CenterVertically
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(Spacing.md)
         ) {
             if (appIcon != null) {
                 Image(
                     bitmap = appIcon,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp)
+                    contentDescription = if (onIconClick != null) {
+                        stringResource(R.string.app_icon_change_hint)
+                    } else {
+                        null
+                    },
+                    modifier = Modifier
+                        .size(96.dp)
+                        .then(
+                            if (onIconClick != null) {
+                                Modifier.clickable(onClick = onIconClick)
+                            } else {
+                                Modifier
+                            }
+                        )
                 )
             } else {
                 // 极端情况下图标加载失败的占位，保持布局占位
-                Spacer(Modifier.size(48.dp))
+                Spacer(Modifier.size(96.dp))
             }
-            Spacer(Modifier.width(Spacing.lg))
             Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
                     text = appName,
@@ -325,7 +370,8 @@ private fun AboutHeaderCard(appName: String, appIcon: androidx.compose.ui.graphi
                 Text(
                     text = stringResource(R.string.about_description),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
             }
         }
@@ -593,7 +639,11 @@ private data class AppVersion(val name: String, val code: Long)
 private fun loadAppIconBitmap(context: Context): ImageBitmap? {
     return runCatching {
         val pm = context.packageManager
-        val drawable: Drawable = pm.getApplicationInfo(context.packageName, 0).loadIcon(pm)
+        // 读「当前启用的 activity-alias」的图标，而不是 application 级图标：
+        // 桌面入口是 alias，用户换了图标后 alias 的 icon 会变，但 application 级
+        // android:icon 是静态的，两者不一致就会出现「桌面是鲲、关于页还是黑猫」。
+        val drawable: Drawable = currentLauncherDrawable(context, pm)
+            ?: pm.getApplicationInfo(context.packageName, 0).loadIcon(pm)
         val sizePx = android.util.TypedValue.applyDimension(
             android.util.TypedValue.COMPLEX_UNIT_DIP,
             ICON_PX_DP.toFloat(),
@@ -605,6 +655,29 @@ private fun loadAppIconBitmap(context: Context): ImageBitmap? {
         bitmap.asImageBitmap()
     }.getOrNull()
 }
+
+/**
+ * 取当前启用的 launcher alias 的图标。
+ *
+ * 遍历所有 enabled 的 alias，找到第一个带 MAIN/LAUNCHER 意图的，取其 icon。
+ * 找不到（例如刚装完还没启用任何 alias）时返回 null，调用方退回 application 图标。
+ */
+private fun currentLauncherDrawable(
+    context: Context,
+    pm: android.content.pm.PackageManager
+): Drawable? = runCatching {
+    val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+        .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+        .setPackage(context.packageName)
+    val infos = pm.queryIntentActivities(intent, 0)
+    val best = infos.firstOrNull { info ->
+        info.activityInfo.enabled &&
+            pm.getComponentEnabledSetting(
+                android.content.ComponentName(info.activityInfo.packageName, info.activityInfo.name)
+            ) != android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+    } ?: infos.firstOrNull()
+    best?.loadIcon(pm)
+}.getOrNull()
 
 // 「GitHub 仓库（上游）」指直接 fork 源 Nox，不是更上游的 AiCode：
 // 用户从这里能对照 AiGo 与原版 Nox 的差异，AiCode 与本项目已隔了一层。
@@ -673,12 +746,10 @@ private fun ReleaseNotesCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // 未展开时限高，展开后交给外层页面滚动
-                    .then(
-                        if (expanded) Modifier
-                        else Modifier.heightIn(max = PREVIEW_MAX_HEIGHT)
-                    )
-                    .verticalScroll(rememberScrollState())
+                    // 不要内层 verticalScroll：外层 AboutSection 已经是可滚动容器，
+                    // 嵌套滚动会拿到无限高度约束，直接抛
+                    // "Vertically scrollable component was measured with an infinity maximum height"。
+                    // 默认展示的最新几条完整展开，历史很长时靠底部「更多更新日记」控制。
             ) {
                 if (shown.isEmpty()) {
                     Text(
@@ -741,9 +812,19 @@ private fun ReleaseNotesCard(
 private fun ReleaseNoteItem(release: com.nox.feature.settings.data.remote.VersionUpdate) {
     val title = release.tag.removePrefix("v")
     val date = formatReleaseDate(release.publishedAt)
+    // 标题统一带品牌前缀：历史上 App 内与 GitHub Release 的写法不一致（1.0.0 / v1.0.0），
+    // 统一成「AiGo vX.Y.Z  日期」一眼能看出是哪个应用的哪个版本。
+    val titleText = buildString {
+        append("AiGo v")
+        append(title)
+        if (date.isNotEmpty()) {
+            append("  ")
+            append(date)
+        }
+    }
     Column(modifier = Modifier.padding(bottom = Spacing.lg)) {
         Text(
-            text = if (date.isEmpty()) title else "$title  $date",
+            text = titleText,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface
@@ -802,4 +883,3 @@ private fun formatReleaseDate(iso: String): String {
 }
 
 private const val PREVIEW_COUNT = 5
-private val PREVIEW_MAX_HEIGHT = 420.dp
