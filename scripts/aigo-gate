@@ -618,6 +618,24 @@ else
   echo "  [SKIP] 无 curl 或凭据，跳过 run 检查"
 fi
 
+# 归档副本是否跟上主副本。
+# 用户在手机 Git 面板里看的是 ~/workspace/AiGo-Android源码仓库（FUSE 归档），
+# 而日常开发在 /root/.aigo-build；两个副本不自动同步，导致「明明推了却看不到」。
+ARCHIVE="$HOME/workspace/AiGo-Android源码仓库"
+if [ -d "$ARCHIVE/.git" ]; then
+  archive_head=$(cd "$ARCHIVE" && git rev-parse HEAD 2>/dev/null || echo '')
+  main_head=$(git rev-parse HEAD 2>/dev/null || echo '')
+  if [ "$archive_head" = "$main_head" ]; then
+    ok "归档副本已跟上主副本（$(echo $main_head | cut -c1-7)）"
+  else
+    echo "  [WARN] 归档副本落后：归档=$(echo $archive_head | cut -c1-7) 主副本=$(echo $main_head | cut -c1-7)"
+    echo "        影响：手机 Git 面板看不到新提交"
+    echo "        处理：aigo sync-archive"
+  fi
+else
+  echo "  [SKIP] 未找到归档副本，跳过同步检查"
+fi
+
 # ---------- 4. 冒烟编译 ----------
 step "4/7 冒烟编译"
 if sh gradlew :app:compileUniversalDebugKotlin --offline >/tmp/gate_build.log 2>&1; then

@@ -1,0 +1,282 @@
+#!/bin/sh
+# AiGo 构建与同步入口。
+#
+# 为什么有「主副本」这个概念（实测数据，2026-11-21，宿主 6 核持续高负载）：
+#   workspace 是 App 通过 FUSE 暴露的持久化目录，瓶颈在元数据而非带宽：
+#     单次 stat           ~99 ms   （本地磁盘 ~4 ms，24x）
+#     遍历 2436 个文件     55.7 s   （本地磁盘 0.8 s，70x）
+#     git status          30.0 s   （本地磁盘 1.5 s，20x）
+#   Kotlin 编译要产出 5000+ class，在 workspace 里跑 30 分钟跑不完。
+#   因此：日常开发/编译都在主副本，workspace 只作归档与宿主可见副本。
+#
+# 主副本为什么放在 /root/.aigo-build 而不是 /tmp：
+#   实测容器内 /tmp 与 / 是同一个磁盘分区（df 同为 /dev/block/dm-37，
+#   写 300MB 磁盘可用空间同步减少 300MB），本可持久；但 /tmp 语义上属于
+#   临时目录，且宿主侧对该路径的清理策略不受我们控制。放进 /root 下的
+#   自有目录，既在同一磁盘（同样快）又不会被任何清理规则误伤。
+#
+# 用法：
+#   aigo status             看主副本状态
+#   aigo pull               从源仓库重建主副本（首次或换设备，约 1 分钟）
+#   aigo push [files...]    把改动写回源仓库（默认只写 git 认为有改动的文件）
+#   aigo build [task]       在主副本编译（默认冒烟编译）
+#   aigo apk                出可安装的 debug 包（最快，无需 R8）
+#   aigo fast               出 release 包但跳过 R8（快 3~5 分钟，仅自测）
+#   aigo test               跑单元测试
+#   aigo gate [--fast]      跑完整门禁（敏感信息/迁移/品牌/编译/单测）
+#   aigo release-check      检查并清理会污染 versionName 的临时 tag
+#   aigo sync-archive      把归档副本快进到主副本 HEAD（秒级，手机 Git 面板立即可见）
+#   aigo sync-fuse         整目录覆盖重建归档副本（5~10 分钟，换设备/重建时用）
+#   aigo where              打印两个位置
+#
+# 实测耗时（宿主 6 核持续高负载下）：
+#   无改动校验（daemon 预热 + 配置缓存命中）  22 ~ 24 s
+#   全量编译（build 目录已存在）              1 min 30 s
+#   改 1 个文件后增量编译                     47 s ~ 5 min（随宿主负载波动）
+#   写回单个改动文件                          0.7 s
+#   从源仓库重建主副本                        1 min 01 s
+
+set -u
+
+SRC="${AIGO_SRC:-/root/workspace/AiGo-Android源码仓库}"
+MAIN="${AIGO_MAIN:-/root/.aigo-build}"
+
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+export ANDROID_HOME=/opt/android-sdk
+export ANDROID_SDK_ROOT=/opt/android-sdk
+export GRADLE_USER_HOME=/root/.gradle-home
+# debug 包需要 ~/.android/debug.keystore，而 /root/.android 在本环境不可写
+# （与 ~/.gradle 同源问题）。ANDROID_USER_HOME 让 AGP 改写到可写目录。
+export ANDROID_USER_HOME=/root/.android-home
+mkdir -p "$ANDROID_USER_HOME" 2>/dev/null || true
+
+die() { echo "错误: $*" >&2; exit 1; }
+
+cmd_pull() {
+  [ -d "$SRC" ] || die "源仓库不存在: $SRC"
+
+  # 护栏：源仓库落后主副本时拒绝重建。
+  # cmd_pull 会 rm -rf 主副本再从源仓库拷，源仓库一旦落后，
+  # 主副本上那些还没同步过去的提交就被物理删掉了（不是 reset，是没备份）。
+  # 曾发生过源仓库落后 11 个提交、且缺 CHANGELOG.md 与 parse-changelog.py，
+  # 此时跑 pull 等于一次性摧毁这段时间的全部工作。
+  #
+  # 不能用 `git -C "$SRC" rev-list HEAD..<main HEAD>` 判断：源仓库根本没那些对象，
+  # 命令直接失败，被 || 吞成 0 后护栏形同虚设（实际踩过）。
+  # 改用「主副本 HEAD 的对象是否存在于源仓库」——不存在就一定落后。
+  if [ -d "$MAIN/.git" ] && [ -d "$SRC/.git" ]; then
+    main_head=$(git -C "$MAIN" rev-parse HEAD 2>/dev/null || true)
+    if [ -n "$main_head" ] && ! git -C "$SRC" cat-file -e "$main_head" 2>/dev/null; then
+      die "源仓库缺少主副本 HEAD(${main_head%??????????????????????????????})，拒绝重建。
+  先把主副本推过去: aigo sync-fuse"
+    fi
+  fi
+
+  echo "从 $SRC 建立主副本 $MAIN（约 1 分钟）"
+  rm -rf "$MAIN"; mkdir -p "$MAIN"
+  cp -a "$SRC/." "$MAIN/" || die "复制失败"
+  echo "sdk.dir=/opt/android-sdk" > "$MAIN/local.properties"
+  echo "完成"
+}
+
+# 推送到 GitHub：直接从主副本推，不经 FUSE。
+# 实测主副本 git status 0.64s、凭据可用；而经 FUSE 中转要 tar 打包再解包 5~10 分钟，
+# 那一步纯属多余（FUSE 目录只是给宿主文件管理器看的一份副本）。
+cmd_push() {
+  [ -d "$MAIN/.git" ] || die "主副本不存在: $MAIN"
+  cd "$MAIN" || die "进入失败"
+  echo "从主副本直接推送 $MAIN"
+  git push origin HEAD "$@" || die "推送失败"
+  # 推完立刻同步归档副本：手机 Git 面板看的是 $SRC，不同步就看不到新提交。
+  cmd_sync_archive || echo "（归档副本同步失败，可稍后手动 aigo sync-archive）"
+}
+
+# 把主副本同步到 FUSE 源仓库，供宿主文件管理器查看/备份。
+# 只在需要时手动调用，不参与日常推送流程。
+cmd_sync_fuse() {
+  [ -d "$MAIN/.git" ] || die "主副本不存在: $MAIN"
+  [ -d "$SRC" ] || die "源仓库不存在: $SRC"
+  echo "同步 $MAIN -> $SRC（约 5~10 分钟，FUSE 元数据慢）"
+  # 排除 gitignore 里的内容（design-demos、__pycache__ 等），源仓库只放受版本管理的文件。
+  # 注意 --exclude 必须写在 . 之前，且要匹配 ./ 前缀。
+  tar -cf /tmp/aigo-fuse.tar -C "$MAIN" --exclude=./build --exclude=./app/build \
+      --exclude=./.gradle --exclude=./local.properties \
+      --exclude=./design-demos --exclude='./scripts/__pycache__' \
+      --exclude='./app/build' . 2>/dev/null || die "打包失败"
+  rm -rf "$SRC/.git"
+  # 必须解到空目录：tar -xf 只覆盖同名文件，不会删除目标端多出来的文件。
+  # 直接在 $SRC 上解包时，主副本删掉的截图/目录会永远残留在源仓库里，
+  # 表现为「源仓库 git status 出现一堆 ?? 未跟踪文件」，且宿主文件管理器看到的
+  # 是过期内容（曾因此误以为最新提交停在 7 小时前）。
+  rm -rf "$SRC"
+  mkdir -p "$SRC"
+  tar -xf /tmp/aigo-fuse.tar -C "$SRC" || die "解包失败"
+  rm -f /tmp/aigo-fuse.tar
+  echo "完成"
+}
+
+# 轻量同步归档副本：只快进 git 历史，不搬文件。
+#
+# 用户在手机 Git 面板里看的是 $SRC（FUSE 归档），日常开发在 $MAIN。
+# 两者不自动同步，导致「明明推了却看不到」。
+# 与 sync-fuse 的区别：那个是整目录覆盖 + 重建 .git（5~10 分钟），
+# 适合换设备重建；日常只需 fetch + merge --ff-only，秒级完成。
+cmd_sync_archive() {
+  [ -d "$MAIN/.git" ] || die "主副本不存在: $MAIN"
+  [ -d "$SRC/.git" ] || die "归档副本不存在: $SRC"
+
+  # 归档副本有未提交改动时不硬来，先报出来让用户决定。
+  dirty=$(cd "$SRC" && git status --porcelain 2>/dev/null | wc -l)
+  if [ "$dirty" -gt 0 ]; then
+    echo "归档副本有 $dirty 项未提交改动，跳过同步。"
+    echo "先处理掉（或在那边提交），否则快进会被拒。"
+    (cd "$SRC" && git status --short | head -10)
+    return 1
+  fi
+
+  target=$(cd "$MAIN" && git rev-parse HEAD)
+  current=$(cd "$SRC" && git rev-parse HEAD 2>/dev/null || echo '')
+  if [ "$current" = "$target" ]; then
+    echo "归档副本已是最新（$(echo $target | cut -c1-7)）"
+    return 0
+  fi
+
+  echo "同步归档副本 $(echo $current | cut -c1-7) -> $(echo $target | cut -c1-7)"
+  # 直接从主副本 fetch（不走网络，FUSE 上只写 git 对象）。
+  (cd "$SRC" && git fetch "$MAIN" HEAD 2>&1 | tail -2) || die "fetch 失败"
+  (cd "$SRC" && git merge --ff-only FETCH_HEAD 2>&1 | tail -3) || {
+    echo "快进失败：两边历史已分叉，需要人工处理（不要 reset --hard）。"
+    return 1
+  }
+  echo "完成：$(cd "$SRC" && git log --oneline -1)"
+}
+
+# 发版：检查并清理会让 git describe 失真的残留 tag。
+# CI 手动触发用过 manual-N 这类临时 tag 后，若遗留在本地，
+# git describe 会返回 manual-N-x-g<hash>，versionName 被污染成
+# 「1.0.0-dev+manual-2-2-gd31b1c0.20261121」，最终产物名与版本号都不对。
+cmd_release_check() {
+  [ -d "$MAIN/.git" ] || die "主副本不存在: $MAIN"
+  cd "$MAIN" || die "进入失败"
+  bad_tags=$(git tag -l | grep -E '^(manual-|tmp-|test-)' || true)
+  if [ -n "$bad_tags" ]; then
+    echo "发现临时 tag（会污染 versionName）："
+    printf '%s\n' "$bad_tags" | sed 's/^/    /'
+    echo "清理："
+    printf '%s\n' "$bad_tags" | while read -r t; do
+      [ -n "$t" ] && git tag -d "$t" >/dev/null 2>&1 && echo "    已删本地 $t"
+    done
+  else
+    echo "无临时 tag"
+  fi
+  echo "当前 git describe: $(git describe --tags --always --dirty)"
+}
+
+cmd_build() {
+  [ -d "$MAIN" ] || die "主副本不存在，先执行: aigo pull"
+  task="${1:-:app:compileUniversalDebugKotlin}"
+  shift 2>/dev/null || true
+  cd "$MAIN" || die "进入 $MAIN 失败"
+  # 不要加 --no-daemon / --no-parallel：daemon 复用时无改动校验 22s，
+  # 加 --no-daemon 后同操作 4 分 52 秒（每次重启 JVM 并重算配置）。
+  echo "在 $MAIN 执行 $task"
+  # 不能用 exec：exec 会用 gradlew 进程替换当前 shell，调用方（如 cmd_apk）
+  # 在 cmd_build 返回后的 copy_apk 永远不会执行，表现为「打了包但 build-output 里没有产物」。
+  sh gradlew "$task" "$@"
+}
+
+cmd_test() { cmd_build :app:testUniversalDebugUnitTest; }
+
+# 本地要出可安装包时用这个：debug 变体，无需 R8，缓存命中约 30~60 秒。
+# 出包后按「AiGo-架构-版本-摘要」重命名并复制到 build-output，便于与 CI 产物区分。
+cmd_apk() {
+  cmd_build :app:assembleArmsoloDebug "$@"
+  copy_apk armsolo debug
+}
+
+# 出包后统一命名：AiGo-<abi>-<versionName>-<摘要>.apk
+# 摘要取最近一次提交的标题，与 CI 的命名逻辑保持一致。
+copy_apk() {
+  flavor="${1:-armsolo}"
+  build="${2:-debug}"
+  src="$MAIN/app/build/outputs/apk/$flavor/$build/app-$flavor-$build.apk"
+  [ -f "$src" ] || { echo "未找到产物: $src"; return 0; }
+
+  aapt2=/opt/android-sdk/build-tools/35.0.0/aapt2
+  ver=$("$aapt2" dump badging "$src" 2>/dev/null | head -1 | grep -o "versionName='[^']*'" | cut -d"'" -f2)
+  [ -n "$ver" ] || ver="unknown"
+
+  # 摘要优先级：CHANGELOG 对应版本的首条要点 > 提交标题。
+  # 提交标题是开发语言（如 "fix(ci): 摘要为空时误删唯一 APK"），
+  # 落进文件名会把内部实验暴露给下载者，只在 CHANGELOG 没有该版本时兜底。
+  tag=$(cd "$MAIN" && git describe --tags --abbrev=0 2>/dev/null || true)
+  summary=""
+  if [ -n "$tag" ]; then
+    summary=$(cd "$MAIN" && python3 scripts/parse-changelog.py --summary-for "$tag" 2>/dev/null || true)
+  fi
+  if [ -z "$summary" ]; then
+    summary=$(cd "$MAIN" && git log -1 --format=%s 2>/dev/null)
+    summary=$(printf '%s' "$summary" | sed -E 's/^[a-z]+(\([^)]*\))?:[[:space:]]*//')
+  fi
+
+  # 文件名安全化：去掉路径分隔符与 Windows 非法字符，压缩空白。
+  # 截断用 python 按字符处理，避免 cut -c 按字节切断中文产生乱码。
+  ver=$(printf '%s' "$ver" | tr '+' '-')
+  summary=$(printf '%s' "$summary" | python3 -c '
+import re, sys
+s = sys.stdin.read().strip()
+s = re.sub(r"[\\/:|*?\"<>]", "-", s)
+s = re.sub(r"\s+", " ", s).strip(" -")
+print(s[:30])
+' 2>/dev/null)
+  [ -n "$summary" ] || summary="update"
+
+  outdir="$(dirname "$SRC")/build-output"
+  # 同一 versionName 只保留最新一份：否则目录会堆出
+  # AiGo-arm64-1.0.0.apk / -可切换更新通道.apk / -更新日记排序.apk 等多份同版本包，
+  # 装包时不知道该用哪个。
+  ver_core=$(printf '%s' "$ver" | sed 's/-[0-9]*$//')
+  for old in "$outdir"/AiGo-"$flavor"-"$ver_core"*.apk; do
+    [ -f "$old" ] && rm -f "$old" && echo "清理同版本旧包: $(basename "$old")"
+  done
+
+  out="$outdir/AiGo-${flavor}-${ver}-${summary}.apk"
+  cp "$src" "$out" && echo "产物: $out"
+}
+
+# 本地要 release 包但不想等 R8：跳过混淆与资源压缩，快 3~5 分钟。
+# 仅用于自测；正式发版走 CI，不要带 skipMinify。
+cmd_fast() {
+  cmd_build :app:assembleArmsoloRelease -PskipMinify "$@"
+  copy_apk armsolo release
+}
+
+cmd_status() {
+  [ -d "$MAIN/.git" ] || die "主副本不存在: $MAIN"
+  cd "$MAIN" || die "进入失败"
+  echo "== 分支 =="; git rev-parse --abbrev-ref HEAD
+  echo "== 提交 =="; git log --oneline -1
+  echo "== 改动 =="; git status --short | head -20
+}
+
+cmd_where() {
+  echo "源仓库（持久化，宿主可见）:"; echo "  $SRC"
+  echo "  宿主: /storage/emulated/0/Download/AiGo/AiGo开发/AiGo-Android源码仓库"
+  echo "主副本（持久化，日常开发与编译）:"; echo "  $MAIN"
+}
+
+case "${1:-}" in
+  build)  shift; cmd_build "$@" ;;
+  apk)    shift; cmd_apk "$@" ;;
+  gate)   shift; exec /root/bin/aigo-gate "$@" ;;
+  release-check) cmd_release_check ;;
+  fast)   shift; cmd_fast "$@" ;;
+  test)   cmd_test ;;
+  status) cmd_status ;;
+  pull)   cmd_pull ;;
+  push)   shift; cmd_push "$@" ;;
+  sync-fuse) cmd_sync_fuse ;;
+  sync-archive) cmd_sync_archive ;;
+  where)  cmd_where ;;
+  *)      sed -n '23,44p' "$0" | sed 's/^# \{0,1\}//' ;;
+esac
