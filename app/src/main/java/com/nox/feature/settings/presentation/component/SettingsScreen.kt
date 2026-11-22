@@ -489,14 +489,14 @@ fun SettingsScreen(
      * 导出/分享已安装插件的安装包。
      *
      * 只打 `installed/<id>`，不含 `data/<id>` 里的用户数据。
-     * 返回非 null 表示需要提示用户（错误信息）。
+     * 返回非 null 表示需要 Toast 给用户的提示（成功路径或错误原因）。
      */
     suspend fun exportInstalledPlugin(
         plugin: com.nox.feature.plugin.domain.InstalledPlugin,
         share: Boolean
     ): String? {
         val deps = pluginDrawerExportDeps
-        val zip = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val result = withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
                 val version = plugin.manifest?.version?.toString() ?: plugin.record.version
                 deps.pluginPackageExporter().export(
@@ -504,16 +504,16 @@ fun SettingsScreen(
                     version,
                     deps.pluginManager().installDirFor(plugin.id)
                 )
-            }.getOrNull()
+            }
         }
-        if (zip == null) return pluginDrawerAppContext.getString(R.string.plugins_export_failed)
+        val zip = result.getOrNull()
+            ?: return pluginDrawerAppContext.getString(
+                R.string.plugins_export_failed_reason,
+                result.exceptionOrNull()?.message ?: "unknown"
+            )
         if (!share) {
-            android.widget.Toast.makeText(
-                pluginDrawerAppContext,
-                pluginDrawerAppContext.getString(R.string.plugins_export_done, zip.name),
-                android.widget.Toast.LENGTH_SHORT
-            ).show()
-            return null
+            // 成功时也要提示，否则用户不知道文件存到了哪里。
+            return pluginDrawerAppContext.getString(R.string.plugins_export_done, zip.absolutePath)
         }
         val failure = withContext(kotlinx.coroutines.Dispatchers.Main) {
             runCatching {
@@ -531,7 +531,11 @@ fun SettingsScreen(
                 )
             }
         }.exceptionOrNull()
-        return if (failure != null) pluginDrawerAppContext.getString(R.string.plugins_share_failed) else null
+        return if (failure != null) {
+            pluginDrawerAppContext.getString(R.string.plugins_share_failed)
+        } else {
+            pluginDrawerAppContext.getString(R.string.plugins_export_done, zip.absolutePath)
+        }
     }
     val pluginDrawerEntries = remember(plugins, pluginDrawerLanguageTag) {
         plugins.filter { it.isActive }

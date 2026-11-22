@@ -46,6 +46,42 @@ class SessionUseCase @Inject constructor(
         }.onFailure { FileLogger.e(TAG, "回收残留执行中工具行失败", it) }
     }
 
+    /**
+     * 按会话收尾僵尸占位行。
+     *
+     * [initColdStartCleanup] 只在 ViewModel 初始化时跑一次，而占位行是运行中随时产生的：
+     * 进程没重启（例如工具执行中应用被切后台后被杀又立即重启、或本轮被强制中断）时，
+     * 那条 `[running] …` 会一直挂在列表底部，表现为「内容停在这里不动」。
+     *
+     * 这里由调用方传入「该会话此刻是否真的在跑」，不在跑就立即回填为已中断。
+     * 返回收尾条数，便于日志定位。
+     */
+    suspend fun cleanupPendingIfIdle(sessionId: String, running: Boolean): Int {
+        if (running) return 0
+        return runCatching {
+            val pending = agentMessageDao.countPendingTools(
+                sessionId = sessionId,
+                toolRole = MessageRole.TOOL.name,
+                prefix1 = "$PENDING_TOOL_MARKER%",
+                prefix2 = "$LEGACY_PENDING_TOOL_MARKER%"
+            )
+            if (pending == 0) return@runCatching 0
+            val n = listOf(PENDING_TOOL_MARKER, LEGACY_PENDING_TOOL_MARKER).sumOf { marker ->
+                agentMessageDao.markSessionPendingToolsInterrupted(
+                    sessionId = sessionId,
+                    toolRole = MessageRole.TOOL.name,
+                    pendingPrefix = "$marker%",
+                    interruptedContent = INTERRUPTED_TOOL_TEXT
+                )
+            }
+            if (n > 0) FileLogger.i(TAG, "会话 $sessionId 收尾 $n 条僵尸「执行中」工具行")
+            n
+        }.getOrElse {
+            FileLogger.e(TAG, "按会话收尾僵尸工具行失败：$sessionId", it)
+            0
+        }
+    }
+
     fun newSessionEntity(
         workspacePath: String,
         providerId: String? = null,

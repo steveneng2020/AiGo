@@ -102,24 +102,24 @@ object AppIconManager {
         )
 
     /**
-     * activity-alias 所在的包名，即 AndroidManifest 的 package（源码命名空间 com.nox），
-     * **不是** applicationId。二者在本项目里被刻意分开（applicationId=com.aigo，
-     * namespace=com.nox）。用 context.packageName 会拼出 com.aigo.MainActivityDefault，
-     * 而真实组件是 com.nox.MainActivityDefault，setComponentEnabledSetting 静默失败，
-     * 表现为切换图标后桌面毫无变化。
+     * activity-alias 的组件名由「包名 + 类名」两部分拼成，二者在本项目里不同：
+     * 包名是 applicationId（com.aigo），类名在源码命名空间（com.nox）。
+     * 所以真实组件是 com.aigo/com.nox.MainActivityKunDefault。
+     *
+     * 之前用 aliasPackage() 同时填了这两半，拼出 com.aigo/com.aigo.MainActivityKunDefault，
+     * setComponentEnabledSetting 对不存在的组件不报错也不生效，表现为「切图标毫无变化」。
      */
-    private fun aliasPackage(context: Context): String =
-        runCatching {
-            context.packageManager
-                .getActivityInfo(ComponentName(context, MainActivity::class.java), 0)
-                .packageName
-        }.getOrDefault(context.packageName)
+    private fun aliasComponent(context: Context, option: AppIconOption): ComponentName =
+        ComponentName(
+            context.packageName,
+            MainActivity::class.java.packageName + option.aliasSuffix
+        )
 
     fun apply(context: Context, option: AppIconOption) {
         val pm = context.packageManager
-        val aliasPkg = aliasPackage(context)
+        var failed = 0
         AppIconOption.entries.forEach { candidate ->
-            val component = ComponentName(aliasPkg, aliasPkg + candidate.aliasSuffix)
+            val component = aliasComponent(context, candidate)
             val newState = if (candidate == option) {
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED
             } else {
@@ -130,9 +130,19 @@ object AppIconManager {
             runCatching {
                 pm.setComponentEnabledSetting(component, newState, PackageManager.DONT_KILL_APP)
             }.onFailure {
+                failed++
                 android.util.Log.w("AppIconManager", "切换图标失败: $component", it)
             }
         }
+        // 逐个核对是否真的落到目标状态，否则说明组件名或权限有问题。
+        val effective = runCatching {
+            pm.getComponentEnabledSetting(aliasComponent(context, option)) ==
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+        }.getOrDefault(false)
+        android.util.Log.i(
+            "AppIconManager",
+            "切换图标 ${option.id}: failed=$failed effective=$effective"
+        )
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY, option.id)
@@ -141,13 +151,22 @@ object AppIconManager {
         context.sendBroadcast(Intent(ACTION_ICON_CHANGED).setPackage(context.packageName))
     }
 
-    /** 切完图标回桌面，让启动器重新读取入口。 */
+    /**
+     * 切完图标后把应用退到后台，让启动器重新读入口。
+     *
+     * 不需要真跳桌面：MIUI 等启动器会在 activity-alias 启用状态变化后
+     * 自行刷新快捷方式，应用退到后台即可看到新图标。
+     * 之前直接 startActivity(CATEGORY_HOME) 会强制跳到桌面，用户看到的就是
+     * 「屏幕闪一下」——而且图标没变，因为真正的问题是组件名拼错。
+     */
     fun goHome(context: Context) {
-        val intent = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_HOME)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        runCatching {
+            var ctx: Context? = context
+            while (ctx is android.content.ContextWrapper && ctx !is android.app.Activity) {
+                ctx = ctx.baseContext
+            }
+            (ctx as? android.app.Activity)?.moveTaskToBack(true)
         }
-        runCatching { context.startActivity(intent) }
     }
 
     /**

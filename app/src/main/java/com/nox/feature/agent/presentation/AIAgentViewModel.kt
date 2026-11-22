@@ -84,6 +84,7 @@ import com.nox.feature.agent.domain.tool.mode.PlanApprovalManager
 import com.nox.feature.agent.domain.tool.mode.PlanApprovalRequest
 import com.nox.feature.agent.domain.tool.question.AskUserQuestionManager
 import com.nox.feature.agent.domain.tool.question.UserQuestionAnswer
+import com.nox.feature.agent.domain.session.AgentRunStateStore
 import com.nox.feature.agent.domain.session.SessionUseCase
 import com.nox.feature.agent.domain.session.MessagePersistenceUseCase
 import kotlinx.coroutines.flow.Flow
@@ -155,6 +156,7 @@ class AIAgentViewModel @Inject constructor(
     private val askUserQuestionManager: AskUserQuestionManager,
     private val containerEngine: LinuxContainerEngine,
     private val sessionUseCase: SessionUseCase,
+    private val agentRunStateStore: AgentRunStateStore,
     private val messagePersistenceUseCase: MessagePersistenceUseCase,
     private val planApprovalManager: PlanApprovalManager,
     private val terminalSessionManager: TerminalSessionManager,
@@ -1322,6 +1324,8 @@ class AIAgentViewModel @Inject constructor(
                     else -> createAndUpsertSession(path)
                 }
                 _currentSessionId.value = targetId
+                // 启动即进最近会话，同样要收尾僵尸占位行（否则一打开就看到卡在「执行中」）。
+                cleanupStalePendingTools(targetId)
 
                 // 异步回收多余的空会话（保留当前 targetId），在后台执行，不卡主线程与首帧渲染。
                 if (recent != null) {
@@ -3010,6 +3014,22 @@ class AIAgentViewModel @Inject constructor(
         _currentSessionId.value = id
         // 本二改版固定以完整权限运行：切到任何会话时把其模式拉回 AUTO（不再提供模式切换按钮）。
         ensureAutoMode(id)
+        cleanupStalePendingTools(id)
+    }
+
+    /**
+     * 进会话时收尾僵尸「执行中」占位行。
+     *
+     * 占位行只在「这一轮真的还在跑」时该保留。冷启动清理只在 ViewModel 初始化跑一次，
+     * 进程没重启时（工具执行中应用被杀又立即重启、或本轮被强制中断）就清不到，
+     * 表现为消息列表卡在最后一条不动。这里按内存里的运行状态即时判定。
+     */
+    private fun cleanupStalePendingTools(sessionId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val running = agentRunStateStore.snapshot(sessionId)?.running == true
+            // messagesState 是 Room Flow，UPDATE 后会自动推新数据，不需要手动重载。
+            sessionUseCase.cleanupPendingIfIdle(sessionId, running)
+        }
     }
 
     /** 会话模式归一为 AUTO（全权限，不弹授权）；已是 AUTO 时不做写入。 */

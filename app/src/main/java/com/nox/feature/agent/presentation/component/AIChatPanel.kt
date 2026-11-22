@@ -2217,7 +2217,9 @@ fun AIChatPanel(
         // 防误触遮罩盖在最上层：必须挡在 Scaffold 之上，否则底部的输入区仍能被点到。
         if (touchLockActive) {
             TouchLockOverlay(
-                onUnlock = { touchLockScope.launch { touchLockManager.exit() } }
+                onUnlock = { touchLockScope.launch { touchLockManager.exit() } },
+                // 显式引用常量，避免默认值与管理器里的定义各改一处对不上
+                holdMillis = com.nox.feature.agent.data.touchlock.TouchLockManager.UNLOCK_HOLD_MS
             )
         }
         }

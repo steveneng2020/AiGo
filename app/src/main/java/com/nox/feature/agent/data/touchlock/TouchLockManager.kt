@@ -36,14 +36,21 @@ private val Context.touchLockStore by preferencesDataStore(
 class TouchLockManager @Inject constructor(
     @param:ApplicationContext private val context: Context
 ) {
-    private companion object {
-        val ACTIVE = booleanPreferencesKey("touch_lock_active")
-        val SAVED_BRIGHTNESS = intPreferencesKey("touch_lock_saved_brightness")
-        val SAVED_MODE = intPreferencesKey("touch_lock_saved_brightness_mode")
-        /** 长按退出所需时长（毫秒）。3 秒是误触防护与操作成本之间的平衡点。 */
-        const val UNLOCK_HOLD_MS = 3000L
+    companion object {
+        /**
+         * 长按退出所需时长（毫秒）。
+         *
+         * 防误触本身靠全屏遮罩拦截点击，不需要长按来防误触；长按只是为了
+         * 避免“随手一碰就解开”。500ms 足够区分有意按压与滑动误触，
+         * 又不会让用户觉得卡住。
+         */
+        const val UNLOCK_HOLD_MS = 500L
+
+        private val ACTIVE = booleanPreferencesKey("touch_lock_active")
+        private val SAVED_BRIGHTNESS = intPreferencesKey("touch_lock_saved_brightness")
+        private val SAVED_MODE = intPreferencesKey("touch_lock_saved_brightness_mode")
         /** 防误触期间的目标亮度：尽量暗但仍可见，避免全黑让人以为死机。 */
-        const val LOCKED_BRIGHTNESS = 1
+        private const val LOCKED_BRIGHTNESS = 1
     }
 
     val activeFlow: Flow<Boolean> = context.touchLockStore.data.map { it[ACTIVE] ?: false }

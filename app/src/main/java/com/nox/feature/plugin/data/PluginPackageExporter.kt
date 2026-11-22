@@ -21,7 +21,22 @@ import javax.inject.Singleton
 class PluginPackageExporter @Inject constructor(
     @param:ApplicationContext private val context: Context
 ) {
-    private fun exportDir(): File = File(context.cacheDir, "plugin-export").apply { mkdirs() }
+    /**
+     * 导出的插件包写到公共目录，用户能在文件管理器里直接找到。
+     *
+     * 之前写到 `cacheDir/plugin-export/`（应用私有缓存），用户看不到、也没有保存路径提示，
+     * 表现为「不知道导出成功没」。这里改到 Download/AiGo/AiGo开发/导出插件。
+     */
+    private fun exportDir(): File {
+        val dir = File(
+            android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS
+            ),
+            "AiGo/AiGo开发/导出插件"
+        )
+        dir.mkdirs()
+        return dir
+    }
 
     /**
      * 把 [installDir] 打成 zip 并返回文件。失败时抛异常，由调用方提示。
@@ -35,7 +50,18 @@ class PluginPackageExporter @Inject constructor(
         return target
     }
 
-    /** 拿到分享用 Uri（复用 AndroidManifest 里已有的 FileProvider，cache-path 已覆盖 cacheDir）。 */
-    fun shareUri(file: File): Uri =
-        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    /**
+     * 分享用 Uri：分享仍走私有 cache，因为 FileProvider 的 cache-path 已覆盖那里。
+     * 公共目录的文件要先拷回 cache 才能分享，否则 FileProvider 无权暴露。
+     */
+    fun shareUri(file: File): Uri {
+        val shareable = if (file.parentFile == context.cacheDir || file.path.startsWith(context.cacheDir.path)) {
+            file
+        } else {
+            val cached = File(File(context.cacheDir, "plugin-export").apply { mkdirs() }, file.name)
+            file.copyTo(cached, overwrite = true)
+            cached
+        }
+        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", shareable)
+    }
 }

@@ -159,6 +159,36 @@ interface AgentMessageDao {
         interruptedContent: String
     ): Int
 
+    /**
+     * 只收尾指定会话里的「执行中」工具行。
+     *
+     * 运行中每一轮都可能产生占位行，进程没重启时全局冷启动清理不会跑；
+     * 进会话时用它按会话判断「这一轮是否真的还在跑」，不跑就立即收尾。
+     */
+    @Query(
+        "UPDATE agent_messages SET content = :interruptedContent, isError = 1 " +
+            "WHERE sessionId = :sessionId AND role = :toolRole AND content LIKE :pendingPrefix"
+    )
+    suspend fun markSessionPendingToolsInterrupted(
+        sessionId: String,
+        toolRole: String,
+        pendingPrefix: String,
+        interruptedContent: String
+    ): Int
+
+    /** 该会话里是否还有「执行中」占位行（以任一前缀开头）。 */
+    @Query(
+        "SELECT COUNT(*) FROM agent_messages " +
+            "WHERE sessionId = :sessionId AND role = :toolRole " +
+            "AND (content LIKE :prefix1 OR content LIKE :prefix2)"
+    )
+    suspend fun countPendingTools(
+        sessionId: String,
+        toolRole: String,
+        prefix1: String,
+        prefix2: String
+    ): Int
+
     @Query("SELECT * FROM agent_messages WHERE content LIKE '%' || :query || '%' ORDER BY timestamp ASC")
     suspend fun searchMessages(query: String): List<AgentMessageEntity>
 

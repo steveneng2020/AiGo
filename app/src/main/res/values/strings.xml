@@ -790,13 +790,14 @@
     <string name="chat_drawer_more_plugins">更多插件</string>
     <string name="chat_touch_lock">防误触</string>
     <string name="touch_lock_active_title">防误触模式已开启</string>
-    <string name="touch_lock_unlock_hint">长按 3 秒退出防误触模式</string>
+    <string name="touch_lock_unlock_hint">长按 0.5 秒退出防误触模式</string>
     <string name="touch_lock_brightness_denied">未授予「修改系统设置」权限，防误触只拦截触摸，不会调暗屏幕</string>
     <string name="plugin_menu_export">导出插件安装包</string>
     <string name="plugin_menu_share">分享插件安装包（不含用户数据）</string>
     <string name="plugin_menu_hide">从抽屉隐藏</string>
     <string name="plugins_export_failed">导出失败，请确认插件已完整安装</string>
-    <string name="plugins_export_done">已导出到：%1$s</string>
+    <string name="plugins_export_failed_reason">导出失败：%1$s</string>
+    <string name="plugins_export_done">已保存到：%1$s</string>
     <string name="plugins_share_failed">无法打开分享面板</string>
     <string name="plugins_share_package">分享插件安装包</string>
     <string name="plugins_drawer_visibility_title">抽屉显示</string>
