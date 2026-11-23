@@ -133,6 +133,131 @@ aigo gate --fast   # 跳过单元测试（只改 UI/资源、或赶时间时用�
 
 新增页面、改交互、改文案 → 更新 `docs-site/docs/`；新增文档页还要加进 `docs-site/.vitepress/config.ts` 侧栏与 `guide/overview.md` 索引。
 
+### 12. 构建环境失控时，产出的 APK 一律不可信
+
+> 2026-11-22 与 2026-11-23 两次「装上就闪退」的直接原因都是这一条。
+
+**触发信号**（出现任一即视为环境失控）：
+
+- 同一任务短时间内失败两次以上（`processXxxResources FAILED`、`transformXxxClassesWithAsm FAILED`、KSP `NoSuchFileException`、`Detected multiple Kotlin daemon sessions`）
+- 两个 Gradle 构建同时运行（并行构建会互相踩缓存，出现「BUILD FAILED 但 tail 仍显示产物」）
+- 手动删除过 `app/build` 的子目录（如 `tmp/kapt3`、`generated/hilt`、`intermediates/javac`）
+
+**正确处置**：
+
+```bash
+cd /root/.aigo-build
+sh gradlew --stop              # 先停所有 daemon，不要用 pkill -f（会误杀 PRoot 主进程）
+rm -rf app/build build .gradle # 要么不动，要么全清；部分删除是最坏的做法
+sh /root/bin/aigo apk          # 重新构建
+```
+
+**为什么部分删除反而更危险**：R8 的增量裁剪状态记在 `app/build` 里，删一部分会让它基于残缺信息裁剪，产出「Manifest 声明了但 dex 里没有」的包。这种包**编译阶段完全不报错**，只有真机冷启动 `installProvider` 时才崩。
+
+**同一时间只允许一个 Gradle 任务。** 需要并行等待时，用 `terminal` 开单标签串行跑。
+
+### 13. 出包后必须验证 dex 类定义，未通过不得交付
+
+`BUILD SUCCESSFUL` 不代表包可用。**每次 `aigo apk` 之后、发给用户之前，必须跑一次类定义检查**：
+
+```python
+import zipfile, struct
+
+def dex_classes(data):
+    sid_size, sid_off = struct.unpack_from('<II', data, 0x38)
+    tid_size, tid_off = struct.unpack_from('<II', data, 0x40)
+    cd_size, cd_off = struct.unpack_from('<II', data, 0x60)
+    def gs(i):
+        o = struct.unpack_from('<I', data, sid_off + i*4)[0]
+        p = o; ln = 0; sh = 0
+        while True:
+            b = data[p]; p += 1; ln |= (b & 0x7f) << sh
+            if not (b & 0x80): break
+            sh += 7
+        return data[p:p+ln].decode('utf-8', 'replace')
+    return [gs(struct.unpack_from('<I', data, tid_off +
+            struct.unpack_from('<I', data, cd_off + i*32)[0]*4)[0])
+            for i in range(cd_size)]
+
+z = zipfile.ZipFile(apk)
+allcls = set()
+for d in [n for n in z.namelist() if n.endswith('.dex')]:
+    allcls.update(dex_classes(z.read(d)))
+
+for t in ['Lcom/nox/AIEditorApp;',
+          'Lcom/nox/feature/agent/domain/container/ContainerInstaller;',
+          'Lcom/nox/feature/workspace/data/provider/WorkspaceDocumentsProvider;']:
+    print(('OK  ' if t in allcls else 'MISS ') + t)
+```
+
+**清单里的类必须全部 OK。** 重点盯 `WorkspaceDocumentsProvider`：它在 `AndroidManifest.xml` 里以 `<provider>` 声明，缺失会导致冷启动直接抛 `RuntimeException: Unable to get provider`，App 完全打不开。
+
+**禁止用字节搜索代替**：`b'XxxClass' in dex_bytes` 会被字符串常量（日志文案、异常消息）误命中，不能证明类定义存在。
+
+**release 包例外**：经 R8 混淆后类名会变，此方法只适用于 debug 包；release 包用 `aapt2 dump badging` 核对包名/版本，并跑 `scripts/verify-apk.py`。
+
+### 14. 装包前必须比对 schema，并先备份数据库
+
+门禁跑在容器内，**看不到宿主数据库**（`/data/user/0/com.aigo/` 容器无权访问），所以这三件事必须手动做：
+
+**① 查数据库版本**（容器内可直接读宿主文件的唯一路径是 `~/workspace`，它 bind mount 到宿主 `Download/AiGo/AiGo开发`）：
+
+```bash
+# Root 通道：拷到 workspace（容器可见）
+cp /data/user/0/com.aigo/databases/nox_agent_db \
+   /storage/emulated/0/Download/AiGo/AiGo开发/chk.db
+# 容器内读
+python3 -c "import sqlite3; print(sqlite3.connect('/root/workspace/chk.db').execute('PRAGMA user_version').fetchone()[0])"
+```
+
+**② 比对 APK 的 schema**：
+
+```bash
+python3 -c "
+import zipfile, re
+z = zipfile.ZipFile(apk)
+migs = [n for n in z.namelist() if n.startswith('assets/migrations/') and n.endswith('.sql')]
+vers = sorted(int(re.match(r'(\d+)_', n.split('/')[-1]).group(1)) for n in migs)
+print(f'{vers[0]}..{vers[-1]}，共 {len(vers)} 个')
+print('缺失:', [v for v in range(vers[0], vers[-1]+1) if v not in vers] or '无')
+"
+```
+
+| 数据库 | APK | 结果 |
+| --- | --- | --- |
+| 64 | 64 | 可用 |
+| 64 | 68 | 可用（Room 自动升级）|
+| 68 | 64 | **闪退**（Room 不支持降级）|
+
+**③ 装前备份，禁止 `cp` 拷 WAL 库**：
+
+```python
+import sqlite3
+c = sqlite3.connect(src)
+c.execute("VACUUM INTO '%s'" % out)   # 合并 WAL，产出独立单文件
+c.close()
+# 验证：PRAGMA journal_mode 应为 delete，PRAGMA integrity_check 应为 ok
+```
+
+WAL 模式下未 checkpoint 的写入全在 `-wal` 里，只拷主库 = 得到损坏库 = Room 读到时**直接删库重建**（2026-11-22 数据清空就是这么来的）。
+
+### 15. 查宿主路径先看 mountinfo，不要瞎试
+
+容器是 PRoot，宿主路径大多不可见。已知绑定：
+
+```
+/root/workspace  →  /storage/emulated/0/Download/AiGo/AiGo开发
+/root/.nox       →  /data/user/0/com.aigo/files/nox
+```
+
+不确定时一条命令查清：
+
+```bash
+cat /proc/self/mountinfo | grep -E "bind"
+```
+
+**不要依次试** `/storage/emulated/0`、`/mnt/...`、`/data/local/tmp`：它们在容器内都不存在，只会浪费时间。
+
 ## 基本约定
 
 - **永远使用中文回复。**
@@ -179,6 +304,12 @@ export ANDROID_USER_HOME=/root/.android-home    # 默认 ~/.android 不可写，
 - 产物：`app/build/outputs/apk/<flavor>/release/app-<flavor>-release.apk`、`.../bundle/<flavor>/release/app-<flavor>-release.aab`。
 - flavor 按 ABI 拆分：`universal`（arm64-v8a + x86_64）、`armsolo`（仅 arm64-v8a）、`x86solo`（仅 x86_64）。
 - release 签名凭据读 `app/keystore.properties`（`storeFile` / `storePassword` / `keyAlias` / `keyPassword`）；本地通常不存放签名文件，CI 从 GitHub secret 还原到 `app/aicode.jks`。
+
+**出包后、交付前，必须做三件事**（详细脚本见铁律 13/14）：
+
+1. 解析 dex 类定义，确认关键类都在（尤其 `WorkspaceDocumentsProvider`）
+2. 比对 APK 的 schema 与设备数据库 `user_version`
+3. 备份设备数据库（`VACUUM INTO`，禁止直接 `cp` WAL 库）
 ## 开发流程（按此执行，不要自创）
 
 完整流程见技能 `aigo-dev-workflow`。速查：
