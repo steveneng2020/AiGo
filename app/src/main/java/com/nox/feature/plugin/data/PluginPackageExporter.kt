@@ -31,9 +31,18 @@ class PluginPackageExporter @Inject constructor(
 
     private fun prefs() = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** 用户选定的导出目录（持久化权限的 tree uri）。未选过返回 null。 */
+    /**
+     * 用户选定的导出目录（持久化权限的 tree uri）。未选过返回 null。
+     *
+     * 存的是 [Uri.toString] 的结果，即**已编码**形式（`tree/primary%3ADownload%2FAiGo`）。
+     * 直接 Uri.parse 得到的是编码过的字符串，但 DocumentsContract 需要的是
+     * 原始 tree uri（`tree/primary:Download/AiGo`），否则会报
+     * `Invalid URI: content://...tree/primary%3A...`。
+     * 因此读出时用 Uri.decode 还原一次。
+     */
     fun chosenDirUri(): Uri? =
-        prefs().getString(KEY_DIR_URI, null)?.let { runCatching { Uri.parse(it) }.getOrNull() }
+        prefs().getString(KEY_DIR_URI, null)
+            ?.let { runCatching { Uri.parse(Uri.decode(it)) }.getOrNull() }
 
     fun rememberDir(uri: Uri) {
         prefs().edit().putString(KEY_DIR_URI, uri.toString()).apply()
@@ -58,9 +67,14 @@ class PluginPackageExporter @Inject constructor(
     /** 将文件写入用户选定的 SAF 目录；返回写入后的 URI 字符串（用于提示）。 */
     fun writeToChosenDir(src: File, dirUri: Uri): String {
         val resolver = context.contentResolver
+        // createDocument 要求的是「目录的 document uri」，不能直接传 OpenDocumentTree
+        // 给的 tree uri：后者形如 content://.../tree/primary%3ADownload，
+        // getDocumentId 会直接抛「Invalid URI」。
         val treeDocId = android.provider.DocumentsContract.getTreeDocumentId(dirUri)
+        val parentDocUri = android.provider.DocumentsContract
+            .buildDocumentUriUsingTree(dirUri, treeDocId)
         val newDocUri = android.provider.DocumentsContract.createDocument(
-            resolver, dirUri, "application/zip", src.name
+            resolver, parentDocUri, "application/zip", src.name
         ) ?: throw IllegalStateException("无法在所选目录创建文件")
         resolver.openOutputStream(newDocUri)?.use { out ->
             src.inputStream().use { it.copyTo(out) }
