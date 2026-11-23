@@ -36,6 +36,8 @@ import com.nox.R
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Lock
 import kotlinx.coroutines.delay
+import com.nox.core.theme.Spacing
+import androidx.compose.ui.text.font.FontWeight
 
 /**
  * 防误触全屏遮罩。
@@ -60,6 +62,14 @@ fun TouchLockOverlay(
     LaunchedEffect(pressing) {
         if (!pressing) {
             progress = 0f
+            return@LaunchedEffect
+        }
+        // holdMillis <= 0 表示「点一下就退出」：直接解锁，不跑计时循环。
+        // 否则下面的 elapsed/holdMillis 会除零，进度环拿到 NaN。
+        if (holdMillis <= 0L) {
+            progress = 1f
+            unlocked = true
+            onUnlock()
             return@LaunchedEffect
         }
         val step = 50L
@@ -132,10 +142,13 @@ fun TouchLockOverlay(
 }
 
 /**
- * 长按解锁时长的选择弹窗。
+ * 长按解锁时长的设置弹窗（滑杆式）。
  *
  * 放在顶栏菜单「防误触」的长按里，而不是设置页：它是防误触自身的参数，
  * 从同一处进入更符合直觉，也不占设置页篇幅。
+ *
+ * 用滑杆而不是单选列表：0-5 秒连续可调，用户能按自己的手感微调；
+ * 列表只能给几个预设值，0.5s 的差异对“容易误触 / 按太久”的取舍很关键。
  */
 @Composable
 fun TouchLockHoldPicker(
@@ -143,6 +156,18 @@ fun TouchLockHoldPicker(
     onDismiss: () -> Unit,
     onPick: (Long) -> Unit
 ) {
+    val min = com.nox.feature.agent.data.touchlock.TouchLockManager.HOLD_MIN_MS
+    val max = com.nox.feature.agent.data.touchlock.TouchLockManager.HOLD_MAX_MS
+    // 滑杆内部拖动中的值：拖动时只更新它，松手才落盘，
+    // 否则每移动 1 像素就写一次 DataStore，既卡又费 IO。
+    var sliderValue by remember(current) { mutableFloatStateOf(current.coerceIn(min, max).toFloat()) }
+    val secs = sliderValue / 1000f
+    val label = if (sliderValue <= 0f) {
+        stringResource(R.string.touch_lock_hold_instant)
+    } else {
+        stringResource(R.string.touch_lock_hold_seconds, String.format(java.util.Locale.US, "%.1f", secs))
+    }
+
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -158,34 +183,45 @@ fun TouchLockHoldPicker(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.height(8.dp))
-                com.nox.feature.agent.data.touchlock.TouchLockManager.HOLD_OPTIONS_MS.forEach { ms ->
-                    val secs = ms / 1000f
-                    val label = if (secs % 1f == 0f) {
-                        stringResource(R.string.touch_lock_hold_seconds, secs.toInt().toString())
-                    } else {
-                        stringResource(R.string.touch_lock_hold_seconds_decimal, secs.toString())
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onPick(ms) }
-                            .padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        androidx.compose.material3.RadioButton(
-                            selected = ms == current,
-                            onClick = { onPick(ms) }
-                        )
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
+                Spacer(Modifier.height(Spacing.md))
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                androidx.compose.material3.Slider(
+                    value = sliderValue,
+                    onValueChange = { sliderValue = it },
+                    onValueChangeFinished = { onPick(sliderValue.toLong()) },
+                    valueRange = min.toFloat()..max.toFloat(),
+                    // 100ms 一档：0-5 秒共 51 档，足够细又不至于拖不到整秒。
+                    steps = ((max - min) / 100L).toInt() - 1,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = stringResource(R.string.touch_lock_hold_min_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(R.string.touch_lock_hold_max_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         },
         confirmButton = {
+            androidx.compose.material3.TextButton(onClick = { onPick(sliderValue.toLong()) }) {
+                Text(stringResource(R.string.common_confirm))
+            }
+        },
+        dismissButton = {
             androidx.compose.material3.TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.common_close))
             }

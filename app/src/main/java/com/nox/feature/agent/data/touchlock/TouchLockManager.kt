@@ -47,8 +47,9 @@ class TouchLockManager @Inject constructor(
          */
         const val UNLOCK_HOLD_MS = 1000L
 
-        /** 长按解锁时长可选值（毫秒）。防误触本身靠遮罩拦截，长按只是防误碰。 */
-        val HOLD_OPTIONS_MS = listOf(500L, 1000L, 1500L, 2000L, 3000L)
+        /** 长按解锁时长的可选范围（毫秒）。0 = 无需长按，点一下即退出。 */
+        const val HOLD_MIN_MS = 0L
+        const val HOLD_MAX_MS = 5000L
 
         private val HOLD_MS = longPreferencesKey("touch_lock_hold_ms")
 
@@ -63,11 +64,11 @@ class TouchLockManager @Inject constructor(
 
     /** 当前设定的长按解锁时长；未设置时用 [UNLOCK_HOLD_MS]。 */
     val holdMillisFlow: Flow<Long> = context.touchLockStore.data.map {
-        it[HOLD_MS] ?: UNLOCK_HOLD_MS
+        (it[HOLD_MS] ?: UNLOCK_HOLD_MS).coerceIn(HOLD_MIN_MS, HOLD_MAX_MS)
     }
 
     suspend fun setHoldMillis(value: Long) {
-        context.touchLockStore.edit { it[HOLD_MS] = value.coerceIn(300L, 5000L) }
+        context.touchLockStore.edit { it[HOLD_MS] = value.coerceIn(HOLD_MIN_MS, HOLD_MAX_MS) }
     }
 
     suspend fun isActive(): Boolean = activeFlow.first()
