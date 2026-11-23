@@ -122,59 +122,36 @@ class PluginPackageExporter @Inject constructor(
         return target
     }
 
-    /**
-     * 分享用 Uri。
-     *
-     * **不用 FileProvider**：真机上 FileProvider 的 content:// 交给微信/QQ 时
-     * 始终报「获取资源失败」/「文件不存在」，已确认不是授权标志、ClipData、
-     * EXTRA_STREAM 形态或 MIME 的问题（这四项都修过、都无效）。
-     * 目标应用的读取路径在 MIUI 上对 content:// 有限制，而本应用 targetSdk=28
-     * 仍允许对外暴露 file://，所以直接落一份到公共目录再分享 file://。
-     *
-     * 为什么放 Download 下的子目录而不是 cache：
-     * - 接收方（微信/QQ）会在自己的进程里读这个路径，必须公共可读；
-     * - 用户也能在文件管理器里找到导出的包，算附带的好处。
-     */
+    /** 分享用 Uri，走本应用自己的 FileProvider。 */
     fun shareUri(file: File): Uri {
-        // 走 MediaStore 写入系统「下载」集合，而不是 FileProvider。
+        // 用本应用自己的 FileProvider，而不是 MediaStore。
         //
-        // 为什么放弃 FileProvider：真机上 files/share/ 里的文件已经是 0644、
-        // ClipData 与 EXTRA_STREAM 也都按规范填了，微信/QQ 仍然报
-        // 「获取资源失败」/「文件不存在」。唯一还没试过的差异是
-        // **content:// 的 authority 归属**——FileProvider 的 authority 属于本应用，
-        // 而 MediaStore 的 content://media/... 由系统 media provider 持有，
-        // 接收方读它走的是系统 provider，不涉及跨应用 URI 授权。
+        // MediaStore 那条路走不通：content://media/... 的 authority 属于
+        // media provider，不是本应用。第三方应用无法把「别人的 URI」
+        // 授权给接收方，grantUriPermission 对它是无效的；而 Android 13+
+        // 起普通应用也读不到别的应用写进 Downloads 的文件。
+        // 真机表现就是微信「获取资源失败」——它拿不到读权限。
         //
-        // MediaStore 的 Downloads 集合是系统官方的「共享文件」入口，
-        // 微信、QQ、文件管理器都直接支持；代价是文件会留在系统下载目录里
-        // （对「导出插件包」这个场景反而是好事，用户能在下载里找到）。
-        val resolver = context.contentResolver
-        val isQ = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
-        val values = android.content.ContentValues().apply {
-            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, file.name)
-            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/zip")
-            if (isQ) {
-                // RELATIVE_PATH / IS_PENDING 是 API 29+ 才有的列
-                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/AiGo")
-                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+        // FileProvider 的 authority 属于本应用，FLAG_GRANT_READ_URI_PERMISSION
+        // 与 grantUriPermission 都能正常生效。
+        // 之前 FileProvider 也失败，是被 EXTRA_STREAM 覆盖 bug 掩盖了
+        // （单值与 ArrayList 共用同一个 key，后写的覆盖前者），已一并修掉。
+        val dir = File(context.cacheDir, "share").apply { mkdirs() }
+        val target = File(dir, file.name)
+        if (target.exists() && target.length() == file.length()) {
+            target.setLastModified(System.currentTimeMillis())
+        } else {
+            runCatching { target.delete() }
+            file.inputStream().use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
             }
         }
-        val collection = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
-        val uri = resolver.insert(collection, values)
-            ?: throw IllegalStateException("无法在系统下载目录创建文件")
-        try {
-            resolver.openOutputStream(uri)?.use { out ->
-                file.inputStream().use { it.copyTo(out) }
-            } ?: throw IllegalStateException("无法写入系统下载目录")
-            if (isQ) {
-                values.clear()
-                values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
-                resolver.update(uri, values, null, null)
-            }
-        } catch (e: Exception) {
-            runCatching { resolver.delete(uri, null, null) }
-            throw e
-        }
-        return uri
+        // 兜底：某些 ROM 上 cacheDir 的文件权限过严，显式放开可读。
+        runCatching { target.setReadable(true, false) }
+        return androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            target
+        )
     }
 }

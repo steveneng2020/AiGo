@@ -246,6 +246,14 @@ class PluginStoreViewModel @Inject constructor(
                         if (preview.manifest.id != item.plugin.id ||
                             asset.version != manifestVersion
                         ) {
+                            // 校验失败原因必须落盘：真机上只看得到「安装包校验失败」，
+                            // 不知道是 id 不符还是版本不符，也无从判断下载到的到底是什么。
+                            com.nox.core.util.FileLogger.w(
+                                TAG,
+                                "preview mismatch: expected id=${item.plugin.id} v=${asset.version}, " +
+                                    "got id=${preview.manifest.id} v=$manifestVersion, " +
+                                    "url=${asset.url}"
+                            )
                             manager.discard(preview.token)
                             _state.update {
                                 it.copy(
@@ -284,16 +292,26 @@ class PluginStoreViewModel @Inject constructor(
                             )
                         }
                     }
-                    is PluginPreviewResult.Failed -> _state.update {
-                        it.copy(
-                            installingPluginId = null,
-                            installStage = PluginInstallStage.IDLE,
-                            error = PluginStoreError(
-                                code = PluginStoreErrorCode.PREVIEW_FAILED,
-                                pluginError = result.errors.firstOrNull(),
-                                pluginId = item.plugin.id
-                            )
+                    is PluginPreviewResult.Failed -> {
+                        // 校验失败必须落盘：真机上只显示「安装包校验失败」，
+                        // 无法区分是包坏了、下到了 HTML 错误页，还是清单不合规。
+                        com.nox.core.util.FileLogger.w(
+                            TAG,
+                            "preview failed: id=${item.plugin.id} url=${asset.url} " +
+                                "errors=${result.errors.map { it.toString() }}"
                         )
+                        _state.update {
+                            it.copy(
+                                installingPluginId = null,
+                                installStage = PluginInstallStage.IDLE,
+                                error = PluginStoreError(
+                                    code = PluginStoreErrorCode.PREVIEW_FAILED,
+                                    pluginError = result.errors.firstOrNull(),
+                                    detail = result.errors.firstOrNull()?.let { e -> e.toString() },
+                                    pluginId = item.plugin.id
+                                )
+                            )
+                        }
                     }
                 }
             } catch (e: NoMatchingReleaseException) {

@@ -48,17 +48,23 @@ internal fun buildPluginShareIntent(
     }.getOrNull()?.takeIf { it.isNotBlank() }
         ?: uri.lastPathSegment?.substringAfterLast('/')
         ?: "plugin.zip"
-    val mime = context.contentResolver.getType(uri) ?: "application/zip"
+    // 用 octet-stream 而不是 application/zip：微信的 ShareImgUI 是按
+    // 「application/*」注册的图片分享界面，zip 进去后它按图片流程处理，
+    // 拿不到缩略图就报「获取资源失败」。octet-stream 会路由到通用的
+    // 文件转发界面（ForwardRecentActivity），按文件处理。
+    val mime = "application/octet-stream"
     // newUri 会查询 MIME，description 里带真实 type；newRawUri 不会（见上面第 1 点）
     val clip = ClipData.newUri(context.contentResolver, displayName, uri)
 
     val send = Intent(Intent.ACTION_SEND).apply {
         type = mime
-        // 单个形态：多数接收方走这个
-        putExtra(Intent.EXTRA_STREAM, uri)
-        // 列表形态：系统授权检查读的是这个（见上面第 2 点）
+        // 只放 ArrayList 一种形态。
+        // 之前同时 putExtra(单值) + putParcelableArrayListExtra，两者共用
+        // EXTRA_STREAM 这个 key，后写的会覆盖前者，最终 Intent 里是 ArrayList。
+        // 微信按 getParcelableExtra 取值拿到 null，直接报「获取资源失败」。
+        // UriGrantsManagerService 的授权检查读的正是 ArrayList，保留它就够。
         putParcelableArrayListExtra(Intent.EXTRA_STREAM, arrayListOf(uri))
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         clipData = clip
     }
 
@@ -69,7 +75,7 @@ internal fun buildPluginShareIntent(
             context.grantUriPermission(
                 info.activityInfo.packageName,
                 uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
         }
     }
@@ -85,5 +91,29 @@ internal fun buildPluginShareIntent(
     val probeMsg = "probe read=${probe.getOrNull()} err=${probe.exceptionOrNull()}"
     Log.w("PluginShare", probeMsg)
     FileLogger.w("PluginShare", probeMsg)
+
+    // MediaStore 条目状态：SIZE=0 或 IS_PENDING=1 时接收方读不到内容，
+    // 那正是「获取资源失败」的典型成因，必须确认。
+    val meta = runCatching {
+        context.contentResolver.query(
+            uri,
+            arrayOf(
+                android.provider.OpenableColumns.SIZE,
+                android.provider.MediaStore.MediaColumns.IS_PENDING,
+                android.provider.OpenableColumns.DISPLAY_NAME
+            ),
+            null, null, null
+        )?.use { c ->
+            if (c.moveToFirst()) {
+                buildString {
+                    append("size=").append(c.getLong(0))
+                    append(" pending=").append(c.getInt(1))
+                    append(" name=").append(c.getString(2))
+                }
+            } else "no row"
+        }
+    }.getOrNull() ?: "query failed"
+    Log.w("PluginShare", "meta $meta")
+    FileLogger.w("PluginShare", "meta $meta")
     return Intent.createChooser(send, title)
 }
