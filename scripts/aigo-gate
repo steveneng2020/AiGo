@@ -692,6 +692,38 @@ else
   echo "  [SKIP] 未找到 debug APK，先跑 aigo apk"
 fi
 
+# ---------- 4c. 出包文件名规则 ----------
+# 规则：AiGo-<abi>-<版本>-<摘要>-<构建日期>.apk
+#   例：AiGo-arm64-v8a-1.0.1-debug-新增语音输入-20261123.apk
+# 踩过的坑：曾产出 AiGo-release-1.0.1-20261123-arm64.apk（abi 掉到最后、
+# 摘要和日期顺序也不对），用户很难从文件名判断是哪个包。
+# 只检查 build-output 下最新几个文件，历史遗留不追。
+step "4c/7 出包文件名规则"
+OUT_DIR="$HOME/workspace/build-output"
+if [ -d "$OUT_DIR" ]; then
+  bad_names=""
+  checked=0
+  for f in $(ls -t "$OUT_DIR"/*.apk 2>/dev/null | head -5); do
+    name=$(basename "$f")
+    checked=$((checked + 1))
+    # 允许的 abi 段：arm64-v8a / x86_64 / universe / universal，可多段用 + 连接
+    if ! printf '%s' "$name" | grep -qE '^AiGo-(arm64-v8a|x86_64|universal|universal-[a-z0-9+]+)(\+[a-z0-9_-]+)*-[0-9]+\.[0-9]+\.[0-9]+.*-[0-9]{8}\.apk$'; then
+      bad_names="$bad_names\n          $name"
+    fi
+  done
+  if [ "$checked" = "0" ]; then
+    echo "  [SKIP] build-output 下没有 apk"
+  elif [ -z "$bad_names" ]; then
+    ok "最近 $checked 个出包文件名均符合 AiGo-<abi>-<版本>-<摘要>-<日期>.apk"
+  else
+    bad "出包文件名不符合规则（应为 AiGo-<abi>-<版本>-<摘要>-<日期>.apk）"
+    printf "$bad_names\n"
+    echo "        处理：用 aigo apk / aigo fast 重新出包（会自动命名）"
+  fi
+else
+  echo "  [SKIP] 未找到 build-output 目录"
+fi
+
 # ---------- 5. 单元测试 ----------
 step "5/7 单元测试"
 if [ "$FAST" = "1" ]; then
