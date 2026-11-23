@@ -168,6 +168,14 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var agreementRepository: com.nox.feature.agreement.data.AgreementRepository
 
+    /**
+     * 防误触状态：激活时要禁掉左右抽屉的边缘滑出手势。
+     * 遮罩本身只能拦触摸，抽屉手势由 ModalNavigationDrawer 在更外层消费，
+     * 不在这里禁用的话，从屏幕左缘往右划仍会把侧边栏拉出来（防误触形同虚设）。
+     */
+    @Inject
+    lateinit var touchLockManager: com.nox.feature.agent.data.touchlock.TouchLockManager
+
     @Inject
     lateinit var browserManager: com.nox.feature.agent.domain.tool.browser.BrowserManager
 
@@ -261,6 +269,10 @@ class MainActivity : ComponentActivity() {
                 AppThemeMode.LIGHT -> false
             }
             val view = LocalView.current
+            // 防误触期间禁掉抽屉手势：遮罩只能拦触摸，滑出手势在外层抽屉消费，
+            // 不禁的话从左缘往右划仍会拉出侧边栏（点击能拦住，手势拦不住）。
+            val touchLockActiveForGestures by touchLockManager.activeFlow
+                .collectAsStateWithLifecycle(initialValue = false)
             SideEffect {
                 val controller = WindowCompat.getInsetsController(window, view)
                 controller.isAppearanceLightStatusBars = !darkTheme
@@ -288,7 +300,8 @@ class MainActivity : ComponentActivity() {
                         AgreementGate(repository = agreementRepository) { agreementAccepted ->
                             AppNavigation(
                                 onboardingRepository = onboardingRepository,
-                                agreementAccepted = agreementAccepted
+                                agreementAccepted = agreementAccepted,
+                                touchLockActive = touchLockActiveForGestures
                             )
                             if (agreementAccepted) {
                                 // 全局凭据弹窗：覆盖所有页面，命令行 git 缺凭据在任意页面都能弹。
@@ -373,7 +386,8 @@ private const val MAX_PANE_SPLIT = 0.7f
 @Composable
 fun AppNavigation(
     onboardingRepository: com.nox.feature.onboarding.data.OnboardingRepository,
-    agreementAccepted: Boolean
+    agreementAccepted: Boolean,
+    touchLockActive: Boolean = false
 ) {
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -387,6 +401,10 @@ fun AppNavigation(
     LaunchedEffect(currentRoute) {
         AIEditorApp.currentRoute = currentRoute
     }
+
+    // 防误触被打开时，若抽屉已经是展开的，主动收起：
+    // 否则遮罩盖不住已展开的侧栏（遮罩在抽屉内容层），锁屏形态不完整。
+    // 注：必须写在 rightDrawerState 声明之后，否则引用不到。
 
     // Activity 级别的 ViewModel——Drawer 和 AIChatPanel 共享同一个实例。
     val agentViewModel: AIAgentViewModel = hiltViewModel()
@@ -474,6 +492,15 @@ fun AppNavigation(
             }
         }
     val rightDrawerState = com.nox.core.ui.rememberEndDrawerState()
+
+    // 防误触被打开时，若抽屉已经是展开的，主动收起：
+    // 否则遮罩盖不住已展开的侧栏（遮罩在抽屉内容层），锁屏形态不完整。
+    LaunchedEffect(touchLockActive) {
+        if (touchLockActive) {
+            if (drawerState.isOpen) drawerState.close()
+            if (rightDrawerState.isOpen) rightDrawerState.close()
+        }
+    }
 
     /**
      * 导出插件安装包，[share] 为 true 时直接拉起系统分享。
@@ -573,6 +600,12 @@ fun AppNavigation(
     // 侧边栏打开时，系统返回键先收起侧边栏。
     BackHandler(enabled = drawerState.isOpen) {
         scope.launch { drawerState.close() }
+    }
+
+    // 防误触期间吞掉返回键：否则侧滑返回 / 实体返回会直接退出 App，
+    // 同样属于「防误触盖不住的路径」。优先级要高于其他返回处理，故放在前面。
+    BackHandler(enabled = touchLockActive) {
+        // 不做事，只负责拦截
     }
 
     // 侧边栏需要的数据。
@@ -1271,7 +1304,9 @@ fun AppNavigation(
         ModalNavigationDrawer(
             drawerState = drawerState,
             // 仅在聊天页启用手势滑出；其他页面禁止（但已打开时始终可关闭）。
-            gesturesEnabled = currentRoute == "chat" || drawerState.isOpen,
+            // 防误触激活时同样禁止：遮罩拦不住抽屉的边缘滑出手势，
+            // 否则从左缘往右划会把侧栏拉出来，防误触失去意义。
+            gesturesEnabled = (currentRoute == "chat" || drawerState.isOpen) && !touchLockActive,
             drawerContent = {
                 ModalDrawerSheet(
                     drawerShape = RectangleShape,
@@ -1287,7 +1322,8 @@ fun AppNavigation(
             // 反过来包会让右滑手势永远收不到事件。
             com.nox.core.ui.EndModalDrawer(
                 state = rightDrawerState,
-                gesturesEnabled = currentRoute == "chat",
+                // 右侧抽屉同理：防误触期间连滑出手势一起禁掉。
+                gesturesEnabled = currentRoute == "chat" && !touchLockActive,
                 drawerWidth = drawerWidth(),
                 drawerContent = { rightDrawerSheet() }
             ) {
