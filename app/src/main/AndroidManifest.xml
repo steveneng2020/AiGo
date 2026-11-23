@@ -18,22 +18,6 @@
     <!-- 手机控制调屏幕亮度：未声明此项时，系统「可修改系统设置」页的开关是灰的、点不开。 -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <!-- 语音输入：用系统识别器（RecognizerIntent），录音由识别器进程负责，
-         本应用只需 RECORD_AUDIO 声明以通过运行时权限检查。 -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-
-    <!-- Android 11+ 包可见性：不声明则 resolveActivity / isRecognitionAvailable 会误报不可用。
-         RecognitionService 是 SpeechRecognizer 依赖的服务接口，VantaCode 声明的正是它；
-         只声明 RECOGNIZE_SPEECH（Activity intent）不足以覆盖服务发现路径。 -->
-    <queries>
-        <intent>
-            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
-        </intent>
-        <intent>
-            <action android:name="android.speech.RecognitionService" />
-        </intent>
-    </queries>
-
     <application
         android:name=".AIEditorApp"
         android:allowBackup="false"
