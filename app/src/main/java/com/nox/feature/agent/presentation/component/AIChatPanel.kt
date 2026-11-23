@@ -1109,6 +1109,19 @@ fun AIChatPanel(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    // 在 AiGo 内部截图时不会经历 ON_RESUME（系统截图浮层是叠加窗口，
+    // 本 Activity 一直是 resumed），只靠上面的观察器拿不到新截图。
+    // 用剪贴板变更监听补齐：监听器只在进程活着时存在，由系统回调，
+    // 不是轮询，开销可忽略。
+    DisposableEffect(Unit) {
+        val manager = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+            as? android.content.ClipboardManager
+        val listener = android.content.ClipboardManager.OnPrimaryClipChangedListener {
+            clipboardImageAvailable = clipboardHasImage(context)
+        }
+        manager?.addPrimaryClipChangedListener(listener)
+        onDispose { manager?.removePrimaryClipChangedListener(listener) }
+    }
     // 首次进入也查一次（冷启动时 ON_RESUME 可能早于监听注册）。
     LaunchedEffect(Unit) {
         clipboardImageAvailable = clipboardHasImage(context)
