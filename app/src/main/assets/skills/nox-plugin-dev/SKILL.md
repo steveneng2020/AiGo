@@ -545,6 +545,7 @@ rl.on('close', () => process.exit(0));
 | `host.share.text` | 系统分享 |
 | `host.ui.openUrl` | 打开链接 |
 | `host.webview.login` | 打开受控 WebView 完成第三方网页登录，回传 `{ finalUrl, cookies }`；用户取消抛 `LOGIN_CANCELED` |
+| `host.file.pick` | 拉起系统文件选择器，回传 `{ files: [{ name, size, mime, base64 }] }`；取消抛 `PICK_CANCELED` |
 | `host.tools.execute` / `pending` / `resolve` | 调用宿主工具、处理待审批 |
 | `host.mcp.status` | MCP 连接状态 |
 | `host.http.request` | 受管 HTTP：会经过 `agent.http.before` hook，可配代理与超时 |
@@ -595,8 +596,9 @@ const ctx = await aicode.context();                    // { pluginId, pageId, vi
 
 `aicode.invoke(handler, args)` 是最常用的一个：handler 名与 runtime 的 `handlers` 键名一致，宿主把它转成 `ui.invoke` 发给插件进程。**桥没有 `plugin` 命名空间**，`aicode.plugin.invoke(...)` 不存在。
 
-**网页登录**：`aicode.webview.login({ url, title?, finishText?, cookieUrls? })` 在 App 内打开受控全屏 WebView，
+**网页登录**：`aicode.webview.login({ url, title?, finishText?, cookieUrls?, accentColor?, cornerRadius?, dimAlpha?, showClose? })` 在 App 内打开受控全屏 WebView，
 用户完成第三方网页登录后返回 `{ finalUrl, cookies: { 地址: cookie 串 } }`；用户点「关闭」或返回抛 `LOGIN_CANCELED`。
+可选样式：`accentColor`（`#RRGGBB`，完成按钮与强调色）、`cornerRadius`（dp，卡片圆角）、`dimAlpha`（0–0.9，遮罩透明度）、`showClose`（是否显示关闭）。
 WebView 开启 JavaScript、DOM Storage 与第三方 Cookie，登录态写入 App 级 CookieManager 并落盘，下次打开仍登录。
 需要 Nox 1.0.10+。
 
@@ -629,6 +631,8 @@ runtime 侧同样可用 `host.fs.read({ path: 'data://config.json' })`。**宿�
 **悬浮窗**：`overlay.create`、`overlay.update`、`overlay.close`、`overlay.self`、`overlay.resize`、`overlay.setDragRegion`、`overlay.postMessage`、`overlay.onMessage`
 
 **网页登录**：`webview.login`（见上节示例）
+
+**文件选择**：`file.pick({ multiple?, mimeTypes? })` 拉起系统文件选择器，返回 `{ files: [{ name, size, mime, base64 }] }`；单文件 ≤ 2MB、总计 ≤ 4MB，最多 8 个；取消抛 `PICK_CANCELED`。
 
 只在 `overlay.surfaces` 声明的浮层页面里可用。`overlay.postMessage({type, ...})` 发给 runtime，runtime 侧用 `host.overlay.postMessage({surface, payload})` 发回来，浮层页面用 `overlay.onMessage(fn)` 收。
 

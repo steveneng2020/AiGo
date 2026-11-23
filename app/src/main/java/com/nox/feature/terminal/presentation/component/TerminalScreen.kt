@@ -109,6 +109,7 @@ fun TerminalScreen(
     val revision by viewModel.revision.collectAsStateWithLifecycle()
     val creatingTab by viewModel.creatingTab.collectAsStateWithLifecycle()
     val terminalSettings by viewModel.terminalSettings.collectAsStateWithLifecycle()
+    val containerName by viewModel.activeContainerName.collectAsStateWithLifecycle()
     var showToolsSheet by remember { mutableStateOf(false) }
 
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -175,6 +176,8 @@ fun TerminalScreen(
                 is TerminalViewModel.PrepareState.Ready -> {
                     @Suppress("UNUSED_EXPRESSION") revision
 
+                    ContainerPill(containerName)
+
                     TabBar(
                         tabs = tabs,
                         activeTabId = activeTabId,
@@ -221,6 +224,41 @@ fun TerminalScreen(
                 onChangeCursorStyle = { viewModel.setCursorStyle(it) },
                 onChangeFontPath = { viewModel.setFontPath(it) }
             )
+        }
+    }
+}
+
+/** 终端顶部容器胶囊：Eta 风格的分段控件，当前容器为选中段。 */
+@Composable
+private fun ContainerPill(name: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.Start
+    ) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                .padding(3.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = name,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
     }
 }
@@ -435,8 +473,7 @@ private fun TerminalSurface(
     AndroidView(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 8.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
             .background(bgColor),
         factory = { ctx ->
             val view = TerminalView(ctx, null)

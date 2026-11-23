@@ -8,9 +8,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
+import android.util.Base64
 import com.nox.core.util.FileLogger
 import com.nox.feature.plugin.domain.PluginHostException
 import com.nox.feature.plugin.domain.PluginManager
+import com.nox.feature.plugin.files.PluginFilePickerSession
 import com.nox.feature.plugin.login.PluginLoginSession
 import com.nox.feature.plugin.overlay.AppForegroundMonitor
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -25,8 +28,12 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.floatOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 
 /**
@@ -127,13 +134,71 @@ class PluginSystemService @Inject constructor(
             ?.map { requireHttpUrl(it) }
             ?.ifEmpty { listOf(url) }
             ?: listOf(url)
+        val accentColor = (params["accentColor"] as? JsonPrimitive)?.contentOrNull
+        val cornerRadius = (params["cornerRadius"] as? JsonPrimitive)?.intOrNull ?: 0
+        val dimAlpha = (params["dimAlpha"] as? JsonPrimitive)?.floatOrNull ?: 0.4f
+        val showClose = (params["showClose"] as? JsonPrimitive)?.booleanOrNull ?: true
         return PluginLoginSession.launch(
             context = context,
             url = url,
             title = title,
             finishText = finishText,
-            cookieUrls = cookieUrls
+            cookieUrls = cookieUrls,
+            accentColor = accentColor,
+            cornerRadiusDp = cornerRadius,
+            dimAlpha = dimAlpha,
+            showClose = showClose
         ) ?: throw PluginHostException("LOGIN_CANCELED", "user canceled login")
+    }
+
+    /** 拉起系统文件选择器，返回 { files: [{ name, size, mime, base64 }] }；取消抛 PICK_CANCELED。 */
+    suspend fun pickFiles(pluginId: String, params: JsonObject): JsonElement {
+        ensureActive(pluginId)
+        val mimeTypes = (params["mimeTypes"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
+        val multiple = (params["multiple"] as? JsonPrimitive)?.booleanOrNull ?: false
+        val uris = PluginFilePickerSession.launch(context, mimeTypes, multiple)
+            ?: throw PluginHostException("PICK_CANCELED", "user canceled file pick")
+        val files = buildJsonArray {
+            var total = 0L
+            uris.take(if (multiple) MAX_PICK_FILES else 1).forEach { uri ->
+                val meta = queryFileMeta(uri)
+                if (meta.size > MAX_PICK_FILE_BYTES || total + meta.size > MAX_PICK_TOTAL_BYTES) return@forEach
+                val bytes = runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                }.getOrNull() ?: return@forEach
+                total += bytes.size
+                add(buildJsonObject {
+                    put("name", meta.name)
+                    put("size", bytes.size.toLong())
+                    put("mime", meta.mime)
+                    put("base64", Base64.encodeToString(bytes, Base64.NO_WRAP))
+                })
+            }
+        }
+        return buildJsonObject { put("files", files) }
+    }
+
+    private data class FileMeta(val name: String, val size: Long, val mime: String)
+
+    private fun queryFileMeta(uri: Uri): FileMeta {
+        var name = uri.lastPathSegment ?: "file"
+        var size = 0L
+        runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (nameIndex >= 0) cursor.getString(nameIndex)?.let { name = it }
+                        if (sizeIndex >= 0) size = cursor.getLong(sizeIndex)
+                    }
+                }
+        }
+        val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+        return FileMeta(name, size, mime)
     }
 
     /** 宿主 App 的包名、版本、系统 API 级别、界面语言与前后台状态。 */
@@ -223,5 +288,8 @@ class PluginSystemService @Inject constructor(
         const val MAX_LOG_MESSAGE_CHARS = 2000
         const val MAX_LOG_TAG_CHARS = 64
         const val DEFAULT_TAG_PREFIX = "plugin:"
+        const val MAX_PICK_FILES = 8
+        const val MAX_PICK_FILE_BYTES = 2L * 1024 * 1024
+        const val MAX_PICK_TOTAL_BYTES = 4L * 1024 * 1024
     }
 }

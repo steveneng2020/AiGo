@@ -334,6 +334,7 @@ class PluginRuntimeManager @Inject constructor(
                 systemService.openUrl(pluginId, PluginHostPaths.requireString(params, "url"))
             }
             "host.webview.login" -> hostCall { systemService.openLoginWebView(pluginId, params) }
+            "host.file.pick" -> hostCall { systemService.pickFiles(pluginId, params) }
             "host.app.info" -> hostCall { systemService.appInfo(pluginId) }
             "host.log" -> hostCall {
                 systemService.log(
