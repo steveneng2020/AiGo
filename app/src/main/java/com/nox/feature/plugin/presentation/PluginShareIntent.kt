@@ -1,7 +1,6 @@
 package com.nox.feature.plugin.presentation
 
 import android.content.ClipData
-import android.content.ClipDescription
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -19,12 +18,9 @@ import com.nox.core.util.FileLogger
  *    部分接收方（微信）据此判定「没有可读内容」。
  *    `newUri` 会经 ContentResolver 查出真实 MIME，description 完整。
  *
- * 2. **EXTRA_STREAM 同时给单个和列表两种形态**
- *    系统在 `UriGrantsManagerService` 里检查授权时，读的是
- *    `getParcelableArrayListExtra(EXTRA_STREAM)`；我们只放单个 Uri 时它拿到 null，
- *    授权检查直接跳过，接收方最终没有读权限（真机日志：
- *    `Key android.intent.extra.STREAM expected ArrayList<Uri> but value was of a different type`）。
- *    两个 key 都放，两种读取路径都能命中。
+ * 2. **EXTRA_STREAM 放单值 Uri**
+ *    ACTION_SEND 的规范是单个 Uri，ArrayList 属于 ACTION_SEND_MULTIPLE。
+ *    两者共用 EXTRA_STREAM，同时写只会保留最后一个，必须选对形态。
  *
  * 3. **逐个 grantUriPermission**
  *    `FLAG_GRANT_READ_URI_PERMISSION` 只对 Intent 的直接接收者生效，
@@ -49,42 +45,41 @@ internal fun buildPluginShareIntent(
     }.getOrNull()?.takeIf { it.isNotBlank() }
         ?: uri.lastPathSegment?.substringAfterLast('/')
         ?: "plugin.zip"
-    // 用 octet-stream 而不是 application/zip：微信的 ShareImgUI 是按
-    // 「application/*」注册的图片分享界面，zip 进去后它按图片流程处理，
-    // 拿不到缩略图就报「获取资源失败」。octet-stream 会路由到通用的
-    // 文件转发界面（ForwardRecentActivity），按文件处理。
-    val mime = "application/octet-stream"
-    // 不用 ClipData.newUri：它内部会按 uri 反查真实 MIME（application/zip），
-    // 与 send.type（octet-stream）不一致；部分接收方以 ClipData 的 description
-    // 类型为准，又走回图片分享流程，依旧「获取资源失败」。
-    // 显式构造 description，让两处类型保持同一个值。
-    val clip = ClipData(
-        ClipDescription(displayName, arrayOf(mime)),
-        ClipData.Item(uri)
-    )
+    // 用 Provider 查出的真实 MIME，不要硬编码。
+    // 之前改成 octet-stream 无效：微信对 application/* 只注册 ShareImgUI
+    // 和 AddFavoriteUI 两个入口，换 MIME 不改变解析到的组件，症状必然不变。
+    // 而且硬编码会让 Intent.type、ClipDescription、Provider.getType() 三处
+    // 不一致，接收方以哪个为准是未定义的。
+    val mime = context.contentResolver.getType(uri) ?: "application/zip"
+    // 平台推荐写法：newUri 会一并取出真实 MIME 填进 description，三处自然一致。
+    val clip = ClipData.newUri(context.contentResolver, displayName, uri)
 
     val send = Intent(Intent.ACTION_SEND).apply {
         type = mime
-        // 只放 ArrayList 一种形态。
-        // 之前同时 putExtra(单值) + putParcelableArrayListExtra，两者共用
-        // EXTRA_STREAM 这个 key，后写的会覆盖前者，最终 Intent 里是 ArrayList。
-        // 微信按 getParcelableExtra 取值拿到 null，直接报「获取资源失败」。
-        // UriGrantsManagerService 的授权检查读的正是 ArrayList，保留它就够。
-        putParcelableArrayListExtra(Intent.EXTRA_STREAM, arrayListOf(uri))
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        // ACTION_SEND 的 EXTRA_STREAM 规范是单个 Uri；ArrayList 属于
+        // ACTION_SEND_MULTIPLE。两者共用 EXTRA_STREAM 这个 key，
+        // 同时写只会留下最后写的那个，所以必须选对形态。
+        //
+        // 真机日志：微信由 ShareImgUI（继承 AutoLoginActivity，老式单文件
+        // 分享入口）接收，按 getParcelableExtra 取值；拿到 ArrayList
+        // 既无法转成 Parcelable 也不是 Uri，于是初始化即失败，
+        // 窗口 104ms 后销毁 —— 这正是「获取资源失败」的表现。
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         clipData = clip
     }
 
     val targets = context.packageManager
         .queryIntentActivities(send, PackageManager.MATCH_DEFAULT_ONLY)
+    val grantFailures = mutableListOf<String>()
     targets.forEach { info ->
+        val pkg = info.activityInfo.packageName
         runCatching {
-            context.grantUriPermission(
-                info.activityInfo.packageName,
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            )
-        }
+            context.grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }.onFailure { grantFailures += "$pkg: ${it.message}" }
+    }
+    if (grantFailures.isNotEmpty()) {
+        FileLogger.w("PluginShare", "grantUriPermission 失败 ${grantFailures.size} 个: $grantFailures")
     }
     // 排查用：真机上看不到授权细节时，这几行是唯一线索。
     // 用 Log.w 而不是 Log.i —— 部分 ROM 默认过滤 info 级日志。
@@ -122,5 +117,12 @@ internal fun buildPluginShareIntent(
     }.getOrNull() ?: "query failed"
     Log.w("PluginShare", "meta $meta")
     FileLogger.w("PluginShare", "meta $meta")
-    return Intent.createChooser(send, title)
+    // 外层 chooser 必须自己也带 flags 与 clipData。
+    // FLAG_GRANT_READ_URI_PERMISSION 只作用于「直接接收者」，而直接把
+    // send 交给 startActivity 时，系统会插入 ResolverActivity，
+    // 真正启动微信的是那次二次启动 —— 标志不会自动沿传递。
+    return Intent.createChooser(send, title).apply {
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        clipData = clip
+    }
 }
