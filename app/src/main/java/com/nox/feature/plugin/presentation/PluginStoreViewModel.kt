@@ -207,7 +207,18 @@ class PluginStoreViewModel @Inject constructor(
     }
 
     fun install(item: PluginStoreItem) {
-        if (!item.compatible) return
+        // 静默 return 会让用户以为「点了没反应」，这里给出可见的错误。
+        if (!item.compatible) {
+            _state.update {
+                it.copy(
+                    error = PluginStoreError(
+                        code = PluginStoreErrorCode.NO_COMPATIBLE_RELEASE,
+                        pluginId = item.plugin.id
+                    )
+                )
+            }
+            return
+        }
         if (_state.value.installingPluginId != null) return
         _state.update {
             it.copy(
@@ -286,6 +297,9 @@ class PluginStoreViewModel @Inject constructor(
                     }
                 }
             } catch (e: NoMatchingReleaseException) {
+                // 这条最常见：索引里的 version 与 Release 资产名对不上
+                // （资产名约定是 {id}_{version}.zip，上游改了命名或版本号写法就会失配）。
+                FileLogger.w(TAG, "未找到可安装版本: ${item.plugin.id} v${item.plugin.version}", e)
                 _state.update {
                     it.copy(
                         installingPluginId = null,

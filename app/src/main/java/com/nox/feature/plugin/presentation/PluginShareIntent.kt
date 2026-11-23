@@ -48,13 +48,6 @@ internal fun buildPluginShareIntent(
         clipData = clip
     }
 
-    // 诊断：确认 provider 能否真正解析这个 URI。解析失败会抛 IllegalArgumentException，
-    // 那才是「接收方读不到文件」的真正起点。
-    val probe = runCatching {
-        context.contentResolver.openInputStream(uri)?.use { it.read() }
-    }
-    Log.i("PluginShare", "probe read=${probe.getOrNull()} err=${probe.exceptionOrNull()?.message}")
-
     val targets = context.packageManager
         .queryIntentActivities(send, PackageManager.MATCH_DEFAULT_ONLY)
     targets.forEach { info ->
@@ -67,9 +60,15 @@ internal fun buildPluginShareIntent(
         }
     }
     // 排查用：真机上看不到授权细节时，这几行是唯一线索。
-    Log.i(
+    // 用 Log.w 而不是 Log.i —— 部分 ROM 默认过滤 info 级日志。
+    Log.w(
         "PluginShare",
-        "uri=$uri name=$displayName mime=$mime targets=${targets.map { it.activityInfo.packageName }}"
+        "scheme=${uri.scheme} authority=${uri.authority} path=${uri.path} " +
+            "name=$displayName mime=$mime " +
+            "targets=${targets.map { it.activityInfo.packageName }}"
     )
+    // 自己读一次：读失败说明写入环节就有问题，与接收方无关。
+    val probe = runCatching { context.contentResolver.openInputStream(uri)?.use { it.read() } }
+    Log.w("PluginShare", "probe read=${probe.getOrNull()} err=${probe.exceptionOrNull()}")
     return Intent.createChooser(send, title)
 }
