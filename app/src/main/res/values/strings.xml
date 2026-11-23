@@ -2379,4 +2379,8 @@
     <string name="session_mgmt_tag_remote_offline">远程/离线</string>
     <string name="session_mgmt_view_content">查看会话内容</string>
     <string name="chat_clipboard_image_hint">剪贴板有图片，点此作为附件插入</string>
+    <string name="touch_lock_hold_title">解锁时长</string>
+    <string name="touch_lock_hold_desc">在防误触模式下，需要按住屏幕多久才会退出。时间越短越容易解开，也越容易误触。</string>
+    <string name="touch_lock_hold_seconds">%1$s 秒</string>
+    <string name="touch_lock_hold_seconds_decimal">%1$s 秒</string>
 </resources>

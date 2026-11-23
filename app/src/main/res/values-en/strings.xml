@@ -2181,4 +2181,8 @@
     <string name="session_mgmt_tag_remote_offline">Remote / Offline</string>
     <string name="session_mgmt_view_content">View Messages</string>
     <string name="chat_clipboard_image_hint">Image in clipboard — tap to attach</string>
+    <string name="touch_lock_hold_title">Unlock duration</string>
+    <string name="touch_lock_hold_desc">How long you must hold the screen to exit touch-lock mode. Shorter is easier to unlock, but also easier to trigger by accident.</string>
+    <string name="touch_lock_hold_seconds">%1$s sec</string>
+    <string name="touch_lock_hold_seconds_decimal">%1$s sec</string>
 </resources>

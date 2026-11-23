@@ -733,6 +733,8 @@ fun AIChatPanel(
             .touchLockManager()
     }
     val touchLockActive by touchLockManager.activeFlow.collectAsStateWithLifecycle(initialValue = false)
+    val touchLockHoldMs by touchLockManager.holdMillisFlow.collectAsStateWithLifecycle(initialValue = 1000L)
+    var touchLockConfigVisible by rememberSaveable { mutableStateOf(false) }
     val touchLockScope = rememberCoroutineScope()
     var renameText by remember(currentSession?.id) {
         mutableStateOf(currentSession?.title.orEmpty())
@@ -1697,6 +1699,7 @@ fun AIChatPanel(
                     // 未授「修改系统设置」时仍允许开启，只是不调亮度。
                     touchLockScope.launch { touchLockManager.enter() }
                 },
+                onConfigureTouchLock = { touchLockConfigVisible = true },
                 pluginEntries = pluginEntries,
                 pluginLanguageTag = pluginLanguageTag,
                 onPluginEntry = onPluginEntry,
@@ -2251,8 +2254,18 @@ fun AIChatPanel(
         if (touchLockActive) {
             TouchLockOverlay(
                 onUnlock = { touchLockScope.launch { touchLockManager.exit() } },
-                // 显式引用常量，避免默认值与管理器里的定义各改一处对不上
-                holdMillis = com.nox.feature.agent.data.touchlock.TouchLockManager.UNLOCK_HOLD_MS
+                holdMillis = touchLockHoldMs
+            )
+        }
+        // 长按「防误触」弹出的解锁时长选择。
+        if (touchLockConfigVisible) {
+            TouchLockHoldPicker(
+                current = touchLockHoldMs,
+                onDismiss = { touchLockConfigVisible = false },
+                onPick = { ms ->
+                    touchLockConfigVisible = false
+                    touchLockScope.launch { touchLockManager.setHoldMillis(ms) }
+                }
             )
         }
         }

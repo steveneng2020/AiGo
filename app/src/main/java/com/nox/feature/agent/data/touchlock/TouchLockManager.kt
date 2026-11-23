@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.nox.core.datastore.preferencesCorruptionHandler
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -46,6 +47,11 @@ class TouchLockManager @Inject constructor(
          */
         const val UNLOCK_HOLD_MS = 1000L
 
+        /** 长按解锁时长可选值（毫秒）。防误触本身靠遮罩拦截，长按只是防误碰。 */
+        val HOLD_OPTIONS_MS = listOf(500L, 1000L, 1500L, 2000L, 3000L)
+
+        private val HOLD_MS = longPreferencesKey("touch_lock_hold_ms")
+
         private val ACTIVE = booleanPreferencesKey("touch_lock_active")
         private val SAVED_BRIGHTNESS = intPreferencesKey("touch_lock_saved_brightness")
         private val SAVED_MODE = intPreferencesKey("touch_lock_saved_brightness_mode")
@@ -54,6 +60,15 @@ class TouchLockManager @Inject constructor(
     }
 
     val activeFlow: Flow<Boolean> = context.touchLockStore.data.map { it[ACTIVE] ?: false }
+
+    /** 当前设定的长按解锁时长；未设置时用 [UNLOCK_HOLD_MS]。 */
+    val holdMillisFlow: Flow<Long> = context.touchLockStore.data.map {
+        it[HOLD_MS] ?: UNLOCK_HOLD_MS
+    }
+
+    suspend fun setHoldMillis(value: Long) {
+        context.touchLockStore.edit { it[HOLD_MS] = value.coerceIn(300L, 5000L) }
+    }
 
     suspend fun isActive(): Boolean = activeFlow.first()
 

@@ -1,12 +1,15 @@
 package com.nox.feature.agent.presentation.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -126,4 +129,66 @@ fun TouchLockOverlay(
             )
         }
     }
+}
+
+/**
+ * 长按解锁时长的选择弹窗。
+ *
+ * 放在顶栏菜单「防误触」的长按里，而不是设置页：它是防误触自身的参数，
+ * 从同一处进入更符合直觉，也不占设置页篇幅。
+ */
+@Composable
+fun TouchLockHoldPicker(
+    current: Long,
+    onDismiss: () -> Unit,
+    onPick: (Long) -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.touch_lock_hold_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(R.string.touch_lock_hold_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                com.nox.feature.agent.data.touchlock.TouchLockManager.HOLD_OPTIONS_MS.forEach { ms ->
+                    val secs = ms / 1000f
+                    val label = if (secs % 1f == 0f) {
+                        stringResource(R.string.touch_lock_hold_seconds, secs.toInt().toString())
+                    } else {
+                        stringResource(R.string.touch_lock_hold_seconds_decimal, secs.toString())
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPick(ms) }
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.RadioButton(
+                            selected = ms == current,
+                            onClick = { onPick(ms) }
+                        )
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_close))
+            }
+        }
+    )
 }

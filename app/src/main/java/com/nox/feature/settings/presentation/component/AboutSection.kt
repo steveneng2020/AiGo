@@ -842,7 +842,10 @@ private fun ReleaseNoteItem(release: com.nox.feature.settings.data.remote.Versio
                 val normal = MaterialTheme.semanticColors.subtleText
                 val text = buildAnnotatedString {
                     append("· ")
-                    withStyle(SpanStyle(fontWeight = FontWeight.Medium, color = bold)) {
+                    // 用 SemiBold 而不是 Medium：bodySmall 字号下 Medium 与常规字重
+                    // 几乎看不出差别，条目短语就与后面的说明糊成一片。
+                    // 与版本标题同级也更统一。
+                    withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = bold)) {
                         append(item.title)
                     }
                     if (item.detail.isNotBlank()) {

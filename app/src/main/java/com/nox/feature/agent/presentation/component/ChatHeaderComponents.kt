@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.text.font.FontWeight
@@ -81,6 +82,8 @@ internal fun ChatHeader(
     onNavigateToBrowser: () -> Unit = {},
     /** 顶栏菜单里的「防误触」；为 null 时不展示该项。 */
     onEnableTouchLock: (() -> Unit)? = null,
+    /** 长按「防误触」菜单项时弹出解锁时长选择。 */
+    onConfigureTouchLock: () -> Unit = {},
     /** 聊天顶栏菜单里的插件入口（chat.header.menu 槽位）。 */
     pluginEntries: List<com.nox.feature.plugin.domain.PluginUiEntry> = emptyList(),
     pluginLanguageTag: String = "",
@@ -204,6 +207,7 @@ internal fun ChatHeader(
                     onNavigateToTerminal = onNavigateToTerminal,
                     onNavigateToGit = onNavigateToGit,
                     onEnableTouchLock = onEnableTouchLock,
+                    onConfigureTouchLock = onConfigureTouchLock,
                     pluginEntries = pluginEntries,
                     pluginLanguageTag = pluginLanguageTag,
                     onPluginEntry = onPluginEntry
@@ -259,6 +263,7 @@ private fun OverlayMenuButton(
     onNavigateToTerminal: () -> Unit,
     onNavigateToGit: () -> Unit,
     onEnableTouchLock: (() -> Unit)? = null,
+    onConfigureTouchLock: () -> Unit = {},
     pluginEntries: List<com.nox.feature.plugin.domain.PluginUiEntry> = emptyList(),
     pluginLanguageTag: String = "",
     onPluginEntry: (com.nox.feature.plugin.domain.PluginUiEntry) -> Unit = {}
@@ -320,7 +325,10 @@ private fun OverlayMenuButton(
                                 icon = FeatherIcons.Lock,
                                 label = stringResource(R.string.chat_touch_lock),
                                 active = false,
-                                onClick = { expanded = false; onEnableTouchLock() }
+                                onClick = { expanded = false; onEnableTouchLock() },
+                                // 隐藏入口：长按「防误触」弹解锁时长选择。
+                                // 不放到设置页是因为它是防误触自身的参数，跟菜单项同处更直觉。
+                                onLongClick = { expanded = false; onConfigureTouchLock() }
                             )
                         }
                         pluginEntries.forEach { entry ->
@@ -346,21 +354,23 @@ private fun OverlayMenuButton(
     }
 }
 
-/** 菜单项：图标 + 文本，开启中时右侧蓝点。 */
+/** 菜单项：图标 + 文本，开启中时右侧蓝点。传入 [onLongClick] 时支持长按（用于隐藏配置入口）。 */
 @Composable
 private fun HeaderMenuRow(
     icon: ImageVector,
     label: String,
     active: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(
+            .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClick = onClick
+                onClick = onClick,
+                onLongClick = onLongClick
             )
             // 垂直 12dp -> 14dp：行高 44dp -> 48dp，达到 Material 最小点击目标。
             // 三项相邻时 44dp 偏紧，实测容易点到邻项。
