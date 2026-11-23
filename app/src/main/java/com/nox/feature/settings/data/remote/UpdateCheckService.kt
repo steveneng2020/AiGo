@@ -105,14 +105,21 @@ class UpdateCheckService @Inject constructor(
      * 失败时返回空列表由调用方展示空态，不弹错——关于页不应因为网络问题变成错误页。
      */
     /**
-     * 更新日记：优先用 APK 内置的历史（离线可用），联网成功时再用远端数据覆盖。
+     * 更新日记：内置 + 远端合并，两侧各管一半场景。
      *
      * 内置数据由 Gradle 任务 `generateChangelog` 在构建时解析仓库根 `CHANGELOG.md` 生成，
-     * 写入 assets/changelog.json。这样断网或 GitHub API 被限流（匿名 60 次/小时）
-     * 时仍能看到历史，不会出现「暂无发布记录」这种误导性空态。
+     * 写入 assets/changelog.json，跟着 APK 走。
      *
-     * 远端数据优先的原因：它带 release 正文（人工撰写的详细说明），
-     * 且能覆盖「装了旧包、仓库已有新版本」的情况。
+     * | 场景 | 谁兜住 |
+     * |---|---|
+     * | 断网 / GitHub API 限流（匿名 60 次/小时）/ 代理不通 | 内置（`remote` 为空 → 直接返回 bundled） |
+     * | 装了旧包、仓库已有新版本 | 远端（带 release 资产，更新检查要用） |
+     * | 本地包比远端新（debug/预发，还没发 Release） | 内置（按 tag 补齐缺的版本） |
+     *
+     * 合并策略按 tag 去重且**优先保留远端**：远端那条带 `asset`，
+     * 更新检查靠它下载；内置那条只有说明文字。
+     * 任一侧为空时直接返回另一侧，所以「网络挂了」只会少掉新版本，
+     * 不会变成空白页。
      */
     suspend fun fetchAllReleases(): List<VersionUpdate> = withContext(Dispatchers.IO) {
         val bundled = readBundledChangelog()
@@ -122,8 +129,24 @@ class UpdateCheckService @Inject constructor(
                 ?.map { toVersionUpdate(it) }
                 .orEmpty()
         }.getOrDefault(emptyList())
-        // 远端有数据就用远端；否则退回内置，保证永不空白
-        if (remote.isNotEmpty()) remote else bundled
+        // 合并两侧：远端负责「装了旧包也能看到新版本」，内置负责「本地包比远端新」
+        // （debug/预发布阶段常见：包里已有 v1.0.3 的说明，但 v1.0.3 还没发 Release）。
+        // 按 tag 去重时优先保留远端——它带 release 资产，更新检查要用。
+        if (remote.isEmpty()) return@withContext bundled
+        if (bundled.isEmpty()) return@withContext remote
+        val merged = LinkedHashMap<String, VersionUpdate>()
+        remote.forEach { merged[it.tag] = it }
+        bundled.forEach { entry ->
+            if (!merged.containsKey(entry.tag)) {
+                merged[entry.tag] = entry
+            }
+        }
+        // compareVersions 按 '.' 切分后逐段 toIntOrNull()，遇到 'v' 前缀会把它
+        // 和后面第一段一起吞掉（"v1.0.3" -> [0, 3]，主版本号丢失），
+        // 所以这里先剥掉 v 再比。
+        merged.values.sortedWith { a, b ->
+            compareVersions(b.tag.removePrefix("v"), a.tag.removePrefix("v"))
+        }
     }
 
     /** 读取 APK 内置的更新日志（assets/changelog.json）。失败返回空列表。 */
@@ -183,6 +206,11 @@ class UpdateCheckService @Inject constructor(
 
     private fun toVersionUpdate(release: ReleaseInfo): VersionUpdate {
         val notes = release.notes.trim()
+        // Release 正文由 CHANGELOG.md 解析生成（见 android-release.yml），结构与内置
+        // changelog.json 同源：第一段是概括，之后每行 `- **短语**：说明` 是条目。
+        // 这里还原成结构化数据，否则关于页会退化成分不了条的纯文本，
+        // 与内置数据渲染出两种样式（用户看得见的格式不一致）。
+        val (summary, items) = parseReleaseNotes(notes)
         return VersionUpdate(
             tag = release.rawTag,
             changelog = if (notes.isEmpty()) {
@@ -191,8 +219,47 @@ class UpdateCheckService @Inject constructor(
                 cleanMarkdown(notes)
             },
             asset = selectUpdateAsset(release.assets, release.rawTag, preferredAbiToken(Build.SUPPORTED_ABIS.toList())),
-            publishedAt = release.publishedAt
+            publishedAt = release.publishedAt,
+            summary = summary,
+            items = items
         )
+    }
+
+    /**
+     * 把 Release 正文解析成「概括 + 条目」。
+     *
+     * 认得的格式（就是本仓库 CHANGELOG.md 的写法）：
+     * ```
+     * 一句话概括。
+     *
+     * - **短语**：说明
+     * - **短语**：说明
+     * ```
+     * 认不出的格式一律退化为空 items，调用方会回落到 changelog 纯文本渲染。
+     */
+    private fun parseReleaseNotes(notes: String): Pair<String, List<ChangelogItem>> {
+        if (notes.isBlank()) return "" to emptyList()
+        val itemRegex = Regex("""^-\s+\*\*(.+?)\*\*\s*[：:]\s*(.*)$""")
+        var summary = ""
+        val items = mutableListOf<ChangelogItem>()
+        notes.lines().forEach { raw ->
+            val line = raw.trim()
+            if (line.isEmpty()) return@forEach
+            if (line.startsWith("<!--")) return@forEach
+            val m = itemRegex.find(line)
+            if (m != null) {
+                items += ChangelogItem(
+                    title = m.groupValues[1].trim(),
+                    detail = m.groupValues[2].trim()
+                )
+                return@forEach
+            }
+            // 第一条非条目文本当作概括；后续散落文本忽略（不塞进条目，免得格式错乱）
+            if (summary.isEmpty() && !line.startsWith("-") && !line.startsWith("*")) {
+                summary = line
+            }
+        }
+        return summary to items
     }
 
     /** 轻量清理 markdown：去掉行首标题符与粗体标记，并删除 GitHub 自动生成的标题/链接行，保留纯文本便于直接阅读。 */
