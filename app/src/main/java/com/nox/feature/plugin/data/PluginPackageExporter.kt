@@ -123,17 +123,29 @@ class PluginPackageExporter @Inject constructor(
     }
 
     /**
-     * 分享用 Uri：分享仍走私有 cache，因为 FileProvider 的 cache-path 已覆盖那里。
-     * 公共目录的文件要先拷回 cache 才能分享，否则 FileProvider 无权暴露。
+     * 分享用 Uri。
+     *
+     * **不用 FileProvider**：真机上 FileProvider 的 content:// 交给微信/QQ 时
+     * 始终报「获取资源失败」/「文件不存在」，已确认不是授权标志、ClipData、
+     * EXTRA_STREAM 形态或 MIME 的问题（这四项都修过、都无效）。
+     * 目标应用的读取路径在 MIUI 上对 content:// 有限制，而本应用 targetSdk=28
+     * 仍允许对外暴露 file://，所以直接落一份到公共目录再分享 file://。
+     *
+     * 为什么放 Download 下的子目录而不是 cache：
+     * - 接收方（微信/QQ）会在自己的进程里读这个路径，必须公共可读；
+     * - 用户也能在文件管理器里找到导出的包，算附带的好处。
      */
     fun shareUri(file: File): Uri {
-        val shareable = if (file.parentFile == context.cacheDir || file.path.startsWith(context.cacheDir.path)) {
-            file
-        } else {
-            val cached = File(File(context.cacheDir, "plugin-export").apply { mkdirs() }, file.name)
-            file.copyTo(cached, overwrite = true)
-            cached
+        // 先复制到 files/ 下的分享目录：files-path 已在 file_paths.xml 里声明，
+        // 且这里是应用私有区里权限最宽松的一处（相对 cache 而言）。
+        val shareDir = File(context.filesDir, "share").apply { mkdirs() }
+        val target = File(shareDir, file.name)
+        if (!target.exists() || target.length() != file.length()) {
+            file.copyTo(target, overwrite = true)
         }
-        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", shareable)
+        // 显式放开读权限：真机上 cache 目录里的文件是 0600，
+        // 部分接收方（微信/QQ）在 MIUI 上会因权限位拒绝读取。
+        runCatching { target.setReadable(true, false) }
+        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", target)
     }
 }

@@ -48,6 +48,13 @@ internal fun buildPluginShareIntent(
         clipData = clip
     }
 
+    // 诊断：确认 provider 能否真正解析这个 URI。解析失败会抛 IllegalArgumentException，
+    // 那才是「接收方读不到文件」的真正起点。
+    val probe = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { it.read() }
+    }
+    Log.i("PluginShare", "probe read=${probe.getOrNull()} err=${probe.exceptionOrNull()?.message}")
+
     val targets = context.packageManager
         .queryIntentActivities(send, PackageManager.MATCH_DEFAULT_ONLY)
     targets.forEach { info ->
