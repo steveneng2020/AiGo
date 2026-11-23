@@ -226,41 +226,6 @@ private fun SettingsSection.depth(): Int = when (this) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 
-/**
- * 构造分享 Intent 并把 URI 读权限显式授予所有能接收的应用。
- *
- * 为什么不能只靠 FLAG_GRANT_READ_URI_PERMISSION：
- * 该标志只对「Intent 的直接接收者」生效。share 走 createChooser 时，
- * 中间隔了系统 Chooser，部分厂商定制 ROM 与微信/QQ 这类应用拿不到
- * 临时授权，读文件时报「获取资源失败」/「文件不存在」。
- * 逐个 grantUriPermission 是唯一在各类 ROM 上都稳定的做法。
- */
-private fun buildShareIntent(
-    context: android.content.Context,
-    uri: android.net.Uri,
-    title: String
-): android.content.Intent {
-    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-        type = "application/zip"
-        putExtra(android.content.Intent.EXTRA_STREAM, uri)
-        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        clipData = android.content.ClipData.newRawUri(null, uri)
-    }
-    val targets = context.packageManager.queryIntentActivities(
-        send,
-        android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
-    )
-    targets.forEach { info ->
-        runCatching {
-            context.grantUriPermission(
-                info.activityInfo.packageName,
-                uri,
-                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-        }
-    }
-    return android.content.Intent.createChooser(send, title)
-}
 
 @Composable
 fun SettingsScreen(
@@ -598,7 +563,7 @@ fun SettingsScreen(
                 runCatching {
                     val uri = deps.pluginPackageExporter().shareUri(staging)
                     context.startActivity(
-                        buildShareIntent(
+                        com.nox.feature.plugin.presentation.buildPluginShareIntent(
                             context,
                             uri,
                             pluginDrawerAppContext.getString(R.string.plugins_share_package)
@@ -617,7 +582,11 @@ fun SettingsScreen(
 
         // 导出到本地：用户选过目录就直接写，没选过就交给调用方弹目录选择器。
         val chosen = deps.pluginPackageExporter().chosenDirUri()
-        if (chosen == null) {
+        // 记忆里的目录可能已失去授权（用户在系统设置里撤销、换 SD 卡、重装应用，
+        // 或历史版本曾用错误形式授权过）。直接写会抛 Permission Denial，
+        // 与其让用户看到报错，不如当作「没选过」重新弹一次选择器。
+        if (chosen == null || !deps.pluginPackageExporter().hasPersistedPermission(chosen)) {
+            chosen?.let { deps.pluginPackageExporter().clearChosenDir() }
             pendingExportStaging = staging
             return PENDING_DIR_PICK
         }
@@ -672,7 +641,7 @@ fun SettingsScreen(
                 runCatching {
                     val uri = pluginDrawerExportDeps.pluginPackageExporter().shareUri(zip)
                     context.startActivity(
-                        buildShareIntent(
+                        com.nox.feature.plugin.presentation.buildPluginShareIntent(
                             context,
                             uri,
                             pluginDrawerAppContext.getString(R.string.plugins_share_package)

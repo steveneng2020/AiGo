@@ -34,15 +34,31 @@ class PluginPackageExporter @Inject constructor(
     /**
      * 用户选定的导出目录（持久化权限的 tree uri）。未选过返回 null。
      *
-     * 存的是 [Uri.toString] 的结果，即**已编码**形式（`tree/primary%3ADownload%2FAiGo`）。
-     * 直接 Uri.parse 得到的是编码过的字符串，但 DocumentsContract 需要的是
-     * 原始 tree uri（`tree/primary:Download/AiGo`），否则会报
-     * `Invalid URI: content://...tree/primary%3A...`。
-     * 因此读出时用 Uri.decode 还原一次。
+     * **必须原样返回 [Uri.toString] 存下的编码形式**，不能 Uri.decode：
+     * takePersistableUriPermission 授权的就是编码形式，系统按字符串比对授权记录；
+     * 一旦解码（`%3A` -> `:`、`%2F` -> `/`），Uri 与授权记录对不上，
+     * DocumentsContract 会报
+     * `Permission Denial: ... requires MANAGE_DOCUMENTS, or grantUriPermission()`。
+     *
+     * 之前那个 `Invalid URI` 的真正原因不是编码，而是 createDocument 要的是
+     * **目录的 document uri**，不能直接传 tree uri。那个问题已在
+     * [writeToChosenDir] 里用 buildDocumentUriUsingTree 修正。
      */
     fun chosenDirUri(): Uri? =
         prefs().getString(KEY_DIR_URI, null)
-            ?.let { runCatching { Uri.parse(Uri.decode(it)) }.getOrNull() }
+            ?.let { runCatching { Uri.parse(it) }.getOrNull() }
+
+    /**
+     * 该 tree uri 是否仍持有持久化读写授权。
+     *
+     * 用户在系统设置里撤销授权、卸载重装、换 SD 卡、或历史版本曾用错误形式
+     * 授权过，都会让记录失效；此时直接写入会抛
+     * `Permission Denial: ... requires MANAGE_DOCUMENTS, or grantUriPermission()`。
+     * 调用方应先检查，失效就走「清掉记忆 + 重新弹目录选择器」。
+     */
+    fun hasPersistedPermission(uri: Uri): Boolean = runCatching {
+        context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isWritePermission }
+    }.getOrDefault(false)
 
     fun rememberDir(uri: Uri) {
         prefs().edit().putString(KEY_DIR_URI, uri.toString()).apply()

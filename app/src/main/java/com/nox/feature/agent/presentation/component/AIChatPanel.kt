@@ -1099,6 +1099,7 @@ fun AIChatPanel(
     // 之前每 1.5 秒轮询一次，聊天页开着就一直在读剪贴板，
     // Android 10+ 每次读都要跨进程请求系统服务，没必要。
     var clipboardImageAvailable by remember { mutableStateOf(false) }
+    val clipboardHintRetryScope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -1117,7 +1118,21 @@ fun AIChatPanel(
         val manager = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
             as? android.content.ClipboardManager
         val listener = android.content.ClipboardManager.OnPrimaryClipChangedListener {
+            // Android 10+ 限制：应用不在前台焦点时 primaryClip 返回 null。
+            // 截图动作发生的瞬间本应用可能还没拿到焦点（系统截图浮层刚收起），
+            // 立即读会读到 null，所以要再补两次延迟重试。
             clipboardImageAvailable = clipboardHasImage(context)
+            if (!clipboardImageAvailable) {
+                clipboardHintRetryScope.launch {
+                    repeat(3) {
+                        kotlinx.coroutines.delay(300)
+                        if (clipboardHasImage(context)) {
+                            clipboardImageAvailable = true
+                            return@launch
+                        }
+                    }
+                }
+            }
         }
         manager?.addPrimaryClipChangedListener(listener)
         onDispose { manager?.removePrimaryClipChangedListener(listener) }
@@ -1125,6 +1140,20 @@ fun AIChatPanel(
     // 首次进入也查一次（冷启动时 ON_RESUME 可能早于监听注册）。
     LaunchedEffect(Unit) {
         clipboardImageAvailable = clipboardHasImage(context)
+    }
+    // 窗口重新拿到焦点时再查一次。
+    // 截图后即使应用一直是 resumed，系统截图浮层收起、焦点回到本窗口是需要时间的；
+    // 监听器回调那一刻读不到剪贴板（Android 10+ 非焦点时返回 null），
+    // 这里用窗口焦点事件兜住那条路径。
+    val view = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(view) {
+        val listener = android.view.View.OnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                clipboardImageAvailable = clipboardHasImage(context)
+            }
+        }
+        view.onFocusChangeListener = listener
+        onDispose { view.onFocusChangeListener = null }
     }
 
     fun handlePickedAttachments(uris: List<Uri>, images: Boolean) {

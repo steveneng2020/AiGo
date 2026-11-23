@@ -531,14 +531,13 @@ fun AppNavigation(
             val failed = withContext(Dispatchers.Main) {
                 runCatching {
                     val uri = pluginDrawerDeps.pluginPackageExporter().shareUri(zip)
-                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = "application/zip"
-                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
+                    // 显式授权 + ClipData：createChooser 会隔一层系统 Chooser，
+                    // 只靠 Intent 标志时微信/QQ 拿不到临时授权，
+                    // 读文件报「获取资源失败」/「文件不存在」。
                     activityCtx.startActivity(
-                        android.content.Intent.createChooser(
-                            intent,
+                        com.nox.feature.plugin.presentation.buildPluginShareIntent(
+                            activityCtx,
+                            uri,
                             ctx.getString(R.string.plugins_share_package)
                         )
                     )
