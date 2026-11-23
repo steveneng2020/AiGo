@@ -4,6 +4,7 @@
 # 用法：
 #   aigo-gate            全量门禁（敏感信息 + 迁移 + 品牌 + 编译 + 单测）
 #   aigo-gate --fast     跳过单测（只改 UI/资源时用）
+#   aigo-gate --wait     额外轮询 CI 到全部结束并校验结果（默认只查是否触发）
 #
 # 退出码：0 全部通过；非 0 表示有检查未通过，不要提交。
 
@@ -19,7 +20,13 @@ export ANDROID_USER_HOME=/root/.android-home
 mkdir -p "$ANDROID_USER_HOME" 2>/dev/null || true
 
 FAST=0
-[ "${1:-}" = "--fast" ] && FAST=1
+CI_WAIT=0
+for arg in "$@"; do
+  case "$arg" in
+    --fast) FAST=1 ;;
+    --wait|--wait=*) CI_WAIT=1 ;;
+  esac
+done
 
 fail=0
 step() { printf '\n== %s ==\n' "$1"; }
@@ -586,30 +593,50 @@ else
   bad "android-release.yml 缺少 workflow_dispatch，发版将无法手动触发"
 fi
 
-# push 后是否真的产生了 workflow run。
-# 2026-11-22 踩过：git push 报 TLS/RPC 错误但 ref 已更新，事件却没投递，
-# Actions 一次都没跑，而 git ls-remote 显示代码在，误以为一切正常。
-# 判据：用 GitHub API 查该 sha 的 run，0 个就提醒去手动触发。
+# push 闭环：既看触发，也看结果。
+#
+# 只看触发不够：2026-11-22 踩过 push 报告成功但事件未投递（Actions 一次没跑），
+# 而代码明明在远端；更常见的是触发了但跑红（Beta Build 曾因单测变体选错
+# 连续 5 次变红），本地只看「已推送」完全无感。
+# 默认不等结果（门禁要快）；加 --wait 才轮询到全部结束。
 if command -v curl >/dev/null 2>&1 && [ -f "$HOME/.nox/git-credential-nox" ]; then
   remote_sha=$(git rev-parse origin/main 2>/dev/null || echo '')
   if [ -n "$remote_sha" ] && [ "$remote_sha" = "$(git rev-parse HEAD 2>/dev/null)" ]; then
-    token=$(echo "url=https://github.com" | git credential fill 2>/dev/null \
-            | grep '^password=' | sed 's/^password=//')
-    if [ -n "$token" ]; then
-      runs=$(curl -s -m 20 -H "Authorization: Bearer $token" \
-        "https://api.github.com/repos/steveneng2020/AiGo/actions/runs?head_sha=$remote_sha" \
-        2>/dev/null | grep -o '"total_count": *[0-9]*' | grep -o '[0-9]*$' | head -1)
-      if [ -z "$runs" ]; then
-        echo "  [SKIP] 无法查询 Actions run（网络或限流）"
-      elif [ "$runs" = "0" ]; then
-        echo "  [WARN] 本次提交没有产生任何 workflow run（push 事件可能未投递）"
-        echo "        sha=$remote_sha"
-        echo "        处理：Actions 页手动 Run workflow，或改一行再推一次"
+    wait_sec=0
+    [ "$CI_WAIT" = "1" ] && wait_sec=10
+    if [ "$wait_sec" = "0" ]; then
+      # 快查：只看触发（总 run 数 > 0），不轮询。
+      token=$(cd "$MAIN" && echo "url=https://github.com" | git credential fill 2>/dev/null \
+              | grep '^password=' | sed 's/^password=//')
+      if [ -n "$token" ]; then
+        runs=$(curl -s -m 20 -H "Authorization: Bearer $token" \
+          "https://api.github.com/repos/steveneng2020/AiGo/actions/runs?head_sha=$remote_sha" \
+          2>/dev/null | grep -o '"total_count": *[0-9]*' | grep -o '[0-9]*$' | head -1)
+        if [ -z "$runs" ]; then
+          echo "  [SKIP] 无法查询 Actions run（网络或限流）"
+        elif [ "$runs" = "0" ]; then
+          echo "  [WARN] 本次提交没有产生任何 workflow run（push 事件可能未投递）"
+          echo "        sha=$remote_sha"
+          echo "        处理：Actions 页手动 Run workflow，或改一行再推一次"
+        else
+          ok "push 已触发 $runs 个 workflow run（结果未查；加 --wait 连结果一起看）"
+        fi
       else
-        ok "push 已触发 $runs 个 workflow run"
+        echo "  [SKIP] 取不到 GitHub 凭据，跳过 run 检查"
       fi
     else
-      echo "  [SKIP] 取不到 GitHub 凭据，跳过 run 检查"
+      # 等结果：调共享脚本，与 aigo verify-push 同源。
+      out=$(cd "$MAIN" && python3 scripts/check_actions.py --sha "$remote_sha" --wait "$wait_sec" 2>&1)
+      rc=$?
+      if [ "$rc" = "0" ]; then
+        ok "CI 全部通过：$(echo "$out" | tail -1)"
+      elif [ "$rc" = "2" ]; then
+        echo "  [SKIP] 无法查询 Actions（网络或限流）"
+      else
+        bad "CI 未通过（查看下方详情）"
+        echo "$out" | sed 's/^/        /'
+        echo "        处置：看失败步骤 → 本地复现 → 修完再推"
+      fi
     fi
   else
     echo "  [SKIP] 本地 HEAD 与 origin/main 不一致，先推送再看"
