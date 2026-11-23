@@ -564,6 +564,9 @@ fun SettingsScreen(
                         type = "application/zip"
                         putExtra(android.content.Intent.EXTRA_STREAM, uri)
                         addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        // 部分接收方（旧版 QQ / 微信）不读 ClipData，只认 EXTRA_STREAM 上的授权。
+                        // 同时写一份到 ClipData，两边都拿到权限。
+                        clipData = android.content.ClipData.newRawUri(null, uri)
                     }
                     context.startActivity(
                         android.content.Intent.createChooser(
@@ -573,7 +576,10 @@ fun SettingsScreen(
                     )
                 }
             }.exceptionOrNull()
-            staging.delete()
+            // 不能在 Intent 发出后立即删：接收方（微信 / QQ）是异步读文件的，
+            // 等它开始读时文件已经被删，表现为「获取资源失败」/「文件不存在」。
+            // 这里只记录失败情况下的清理；正常路径交给 cache 目录自己淘汰。
+            if (failure != null) staging.delete()
             return if (failure != null) {
                 pluginDrawerAppContext.getString(R.string.plugins_share_failed)
             } else null
@@ -639,6 +645,8 @@ fun SettingsScreen(
                         type = "application/zip"
                         putExtra(android.content.Intent.EXTRA_STREAM, uri)
                         addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        // 部分接收方不读 EXTRA_STREAM 上的授权，靠 ClipData 才拿到。
+                        clipData = android.content.ClipData.newRawUri(null, uri)
                     }
                     context.startActivity(
                         android.content.Intent.createChooser(
