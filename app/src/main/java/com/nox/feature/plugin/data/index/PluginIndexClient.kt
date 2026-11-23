@@ -1,5 +1,7 @@
 package com.nox.feature.plugin.data.index
 
+import com.nox.core.util.FileLogger
+
 import android.content.Context
 import com.nox.feature.plugin.data.PluginStoreSettingsRepository
 import com.nox.feature.plugin.domain.SemVer
@@ -102,10 +104,26 @@ class PluginIndexClient @Inject constructor(
         val (owner, repo) = parseGitHubRepo(plugin.repository)
             ?: throw NoMatchingReleaseException("不是 GitHub 仓库: ${plugin.repository}")
         val expectedName = plugin.version?.let { assetName(plugin.id, it) }
-        val releases = if (plugin.version == null) {
-            listOf(apiGet<GitHubRelease>("$GITHUB_API/repos/$owner/$repo/releases/latest"))
-        } else {
-            apiGet<List<GitHubRelease>>("$GITHUB_API/repos/$owner/$repo/releases?per_page=100")
+        val releases = try {
+            if (plugin.version == null) {
+                listOf(apiGet<GitHubRelease>("$GITHUB_API/repos/$owner/$repo/releases/latest"))
+            } else {
+                apiGet<List<GitHubRelease>>("$GITHUB_API/repos/$owner/$repo/releases?per_page=100")
+            }
+        } catch (e: NoMatchingReleaseException) {
+            // 匿名调 GitHub API 只有 60 次/小时，很容易打满（403）。
+            // 资产名规则是确定的（{id}_{version}.zip），可以直接拼下载直链，
+            // 不经过 API —— releases/download 是网页端点，不受 API 限流影响。
+            val v = plugin.version?.takeIf { it.isNotBlank() } ?: throw e
+            // tag 可能带 v 也可能不带，两种都试；下载器会按候选顺序回退。
+            val guessed = "https://github.com/$owner/$repo/releases/download/v$v/${assetName(plugin.id, v)}"
+            FileLogger.w("PluginIndex", "API 失败，改用直链: $guessed（原因: ${e.message}）")
+            return@withContext PluginReleaseAsset(
+                version = plugin.version!!,
+                name = assetName(plugin.id, plugin.version),
+                url = guessed,
+                size = 0L
+            )
         }
         val candidates = releases
             .filterNot { it.draft }
@@ -212,6 +230,18 @@ class PluginIndexClient @Inject constructor(
             .build()
         http.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
+                // 403/429 几乎都是匿名调用 GitHub API 的限流（60 次/小时/IP）。
+                // 给出可操作的提示，而不是让用户面对「HTTP 403」猜。
+                if (response.code == 403 || response.code == 429) {
+                    val remaining = response.header("X-RateLimit-Remaining")
+                    val reset = response.header("X-RateLimit-Reset")
+                    throw NoMatchingReleaseException(
+                        "GitHub API 调用次数已用尽（匿名每小时 60 次）" +
+                            (remaining?.let { "，剩余 $it 次" } ?: "") +
+                            (reset?.let { "，约 ${it.toLongOrNull()?.let { t -> ((t * 1000 - System.currentTimeMillis()) / 60000).coerceAtLeast(0) } ?: "?"} 分钟后恢复" } ?: "") +
+                            "。可稍后重试，或在插件设置里配置 GitHub Token 提升额度。"
+                    )
+                }
                 throw NoMatchingReleaseException("GitHub Release 请求失败: HTTP ${response.code}")
             }
             val body = response.body?.string() ?: throw NoMatchingReleaseException("GitHub Release 响应为空")

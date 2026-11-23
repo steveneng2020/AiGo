@@ -34,7 +34,20 @@ internal fun buildPluginShareIntent(
     uri: Uri,
     title: String
 ): Intent {
-    val displayName = uri.lastPathSegment?.substringAfterLast('/') ?: "plugin.zip"
+    // 不能用 uri.lastPathSegment：MediaStore 的 URI 末段是 _id（如 465404），
+    // 不是文件名。微信拿这个当文件名，得到没有 .zip 后缀的纯数字，认不出类型。
+    // 必须回查 ContentResolver 的 DISPLAY_NAME。
+    val displayName = runCatching {
+        context.contentResolver.query(
+            uri,
+            arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+            null, null, null
+        )?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    }.getOrNull()?.takeIf { it.isNotBlank() }
+        ?: uri.lastPathSegment?.substringAfterLast('/')
+        ?: "plugin.zip"
     val mime = context.contentResolver.getType(uri) ?: "application/zip"
     // newUri 会查询 MIME，description 里带真实 type；newRawUri 不会（见上面第 1 点）
     val clip = ClipData.newUri(context.contentResolver, displayName, uri)
