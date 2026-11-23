@@ -188,6 +188,16 @@ internal fun PluginsSection(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     val storeViewModel: PluginStoreViewModel = hiltViewModel()
     val storeState by storeViewModel.state.collectAsStateWithLifecycle()
+
+    // 已安装页点「更新」也会走 storeViewModel.install()，那条路径同样会产出 preview。
+    // 商店页有消费 preview 的 LaunchedEffect，这里没有的话预览永远不会弹，
+    // 表现为「点更新没反应」。补上同一段消费逻辑。
+    LaunchedEffect(storeState.preview) {
+        storeState.preview?.let { preview ->
+            onShowStorePreview(preview)
+            storeViewModel.consumePreview()
+        }
+    }
     val pageCount = if (devMode) 3 else 2
     val installedListState = rememberLazyListState()
     val devListState = rememberLazyListState()
