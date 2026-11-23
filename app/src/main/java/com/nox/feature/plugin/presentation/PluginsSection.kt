@@ -198,6 +198,32 @@ internal fun PluginsSection(
             storeViewModel.consumePreview()
         }
     }
+    // 已安装页点「更新」走的是 storeViewModel.install()，它失败时把错误写进
+    // storeState.error。商店页有自己的错误渲染，已安装页没有——于是「点了没反应」。
+    // 这里把错误转成 Toast，保证任何失败都有反馈。
+    val updateErrorContext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(storeState.error) {
+        val err = storeState.error ?: return@LaunchedEffect
+        // 只处理安装类错误（下载/无可用版本/预览失败），索引错误由商店页自己展示
+        if (err.code != com.nox.feature.plugin.presentation.PluginStoreErrorCode.DOWNLOAD_FAILED &&
+            err.code != com.nox.feature.plugin.presentation.PluginStoreErrorCode.NO_COMPATIBLE_RELEASE &&
+            err.code != com.nox.feature.plugin.presentation.PluginStoreErrorCode.PREVIEW_FAILED
+        ) return@LaunchedEffect
+        val msg = buildString {
+            append(
+                when (err.code) {
+                    com.nox.feature.plugin.presentation.PluginStoreErrorCode.NO_COMPATIBLE_RELEASE ->
+                        "未找到可安装的版本"
+                    com.nox.feature.plugin.presentation.PluginStoreErrorCode.DOWNLOAD_FAILED ->
+                        "下载失败"
+                    else -> "安装包校验失败"
+                }
+            )
+            err.detail?.takeIf { it.isNotBlank() }?.let { append("：").append(it) }
+        }
+        android.widget.Toast.makeText(updateErrorContext, msg, android.widget.Toast.LENGTH_LONG).show()
+        com.nox.core.util.FileLogger.w("PluginUpdate", "install error: $msg")
+    }
     val pageCount = if (devMode) 3 else 2
     val installedListState = rememberLazyListState()
     val devListState = rememberLazyListState()
