@@ -89,10 +89,15 @@ jobs:
       # IOException（MavenArtifactFetcher: AssertionError -> ExecutionException ->
       # IOException），表现为 classMethod FAILED，与代码无关。该测试本地可单独跑。
       # --continue：多个测试类失败时一次全跑完。
+      # --no-configuration-cache 必需：
+      # 仓库开了 org.gradle.configuration-cache=true，而 filter.excludeTestsMatching
+      # 在配置阶段生效。配置缓存命中时会把上次的测试过滤结果直接复用，
+      # 导致 -PexcludeMigrationTest 虽然传了却不生效（实测 CI 仍跑 MigrationTest）。
+      # 加上该参数强制重算配置，代价只是本任务多几秒，不影响构建产物。
       - name: Run unit tests
         run: >-
           ./gradlew :app:testUniversalDebugUnitTest --stacktrace --continue
-          -PexcludeMigrationTest
+          -PexcludeMigrationTest --no-configuration-cache
 
       # 产物重命名为 AiGo-universal-beta-<版本>-<sha7>.apk：
       # 短 sha 便于区分每次构建，版本名（含日期）便于对照是哪次提交出的包。

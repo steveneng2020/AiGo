@@ -553,7 +553,14 @@ tasks.named("preBuild") { dependsOn(genChangelog) }
 // （MavenArtifactFetcher: AssertionError -> ExecutionException -> IOException），
 // 表现为 classMethod FAILED，与代码本身无关。本地网络正常时可完整跑。
 // 用法：./gradlew :app:testUniversalDebugUnitTest -PexcludeMigrationTest
-if ((project.findProperty("excludeMigrationTest") as String?)?.toBoolean() == true) {
+//
+// 判据是「属性存在且不为 false」，不能用 toBoolean()：
+// `-PexcludeMigrationTest` 不带 =true 时 Gradle 给的值是空字符串，
+// toBoolean() 得到 false，过滤静默失效（实测 CI 仍跑 MigrationTest）。
+val excludeMigrationTestProp = project.findProperty("excludeMigrationTest") as String?
+val excludeMigrationTest = excludeMigrationTestProp != null &&
+    excludeMigrationTestProp.lowercase() != "false"
+if (excludeMigrationTest) {
     tasks.withType<Test>().configureEach {
         filter {
             excludeTestsMatching("*MigrationTest")
