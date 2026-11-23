@@ -514,13 +514,18 @@ fun AppNavigation(
         val zip = withContext(Dispatchers.IO) {
             runCatching {
                 val plugin = installedPluginsForSlots.firstOrNull { it.id == pluginId }
-                    ?: return@runCatching null
+                    ?: run {
+                        android.util.Log.w("PluginShare", "export: plugin not found id=$pluginId")
+                        return@runCatching null
+                    }
                 val version = plugin.manifest?.version?.toString() ?: plugin.record.version
                 pluginDrawerDeps.pluginPackageExporter().export(
                     pluginId,
                     version,
                     pluginDrawerDeps.pluginManager().installDirFor(pluginId)
                 )
+            }.onFailure {
+                android.util.Log.w("PluginShare", "export failed id=$pluginId", it)
             }.getOrNull()
         }
         if (zip == null) {

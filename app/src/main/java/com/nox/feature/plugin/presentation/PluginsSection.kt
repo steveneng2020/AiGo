@@ -626,7 +626,10 @@ private fun PluginRow(
                     // 「可更新」原来是纯提示，用户得自己去商店找同一个插件。
                     // 现在做成可点按钮，直接走商店页那套完整安装流程（含确认框、进度）。
                     androidx.compose.material3.Surface(
-                        onClick = { onUpdate(update) },
+                        onClick = {
+                            android.util.Log.w("PluginUpdate", "tap update ${update.plugin.id} v${update.plugin.version}")
+                            onUpdate(update)
+                        },
                         shape = RoundedCornerShape(999.dp),
                         color = MaterialTheme.colorScheme.primaryContainer
                     ) {
