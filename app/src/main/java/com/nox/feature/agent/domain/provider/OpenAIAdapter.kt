@@ -39,6 +39,10 @@ import com.nox.feature.agent.data.remote.openai.OpenAIFunctionDefinition
 import com.nox.feature.agent.data.remote.openai.OpenAIImagePart
 import com.nox.feature.agent.data.remote.openai.StreamOptions
 
+/** Fast 模式使用的 service_tier：上游只接受 auto/default/flex/scale/priority，
+ * 发 "fast" 会被直接 400（unknown variant `fast`）。 */
+private const val SERVICE_TIER_FAST = "auto"
+
 class OpenAIAdapter @Inject constructor(
     private val api: OpenAIApi,
     private val okHttpClient: OkHttpClient,
@@ -147,7 +151,7 @@ class OpenAIAdapter @Inject constructor(
             tool_choice = if (toolDefs != null) "auto" else null,
             stream = false,
             prompt_cache_key = if (chatCacheKeyEnabled) logSessionId else null,
-            service_tier = "fast".takeIf { fastMode }
+            service_tier = SERVICE_TIER_FAST.takeIf { fastMode }
         )
         val seq = AILogger.logRequest(logSessionId, "OpenAI", model, "POST", resolveApiUrl(), request)
 
@@ -240,7 +244,7 @@ class OpenAIAdapter @Inject constructor(
             request["tool_choice"] = "auto"
         }
         if (stream) request["stream"] = true
-        if (fastMode) request["service_tier"] = "fast"
+        if (fastMode) request["service_tier"] = SERVICE_TIER_FAST
         // Responses 端点的思考字段：effort 走 reasoning.effort；厂商私有开关走 thinking / enable_thinking。
         when (val wire = responsesReasoningPlan(reasoningEffort).wire) {
             is ReasoningWire.Effort -> {
@@ -377,7 +381,7 @@ class OpenAIAdapter @Inject constructor(
             stream = true,
             stream_options = StreamOptions(include_usage = true),
             prompt_cache_key = if (chatCacheKeyEnabled) logSessionId else null,
-            service_tier = "fast".takeIf { fastMode }
+            service_tier = SERVICE_TIER_FAST.takeIf { fastMode }
         )
         val seq = AILogger.logRequest(logSessionId, "OpenAI", model, "POST", resolveApiUrl(), request)
         // 原始 SSE 分批落盘（见 AILogger.beginRawSse），本轮结束在 finally 收尾。
