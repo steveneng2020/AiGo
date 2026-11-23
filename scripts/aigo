@@ -328,13 +328,24 @@ print(s[:16])
   #   debug   —— 只保留同版本最新一份，避免目录堆出多个同版本测试包分不清。
   ver_core=$(printf '%s' "$ver" | sed 's/-.*$//')
   if [ "$build" = "debug" ]; then
-    for old in "$outdir"/AiGo-debug-"$ver_core"-*.apk; do
+    for old in "$outdir"/AiGo-*-"$ver_core"-debug-*.apk; do
       [ -f "$old" ] && rm -f "$old" && echo "清理同版本旧测试包: $(basename "$old")"
     done
   fi
 
-  stamp=$(date +%Y%m%d-%H%M)
-  out="$outdir/AiGo-${build}-${ver}-${stamp}-${summary}.apk"
+  stamp=$(date +%Y%m%d)
+  # ABI：从 APK 自身读，不靠 flavor 推断（flavor 名与产物 abi 不一定同名）。
+  abi=$("$aapt2" dump badging "$src" 2>/dev/null \
+        | grep -o "native-code: *'[^']*'" | head -1 \
+        | sed "s/.*'\([^']*\)'.*/\1/")
+  [ -n "$abi" ] || abi="universal"
+  # 多 ABI 时用 - 连接，保持文件名可读：arm64-v8a + x86_64 -> arm64-v8a+x86_64
+  abi=$(printf '%s' "$abi" | tr ' ' '+')
+
+  # 命名规则：AiGo-<abi>-<版本>-<摘要>-<构建日期>.apk
+  # 类别（debug/release）放在摘要前作为“摘要”的前缀，
+  # 这样既符合规则又能直接用文件名区分测试包与正式包。
+  out="$outdir/AiGo-${abi}-${ver}-${build}-${summary}-${stamp}.apk"
   cp "$src" "$out" && echo "产物: $out"
 }
 

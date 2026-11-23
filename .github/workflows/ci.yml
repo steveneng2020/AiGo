@@ -1,20 +1,15 @@
 name: CI
 
-# 只在 PR 与手动触发时跑：验证冒烟编译 + 单元测试。
+# 只在手动触发时跑：验证冒烟编译 + 单元测试。
 #
-# push 到 main 不再触发本 workflow，改由 beta.yml 一并承担：
-# 两个 workflow 都挂 push 时，同一个 commit 会出两条同名 run（GitHub 用
-# commit 标题作显示名），Gradle 编译跑两遍，白等 6 分钟。
-# 现在 push 只跑 beta.yml（出包 + 单测），本文件负责 PR 门禁与手动复验。
+# 为什么去掉 push 与 pull_request 两个自动触发：
+#   push 到 main —— 已由 beta.yml 承担（出包 + 单测）。两个 workflow 都挂 push 时
+#                  同一 commit 会出两条同名 run（GitHub 用 commit 标题作显示名），
+#                  Gradle 编译跑两遍，白等 6 分钟。
+#   pull_request —— 本仓库直接推 main，从不建 PR，这个触发器永远不生效，
+#                  属于无效配置，留着只会在排查 workflow 时造成误判。
+# 保留 workflow_dispatch：需要单独验证编译与单测时手动跑。
 on:
-  pull_request:
-    branches: [ main ]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'docs-site/**'
-      - 'LICENSE'
-      - '.gitignore'
   # 允许在 Actions 页面手动触发，便于单独验证编译与单测。
   workflow_dispatch:
 
