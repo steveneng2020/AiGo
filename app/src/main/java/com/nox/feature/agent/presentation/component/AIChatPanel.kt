@@ -2007,6 +2007,7 @@ fun AIChatPanel(
                     // 真的又截了一张，ON_RESUME 会重新把它显示出来。
                     clipboardImageAvailable = false
                 },
+                onDismissClipboardHint = { clipboardImageAvailable = false },
                 canUploadFiles = canUploadFiles,
                 canUploadImages = canUploadImages,
                 onUploadFile = { filePicker.launch("*/*") },

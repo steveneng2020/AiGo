@@ -2185,7 +2185,7 @@
     <string name="touch_lock_hold_desc">How long you must hold the screen to exit touch-lock mode. Shorter is easier to unlock, but also easier to trigger by accident.</string>
     <string name="touch_lock_hold_seconds">%1$s sec</string>
     <string name="touch_lock_hold_seconds_decimal">%1$s sec</string>
-    <string name="touch_lock_hold_instant">Tap to unlock</string>
-    <string name="touch_lock_hold_min_hint">0 sec (tap)</string>
+    <string name="touch_lock_hold_min_hint">0.1 sec (tap)</string>
     <string name="touch_lock_hold_max_hint">5 sec</string>
+    <string name="chat_clipboard_image_dismiss">Dismiss</string>
 </resources>

@@ -2383,7 +2383,7 @@
     <string name="touch_lock_hold_desc">在防误触模式下，需要按住屏幕多久才会退出。时间越短越容易解开，也越容易误触。</string>
     <string name="touch_lock_hold_seconds">%1$s 秒</string>
     <string name="touch_lock_hold_seconds_decimal">%1$s 秒</string>
-    <string name="touch_lock_hold_instant">点一下即退出</string>
-    <string name="touch_lock_hold_min_hint">0 秒（点一下就开）</string>
+    <string name="touch_lock_hold_min_hint">0.1 秒（几乎点一下就开）</string>
     <string name="touch_lock_hold_max_hint">5 秒</string>
+    <string name="chat_clipboard_image_dismiss">不再提示</string>
 </resources>

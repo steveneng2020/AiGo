@@ -552,14 +552,17 @@ private fun AttachmentSheetItem(
  * 图作为附件插入，省掉「+ → 选图片 → 图库里翻」三步。
  */
 @Composable
-internal fun ClipboardImageHint(onClick: () -> Unit) {
+internal fun ClipboardImageHint(
+    onClick: () -> Unit,
+    onDismiss: () -> Unit = {}
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = Spacing.xs)
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = Spacing.sm, vertical = 6.dp),
+            .padding(start = Spacing.sm, end = 2.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
@@ -572,7 +575,21 @@ internal fun ClipboardImageHint(onClick: () -> Unit) {
         Text(
             text = stringResource(R.string.chat_clipboard_image_hint),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f)
         )
+        // 右侧关闭键：不想插这张图时直接收起提示，不必等它自己消失
+        // （它只会在回到聊天页时重新检测，也就是会一直挂到下次进前台）。
+        IconButton(
+            onClick = onDismiss,
+            modifier = Modifier.size(28.dp)
+        ) {
+            Icon(
+                imageVector = compose.icons.FeatherIcons.X,
+                contentDescription = stringResource(R.string.chat_clipboard_image_dismiss),
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                modifier = Modifier.size(14.dp)
+            )
+        }
     }
 }

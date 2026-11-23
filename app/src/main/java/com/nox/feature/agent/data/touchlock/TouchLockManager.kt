@@ -47,8 +47,8 @@ class TouchLockManager @Inject constructor(
          */
         const val UNLOCK_HOLD_MS = 1000L
 
-        /** 长按解锁时长的可选范围（毫秒）。0 = 无需长按，点一下即退出。 */
-        const val HOLD_MIN_MS = 0L
+        /** 长按解锁时长的可选范围（毫秒）。下限 100ms：滑杆最左端就已是「几乎点一下就退出」。 */
+        const val HOLD_MIN_MS = 100L
         const val HOLD_MAX_MS = 5000L
 
         private val HOLD_MS = longPreferencesKey("touch_lock_hold_ms")

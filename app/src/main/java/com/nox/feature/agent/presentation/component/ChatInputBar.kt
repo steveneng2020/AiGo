@@ -186,6 +186,8 @@ internal fun ChatInputBar(
     /** 剪贴板里有图片时显示一行提示，点一下直接把图插入附件。 */
     clipboardImageAvailable: Boolean = false,
     onPasteClipboardImage: (android.net.Uri) -> Unit = {},
+    /** 点提示条右侧的 × 时收起提示（不插入图片）。 */
+    onDismissClipboardHint: () -> Unit = {},
     onRemoveAttachment: (Int) -> Unit,
     canUploadFiles: Boolean,
     canUploadImages: Boolean,
@@ -536,7 +538,8 @@ internal fun ChatInputBar(
                     ClipboardImageHint(
                         onClick = {
                             clipboardImageUri(context)?.let { uri -> onPasteClipboardImage(uri) }
-                        }
+                        },
+                        onDismiss = onDismissClipboardHint
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                 }

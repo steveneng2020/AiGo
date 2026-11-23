@@ -162,11 +162,11 @@ fun TouchLockHoldPicker(
     // 否则每移动 1 像素就写一次 DataStore，既卡又费 IO。
     var sliderValue by remember(current) { mutableFloatStateOf(current.coerceIn(min, max).toFloat()) }
     val secs = sliderValue / 1000f
-    val label = if (sliderValue <= 0f) {
-        stringResource(R.string.touch_lock_hold_instant)
-    } else {
-        stringResource(R.string.touch_lock_hold_seconds, String.format(java.util.Locale.US, "%.1f", secs))
-    }
+    // 下限是 100ms，恒大于 0，直接按一位小数显示（0.1 / 1.0 / 5.0）。
+    val label = stringResource(
+        R.string.touch_lock_hold_seconds,
+        String.format(java.util.Locale.US, "%.1f", secs)
+    )
 
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
