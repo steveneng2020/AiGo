@@ -78,6 +78,35 @@ jobs:
       - name: Build universal beta APK
         run: ./gradlew :app:assembleUniversalBeta --stacktrace
 
+      # 预热 Robolectric 的 android-all jar。
+      # MigrationTest 靠 Robolectric 跑真实 Room 迁移，它首次运行会从 Maven 拉
+      # org.robolectric:android-all-instrumented:9-robolectric-4913185-2-i7（约 100MB）。
+      # 直接在测试里拉容易因网络抖动失败（MavenArtifactFetcher IOException），
+      # 表现为 classMethod FAILED、整条构建变红。单独一步先拉，失败可重试，
+      # 且与测试步骤分离，便于定位是网络还是代码问题。
+      - name: Prefetch Robolectric runtime
+        run: |
+          set -e
+          ver="9-robolectric-4913185-2-i7"
+          dir="$HOME/.m2/repository/org/robolectric/android-all-instrumented/$ver"
+          jar="$dir/android-all-instrumented-$ver.jar"
+          if [ -f "$jar" ]; then
+            echo "已缓存，跳过下载：$jar"
+            exit 0
+          fi
+          mkdir -p "$dir"
+          url="https://repo1.maven.org/maven2/org/robolectric/android-all-instrumented/$ver/android-all-instrumented-$ver.jar"
+          for i in 1 2 3; do
+            echo "下载尝试 $i ..."
+            if curl -fSL --retry 2 --retry-delay 5 -o "$jar" "$url"; then
+              echo "下载完成：$(du -h "$jar" | cut -f1)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::warning::Robolectric 运行时预下载失败，MigrationTest 可能跳过"
+          rm -f "$jar"
+
       # 单测并在这里跑：ci.yml 已不再响应 push，否则同一个 commit 会出两条
       # 同名 run、Gradle 编译跑两遍。
       #
@@ -85,19 +114,13 @@ jobs:
       # assets 读 Room 导出的 schema，而 AGP 只把 assets 合进 debug 变体
       # （test_config.properties 指向 mergeUniversalDebugAssets）。
       #
-      # 排除 MigrationTest：它要 Robolectric 联网拉 android-all jar，CI 上偶发
-      # IOException（MavenArtifactFetcher: AssertionError -> ExecutionException ->
-      # IOException），表现为 classMethod FAILED，与代码无关。该测试本地可单独跑。
       # --continue：多个测试类失败时一次全跑完。
-      # --no-configuration-cache 必需：
-      # 仓库开了 org.gradle.configuration-cache=true，而 filter.excludeTestsMatching
-      # 在配置阶段生效。配置缓存命中时会把上次的测试过滤结果直接复用，
-      # 导致 -PexcludeMigrationTest 虽然传了却不生效（实测 CI 仍跑 MigrationTest）。
-      # 加上该参数强制重算配置，代价只是本任务多几秒，不影响构建产物。
+      # --no-configuration-cache：仓库开了配置缓存，而测试相关的系统属性
+      # 在配置阶段生效，缓存命中时会沿用旧值，强制重算避免悬念。
       - name: Run unit tests
         run: >-
           ./gradlew :app:testUniversalDebugUnitTest --stacktrace --continue
-          -PexcludeMigrationTest --no-configuration-cache
+          --no-configuration-cache
 
       # 产物重命名为 AiGo-universal-beta-<版本>-<sha7>.apk：
       # 短 sha 便于区分每次构建，版本名（含日期）便于对照是哪次提交出的包。

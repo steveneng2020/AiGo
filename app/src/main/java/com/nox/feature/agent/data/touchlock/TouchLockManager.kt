@@ -44,7 +44,7 @@ class TouchLockManager @Inject constructor(
          * 1.5 秒：500ms 实测太短，手机在口袋里贴到衣物就能误触解锁；
          * 3 秒又明显卡顿。1.5 秒能区分有意按压与无意接触。
          */
-        const val UNLOCK_HOLD_MS = 1500L
+        const val UNLOCK_HOLD_MS = 1000L
 
         private val ACTIVE = booleanPreferencesKey("touch_lock_active")
         private val SAVED_BRIGHTNESS = intPreferencesKey("touch_lock_saved_brightness")

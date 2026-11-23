@@ -1091,8 +1091,11 @@ fun AIChatPanel(
     }
 
     // 剪贴板图片监听：截图后系统会把 PNG 放进剪贴板。
-    // 窗口重新获得焦点时重查（从截图/相册回到 AiGo 即触发），
-    // 同时每 1.5 秒轻量轮询一次：部分 ROM 在应用前台时截图不触发焦点变化。
+    // 只在「可能刚截完图」的时机查一次剪贴板，不轮询：
+    //   ON_RESUME  —— 从截图浮层/相册/其它应用回到本页
+    //   输入框聚焦 —— 用户点输入框准备发消息（口袋里截图后常见路径）
+    // 之前每 1.5 秒轮询一次，聊天页开着就一直在读剪贴板，
+    // Android 10+ 每次读都要跨进程请求系统服务，没必要。
     var clipboardImageAvailable by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -1104,11 +1107,9 @@ fun AIChatPanel(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+    // 首次进入也查一次（冷启动时 ON_RESUME 可能早于监听注册）。
     LaunchedEffect(Unit) {
-        while (true) {
-            clipboardImageAvailable = clipboardHasImage(context)
-            kotlinx.coroutines.delay(1500)
-        }
+        clipboardImageAvailable = clipboardHasImage(context)
     }
 
     fun handlePickedAttachments(uris: List<Uri>, images: Boolean) {

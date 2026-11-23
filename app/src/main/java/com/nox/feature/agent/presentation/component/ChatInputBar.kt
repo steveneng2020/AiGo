@@ -1,6 +1,9 @@
 package com.nox.feature.agent.presentation.component
 
 import android.content.ClipData
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -135,6 +138,7 @@ import compose.icons.feathericons.Target
 import compose.icons.feathericons.X
 import compose.icons.feathericons.Maximize
 import compose.icons.feathericons.Minimize
+import compose.icons.feathericons.Mic
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Square
 import compose.icons.feathericons.Shield
@@ -682,6 +686,16 @@ internal fun ChatInputBar(
                     // 运行中也允许添加附件：sendMessage 会把附件随队列消息一起提交（
                     // enqueueAgentRequest 已接收 inputImages / inputAttachments），
                     // 禁用只是拦住了入口，反而让「插队/排队补资料」变得不可用。
+                    // 语音输入：点一下拉起系统识别器，识别结果回填到输入框。
+                    // 放在「+」之前，与常见 IM 的「麦克风 | 附件 | 发送」顺序一致。
+                    VoiceInputIconButton(
+                        enabled = true,
+                        onResult = { text ->
+                            if (text.isNotBlank()) {
+                                onValueChange(if (value.isBlank()) text else "$value $text")
+                            }
+                        }
+                    )
                     UploadIconButton(
                         enabled = true,
                         icon = FeatherIcons.Plus,
@@ -832,6 +846,102 @@ private fun FullScreenInputDialog(
                 )
             }
         }
+    }
+}
+
+@Composable
+internal fun VoiceInputIconButton(
+    enabled: Boolean,
+    onResult: (String) -> Unit
+) {
+    val context = LocalContext.current
+    // 用 rememberLauncherForActivityResult 而不是 startActivityForResult：
+    // Compose 里前者注册在 ActivityResultRegistry 上，不会被重组弄丢回调。
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != android.app.Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        val list = result.data?.getStringArrayListExtra(
+            android.speech.RecognizerIntent.EXTRA_RESULTS
+        )
+        list?.firstOrNull()?.takeIf { it.isNotBlank() }?.let(onResult)
+    }
+
+    // 运行时权限：有些 ROM 的系统识别器会自行申请，但部分定制 ROM 要求调用方先拿到，
+    // 这里统一先要权限，拒绝后退回由识别器自己处理。
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            launchRecognizer(context, launcher)
+        } else {
+            Toast.makeText(
+                context,
+                context.getString(R.string.chat_voice_permission_denied),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    IconButton(
+        onClick = {
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.RECORD_AUDIO
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                launchRecognizer(context, launcher)
+            } else {
+                permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            }
+        },
+        enabled = enabled,
+        modifier = Modifier.size(34.dp)
+    ) {
+        Icon(
+            FeatherIcons.Mic,
+            contentDescription = stringResource(R.string.chat_voice_input),
+            tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+/**
+ * 拉起系统语音识别界面。
+ *
+ * 用 RecognizerIntent 而不是 SpeechRecognizer：后者需要自己管录音与
+ * 识别回调、各 ROM 行为差异大；前者交给系统 UI，兼容性最好，也不需要
+ * 我们自己处理音频流。
+ */
+private fun launchRecognizer(
+    context: android.content.Context,
+    launcher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>
+) {
+    val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(
+            android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+            android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+        )
+        putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, context.getString(R.string.chat_voice_prompt))
+        // 跟随系统语言，不硬编码 zh-CN：多语言用户也能正常用。
+        putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, java.util.Locale.getDefault().toLanguageTag())
+    }
+    val available = intent.resolveActivity(context.packageManager) != null
+    if (!available) {
+        Toast.makeText(
+            context,
+            context.getString(R.string.chat_voice_unavailable),
+            Toast.LENGTH_SHORT
+        ).show()
+        return
+    }
+    runCatching { launcher.launch(intent) }.onFailure {
+        Toast.makeText(
+            context,
+            context.getString(R.string.chat_voice_unavailable),
+            Toast.LENGTH_SHORT
+        ).show()
     }
 }
 
