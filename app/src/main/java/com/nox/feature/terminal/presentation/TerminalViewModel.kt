@@ -7,6 +7,7 @@ import com.nox.R
 import com.nox.core.util.FileLogger
 import com.nox.feature.agent.domain.container.ContainerInitState
 import com.nox.feature.agent.domain.container.LinuxContainerEngine
+import com.nox.feature.settings.data.repository.ContainerSettingsRepository
 import com.nox.feature.settings.data.repository.ExecutionMode
 import com.nox.feature.settings.data.repository.ExecutionModeHolder
 import com.nox.feature.terminal.domain.RemoteTerminalSessionManager
@@ -18,6 +19,7 @@ import com.nox.feature.terminal.data.repository.TerminalSettings
 import com.nox.feature.terminal.data.repository.TerminalSettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,7 +40,8 @@ class TerminalViewModel @Inject constructor(
     private val remoteManager: RemoteTerminalSessionManager,
     private val modeHolder: ExecutionModeHolder,
     private val containerEngine: LinuxContainerEngine,
-    private val terminalSettingsRepository: TerminalSettingsRepository
+    private val terminalSettingsRepository: TerminalSettingsRepository,
+    containerSettingsRepository: ContainerSettingsRepository
 ) : ViewModel() {
 
     private companion object { const val TAG = "TerminalViewModel" }
@@ -74,6 +77,11 @@ class TerminalViewModel @Inject constructor(
 
     val terminalSettings: StateFlow<TerminalSettings> = terminalSettingsRepository.settingsFlow
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TerminalSettings())
+
+    /** 当前激活容器名（如 Ubuntu 24.04.5）；远程模式下前嫩加 SSH 标记。 */
+    val activeContainerName: StateFlow<String> = containerSettingsRepository.activeProfileFlow
+        .map { profile -> if (isRemote()) "SSH · ${profile.name}" else profile.name }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "容器")
 
     fun setTheme(themeId: String) {
         viewModelScope.launch { terminalSettingsRepository.setThemeId(themeId) }

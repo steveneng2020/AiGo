@@ -135,8 +135,7 @@
     ui: {
       close: function () {
         return call('ui.close');
-      },
-      // 用系统浏览器打开 http/https 链接。
+      },      // 用系统浏览器打开 http/https 链接。
       openUrl: function (url) {
         return call('ui.openUrl', { url: String(url) });
       },
@@ -165,6 +164,23 @@
           var index = backHandlers.indexOf(handler);
           if (index >= 0) backHandlers.splice(index, 1);
         });
+      }
+    },
+    // 受控 WebView：打开第三方网页完成登录，完成后回传 cookie。
+    // options 可附样式：accentColor("#RRGGBB")、cornerRadius(dp)、dimAlpha(0-0.9)、showClose(bool)。
+    webview: {
+      login: function (options) {
+        var params = options || {};
+        if (params.url != null) params.url = String(params.url);
+        if (params.title != null) params.title = String(params.title);
+        if (params.finishText != null) params.finishText = String(params.finishText);
+        return call('webview.login', params);
+      }
+    },
+    // 系统文件选择器：返回 { files: [{ name, size, mime, base64 }] }。
+    file: {
+      pick: function (options) {
+        return call('file.pick', options || {});
       }
     },
     // 监听插件进程与宿主事件；返回取消订阅函数。

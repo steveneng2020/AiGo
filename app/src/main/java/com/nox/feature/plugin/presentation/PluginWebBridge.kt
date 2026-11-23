@@ -433,6 +433,8 @@ class PluginWebBridge(
             page.pluginId,
             PluginHostPaths.requireString(params, "url")
         )
+        "webview.login" -> systemService.openLoginWebView(page.pluginId, params)
+        "file.pick" -> systemService.pickFiles(page.pluginId, params)
         "app.info" -> systemService.appInfo(page.pluginId)
         "log.write" -> systemService.log(
             page.pluginId,

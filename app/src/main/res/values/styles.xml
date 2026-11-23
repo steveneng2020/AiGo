@@ -20,6 +20,13 @@
         <item name="android:windowBackground">@drawable/splash_background</item>
     </style>
 
+    <!-- 插件文件选择器：透明窗口，选文件时只露出系统选择器。 -->
+    <style name="Theme.AICode.Translucent" parent="Theme.AICode">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">true</item>
+    </style>
+
     <color name="primary">#3482FF</color>
     <color name="splash_background_color">#F5F5F6</color>
 </resources>

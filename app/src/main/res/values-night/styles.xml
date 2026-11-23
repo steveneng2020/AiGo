@@ -8,5 +8,11 @@
         <item name="android:windowBackground">@drawable/splash_background</item>
     </style>
 
+    <style name="Theme.AICode.Translucent" parent="Theme.AICode">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">true</item>
+    </style>
+
     <color name="splash_background_color">#000000</color>
 </resources>
