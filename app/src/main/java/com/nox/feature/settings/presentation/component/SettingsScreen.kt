@@ -149,6 +149,9 @@ import com.nox.feature.terminal.presentation.component.TerminalSettingsSheet
 /** 使用手册在线文档站地址。 */
 private const val USER_GUIDE_DOCS_URL = "https://github.com/steveneng2020/AiGo/tree/main/docs-site/docs"
 
+/** 导出插件时用户还没选过保存目录的信号值（不是真的错误信息）。 */
+private const val PENDING_DIR_PICK = "\u0000pending-dir-pick"
+
 /** 大屏设置页左侧常驻菜单宽度。 */
 private val SettingsMenuWidth = 320.dp
 
@@ -481,6 +484,47 @@ fun SettingsScreen(
                 com.nox.PluginDrawerEntryPoint::class.java
             )
     }
+
+    // 导出待落盘的文件（用户还没选目录时暂存），以及目录选择器。
+    var pendingExportStaging by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<java.io.File?>(null)
+    }
+    val exportDirPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        val staging = pendingExportStaging
+        pendingExportStaging = null
+        if (uri == null || staging == null) {
+            staging?.delete()
+            return@rememberLauncherForActivityResult
+        }
+        // 持久化授权：重启后不用重选
+        runCatching {
+            pluginDrawerAppContext.contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }
+        pluginDrawerExportDeps.pluginPackageExporter().rememberDir(uri)
+        scope.launch {
+            val msg = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    pluginDrawerExportDeps.pluginPackageExporter().writeToChosenDir(staging, uri)
+                }
+            }.fold(
+                onSuccess = { pluginDrawerAppContext.getString(R.string.plugins_export_done, it) },
+                onFailure = {
+                    pluginDrawerExportDeps.pluginPackageExporter().clearChosenDir()
+                    pluginDrawerAppContext.getString(
+                        R.string.plugins_export_failed_reason,
+                        it.message ?: "unknown"
+                    )
+                }
+            )
+            android.widget.Toast.makeText(pluginDrawerAppContext, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
     val hiddenPluginEntryKeys by pluginDrawerVisibility.hiddenKeysFlow
         .collectAsState(initial = emptySet())
     val pluginDrawerLanguageTag = com.nox.feature.plugin.presentation.currentLanguageTag()
@@ -506,36 +550,56 @@ fun SettingsScreen(
                 )
             }
         }
-        val zip = result.getOrNull()
+        val staging = result.getOrNull()
             ?: return pluginDrawerAppContext.getString(
                 R.string.plugins_export_failed_reason,
                 result.exceptionOrNull()?.message ?: "unknown"
             )
-        if (!share) {
-            // 成功时也要提示，否则用户不知道文件存到了哪里。
-            return pluginDrawerAppContext.getString(R.string.plugins_export_done, zip.absolutePath)
-        }
-        val failure = withContext(kotlinx.coroutines.Dispatchers.Main) {
-            runCatching {
-                val uri = deps.pluginPackageExporter().shareUri(zip)
-                val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                    type = "application/zip"
-                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                context.startActivity(
-                    android.content.Intent.createChooser(
-                        intent,
-                        pluginDrawerAppContext.getString(R.string.plugins_share_package)
+
+        if (share) {
+            val failure = withContext(kotlinx.coroutines.Dispatchers.Main) {
+                runCatching {
+                    val uri = deps.pluginPackageExporter().shareUri(staging)
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "application/zip"
+                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(
+                        android.content.Intent.createChooser(
+                            intent,
+                            pluginDrawerAppContext.getString(R.string.plugins_share_package)
+                        )
                     )
+                }
+            }.exceptionOrNull()
+            staging.delete()
+            return if (failure != null) {
+                pluginDrawerAppContext.getString(R.string.plugins_share_failed)
+            } else null
+        }
+
+        // 导出到本地：用户选过目录就直接写，没选过就交给调用方弹目录选择器。
+        val chosen = deps.pluginPackageExporter().chosenDirUri()
+        if (chosen == null) {
+            pendingExportStaging = staging
+            return PENDING_DIR_PICK
+        }
+        val written = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { deps.pluginPackageExporter().writeToChosenDir(staging, chosen) }
+        }
+        return written.fold(
+            onSuccess = { pluginDrawerAppContext.getString(R.string.plugins_export_done, it) },
+            onFailure = {
+                // 选的目录失效（卸载 SD 卡/撤销授权）：清掉记住的目录，提示重选
+                staging.delete()
+                deps.pluginPackageExporter().clearChosenDir()
+                pluginDrawerAppContext.getString(
+                    R.string.plugins_export_failed_reason,
+                    it.message ?: "unknown"
                 )
             }
-        }.exceptionOrNull()
-        return if (failure != null) {
-            pluginDrawerAppContext.getString(R.string.plugins_share_failed)
-        } else {
-            pluginDrawerAppContext.getString(R.string.plugins_export_done, zip.absolutePath)
-        }
+        )
     }
     val pluginDrawerEntries = remember(plugins, pluginDrawerLanguageTag) {
         plugins.filter { it.isActive }
@@ -1488,7 +1552,10 @@ fun SettingsScreen(
                     onExportPackage = { plugin, share ->
                         scope.launch {
                             val msg = exportInstalledPlugin(plugin, share)
-                            if (msg != null) {
+                            if (msg == PENDING_DIR_PICK) {
+                                // 还没选过导出目录：拉起 SAF 目录选择器，选完记住
+                                exportDirPicker.launch(null)
+                            } else if (msg != null) {
                                 // LENGTH_LONG：导出成功时要展示完整保存路径，
                                 // SHORT（2 秒）根本读不完，用户只会看到一闪而过。
                                 android.widget.Toast.makeText(

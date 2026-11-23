@@ -15,38 +15,80 @@ import javax.inject.Singleton
  * （两者在 PluginManager 里是分开的目录）。因此导出物可以在另一台设备上直接安装，
  * 不会带上原设备的会话、账号或配置。
  *
- * 缓存目录固定为 `cacheDir/plugin-export/`：每次导出覆盖同名文件，避免多次导出堆积。
+ * 导出位置：首次导出时让用户选一次（SAF 目录选择器），选定后记住；
+ * 之后直接存到该目录，不再反复弹窗。用户可在插件设置里重选。
+ * 未选过时退回默认的 Download/AiGo/AiGo开发/导出插件。
  */
 @Singleton
 class PluginPackageExporter @Inject constructor(
     @param:ApplicationContext private val context: Context
 ) {
-    /**
-     * 导出的插件包写到公共目录，用户能在文件管理器里直接找到。
-     *
-     * 之前写到 `cacheDir/plugin-export/`（应用私有缓存），用户看不到、也没有保存路径提示，
-     * 表现为「不知道导出成功没」。这里改到 Download/AiGo/AiGo开发/导出插件。
-     */
-    private fun exportDir(): File {
+    private companion object {
+        const val PREFS = "plugin_export_prefs"
+        const val KEY_DIR_URI = "export_dir_uri"
+        const val DEFAULT_SUBDIR = "AiGo/AiGo开发/导出插件"
+    }
+
+    private fun prefs() = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /** 用户选定的导出目录（持久化权限的 tree uri）。未选过返回 null。 */
+    fun chosenDirUri(): Uri? =
+        prefs().getString(KEY_DIR_URI, null)?.let { runCatching { Uri.parse(it) }.getOrNull() }
+
+    fun rememberDir(uri: Uri) {
+        prefs().edit().putString(KEY_DIR_URI, uri.toString()).apply()
+    }
+
+    fun clearChosenDir() {
+        prefs().edit().remove(KEY_DIR_URI).apply()
+    }
+
+    /** 默认目录（用户未选时使用）。 */
+    fun defaultDir(): File {
         val dir = File(
             android.os.Environment.getExternalStoragePublicDirectory(
                 android.os.Environment.DIRECTORY_DOWNLOADS
             ),
-            "AiGo/AiGo开发/导出插件"
+            DEFAULT_SUBDIR
         )
         dir.mkdirs()
         return dir
     }
 
+    /** 将文件写入用户选定的 SAF 目录；返回写入后的 URI 字符串（用于提示）。 */
+    fun writeToChosenDir(src: File, dirUri: Uri): String {
+        val resolver = context.contentResolver
+        val treeDocId = android.provider.DocumentsContract.getTreeDocumentId(dirUri)
+        val newDocUri = android.provider.DocumentsContract.createDocument(
+            resolver, dirUri, "application/zip", src.name
+        ) ?: throw IllegalStateException("无法在所选目录创建文件")
+        resolver.openOutputStream(newDocUri)?.use { out ->
+            src.inputStream().use { it.copyTo(out) }
+        } ?: throw IllegalStateException("无法写入所选目录")
+        src.delete()
+        // 拼一个人类可读路径给提示用：treeDocId 通常是 primary:Download/xxx
+        val readable = treeDocId.substringAfter(':', treeDocId)
+        return "$readable/${src.name}"
+    }
+
     /**
      * 把 [installDir] 打成 zip 并返回文件。失败时抛异常，由调用方提示。
+     * 总是先打到缓存目录，再由调用方决定落盘位置。
      */
     fun export(pluginId: String, version: String, installDir: File): File {
         require(installDir.isDirectory) { "插件目录不存在：${installDir.path}" }
         val safeId = pluginId.replace(Regex("[^A-Za-z0-9._-]"), "_")
         val safeVersion = version.replace(Regex("[^A-Za-z0-9._-]"), "_")
-        val target = File(exportDir(), "$safeId-$safeVersion.zip")
-        PluginDevPackageBuilder.zip(installDir, target)
+        val staging = File(File(context.cacheDir, "plugin-export").apply { mkdirs() }, "$safeId-$safeVersion.zip")
+        PluginDevPackageBuilder.zip(installDir, staging)
+        return staging
+    }
+
+    /** 把导出的包落到默认目录，返回落地文件。 */
+    fun publishToDefault(staging: File): File {
+        val target = File(defaultDir(), staging.name)
+        staging.copyTo(target, overwrite = true)
+        staging.delete()
         return target
     }
 
