@@ -92,6 +92,13 @@
             android:excludeFromRecents="true"
             android:theme="@style/Theme.AICode" />
 
+        <!-- 插件登录页：受控 WebView 完成第三方网页登录后回传 cookie。 -->
+        <activity
+            android:name=".feature.plugin.login.PluginLoginWebViewActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+            android:theme="@style/Theme.AICode" />
+
         <provider
             android:name=".feature.workspace.data.provider.WorkspaceDocumentsProvider"
             android:authorities="${applicationId}.documents"

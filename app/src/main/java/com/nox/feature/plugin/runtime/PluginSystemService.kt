@@ -11,6 +11,7 @@ import android.os.Build
 import com.nox.core.util.FileLogger
 import com.nox.feature.plugin.domain.PluginHostException
 import com.nox.feature.plugin.domain.PluginManager
+import com.nox.feature.plugin.login.PluginLoginSession
 import com.nox.feature.plugin.overlay.AppForegroundMonitor
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.net.URI
@@ -20,8 +21,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 
 /**
@@ -111,6 +116,26 @@ class PluginSystemService @Inject constructor(
         return ok()
     }
 
+    /** 打开受控 WebView 完成第三方网页登录，回传 { finalUrl, cookies }；用户取消时抛 LOGIN_CANCELED。 */
+    suspend fun openLoginWebView(pluginId: String, params: JsonObject): JsonElement {
+        ensureActive(pluginId)
+        val url = requireHttpUrl(requireString(params, "url"))
+        val title = (params["title"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+        val finishText = (params["finishText"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+        val cookieUrls = (params["cookieUrls"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            ?.map { requireHttpUrl(it) }
+            ?.ifEmpty { listOf(url) }
+            ?: listOf(url)
+        return PluginLoginSession.launch(
+            context = context,
+            url = url,
+            title = title,
+            finishText = finishText,
+            cookieUrls = cookieUrls
+        ) ?: throw PluginHostException("LOGIN_CANCELED", "user canceled login")
+    }
+
     /** 宿主 App 的包名、版本、系统 API 级别、界面语言与前后台状态。 */
     suspend fun appInfo(pluginId: String): JsonElement {
         ensureActive(pluginId)
@@ -167,6 +192,10 @@ class PluginSystemService @Inject constructor(
             ?: throw PluginHostException("SERVICE_UNAVAILABLE", "clipboard service unavailable")
 
     /** 只放行 http/https；URI 解析失败、缺 scheme 或没有 authority 都算参数非法。 */
+    private fun requireString(params: JsonObject, key: String): String =
+        (params[key] as? JsonPrimitive)?.contentOrNull
+            ?: throw PluginHostException("PARAM_INVALID", "missing $key")
+
     private fun requireHttpUrl(url: String): String {
         if (url.length > MAX_URL_CHARS) throw PluginHostException("TOO_LARGE", "url too long")
         val parsed = try {

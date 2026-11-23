@@ -188,7 +188,7 @@ class PluginStoreViewModel @Inject constructor(
                 it.copy(
                     loading = false,
                     refreshing = false,
-                    items = items,
+                    items = dedupeItems(items),
                     updatesByPluginId = updatesOf(items),
                     error = firstError
                 )
@@ -317,6 +317,15 @@ class PluginStoreViewModel @Inject constructor(
         val right = SemVer.parse(installed) ?: return false
         return left > right
     }
+
+    /** 多个来源可能含同一插件：按 id 合并成一条，取版本最高者（同版本取来源顺序靠前的）。 */
+    private fun dedupeItems(items: List<PluginStoreItem>): List<PluginStoreItem> =
+        items.groupBy { it.plugin.id }
+            .map { (_, group) ->
+                group.maxByOrNull { item ->
+                    item.plugin.version?.let(SemVer::parse) ?: SemVer(0, 0, 0)
+                }!!
+            }
 
     /** 每个插件取一个可用的最高版本，同一插件出现在多个来源时只提示一次。 */
     private fun updatesOf(items: List<PluginStoreItem>): Map<String, PluginStoreItem> =
