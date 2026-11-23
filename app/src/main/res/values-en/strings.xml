@@ -2185,4 +2185,8 @@
     <string name="chat_voice_prompt">Speak now</string>
     <string name="chat_voice_unavailable">No speech recognition service available. Enable one in system settings.</string>
     <string name="chat_voice_permission_denied">Microphone permission is required for voice input</string>
+    <string name="chat_voice_stop">Stop recording</string>
+    <string name="chat_voice_failed">Speech recognition failed</string>
+    <string name="chat_voice_network_error">Speech recognition needs network. Check your connection.</string>
+    <string name="chat_voice_no_match">Didn\'t catch that. Please say it again.</string>
 </resources>

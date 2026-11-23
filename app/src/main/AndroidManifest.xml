@@ -22,11 +22,15 @@
          本应用只需 RECORD_AUDIO 声明以通过运行时权限检查。 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Android 11+ 包可见性：不声明则 resolveActivity 拿到 null，
-         语音按钮会一直提示「没有可用的语音识别服务」。 -->
+    <!-- Android 11+ 包可见性：不声明则 resolveActivity / isRecognitionAvailable 会误报不可用。
+         RecognitionService 是 SpeechRecognizer 依赖的服务接口，VantaCode 声明的正是它；
+         只声明 RECOGNIZE_SPEECH（Activity intent）不足以覆盖服务发现路径。 -->
     <queries>
         <intent>
             <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
         </intent>
     </queries>
 

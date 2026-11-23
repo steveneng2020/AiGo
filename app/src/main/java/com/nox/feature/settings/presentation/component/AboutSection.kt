@@ -714,14 +714,6 @@ private fun ReleaseNotesCard(
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
-        Spacer(Modifier.height(Spacing.xs))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "${stringResource(R.string.app_name)} $currentVersion",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.semanticColors.subtleText
-            )
-        }
         Spacer(Modifier.height(Spacing.md))
 
         // 虚线框：既是视觉分隔，也表明这是一段可滚动的日志文本。
@@ -768,10 +760,10 @@ private fun ReleaseNotesCard(
             }
         }
 
-        // 只在「确实还有未展示的版本」时给入口。
-        // 之前判据是 `releases.size > 1`，但默认已展示 PREVIEW_COUNT 条，
-        // 版本数少于等于它时展开与收起内容完全相同，入口点了没任何变化，
-        // 用户会以为按钮坏了。
+        // 规格：默认展示最新 PREVIEW_COUNT 个版本且全部全文展开（不折叠）；
+        // 只有总数超过它时才出现「更多」入口，点开后展示全部版本。
+        // 因此判据必须是 > PREVIEW_COUNT，而不是 > 1：
+        // 总数不足 5 个时已经全展示完了，再给入口只会点了没变化。
         if (releases.size > PREVIEW_COUNT) {
             Spacer(Modifier.height(Spacing.sm))
             Row(

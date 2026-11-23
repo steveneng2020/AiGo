@@ -49,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -855,93 +856,132 @@ internal fun VoiceInputIconButton(
     onResult: (String) -> Unit
 ) {
     val context = LocalContext.current
-    // 用 rememberLauncherForActivityResult 而不是 startActivityForResult：
-    // Compose 里前者注册在 ActivityResultRegistry 上，不会被重组弄丢回调。
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode != android.app.Activity.RESULT_OK) return@rememberLauncherForActivityResult
-        val list = result.data?.getStringArrayListExtra(
-            android.speech.RecognizerIntent.EXTRA_RESULTS
-        )
-        list?.firstOrNull()?.takeIf { it.isNotBlank() }?.let(onResult)
+    // 用 SpeechRecognizer 而不是 RecognizerIntent：后者要拉起外部识别界面，
+    // 在只装了「识别服务」而没有「识别界面 App」的机器上直接不可用；
+    // SpeechRecognizer 直接连系统识别服务，识别过程留在本应用内。
+    // 这也是 VantaCode 的做法（它同时声明了 RecognitionService 的包可见性）。
+    var recognizing by remember { mutableStateOf(false) }
+    val recognizer = remember { mutableStateOf<android.speech.SpeechRecognizer?>(null) }
+
+    // 离开组合时释放识别器：SpeechRecognizer 持有底层服务连接，不释放会泄漏。
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching { recognizer.value?.destroy() }
+            recognizer.value = null
+        }
     }
 
-    // 运行时权限：有些 ROM 的系统识别器会自行申请，但部分定制 ROM 要求调用方先拿到，
-    // 这里统一先要权限，拒绝后退回由识别器自己处理。
+    fun stopListening() {
+        runCatching { recognizer.value?.stopListening() }
+        recognizing = false
+    }
+
+    fun startListening() {
+        if (!android.speech.SpeechRecognizer.isRecognitionAvailable(context)) {
+            Toast.makeText(context, context.getString(R.string.chat_voice_unavailable), Toast.LENGTH_LONG).show()
+            return
+        }
+        // 复用同一个识别器实例；首次或已销毁时重建。
+        val sr = recognizer.value ?: runCatching {
+            android.speech.SpeechRecognizer.createSpeechRecognizer(context)
+        }.getOrNull()
+        if (sr == null) {
+            Toast.makeText(context, context.getString(R.string.chat_voice_unavailable), Toast.LENGTH_LONG).show()
+            return
+        }
+        recognizer.value = sr
+
+        sr.setRecognitionListener(object : android.speech.RecognitionListener {
+            override fun onReadyForSpeech(params: android.os.Bundle?) { recognizing = true }
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() { recognizing = false }
+
+            override fun onError(error: Int) {
+                recognizing = false
+                // 与 VantaCode 的文案覆盖一致：引擎忙 / 无网络 / 其他失败分开提示，
+                // 否则用户只看到「失败」不知道该做什么。
+                val msg = when (error) {
+                    android.speech.SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
+                    android.speech.SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
+                        R.string.chat_voice_permission_denied
+                    android.speech.SpeechRecognizer.ERROR_NETWORK,
+                    android.speech.SpeechRecognizer.ERROR_NETWORK_TIMEOUT ->
+                        R.string.chat_voice_network_error
+                    android.speech.SpeechRecognizer.ERROR_NO_MATCH,
+                    android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT ->
+                        R.string.chat_voice_no_match
+                    else -> R.string.chat_voice_failed
+                }
+                Toast.makeText(context, context.getString(msg), Toast.LENGTH_SHORT).show()
+            }
+
+            override fun onResults(results: android.os.Bundle?) {
+                recognizing = false
+                results?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)
+                    ?.firstOrNull()?.takeIf { it.isNotBlank() }?.let(onResult)
+            }
+
+            override fun onPartialResults(partialResults: android.os.Bundle?) {}
+            override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+        })
+
+        val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(
+                android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
+            // 跟随系统语言，不硬编码 zh-CN。
+            putExtra(
+                android.speech.RecognizerIntent.EXTRA_LANGUAGE,
+                java.util.Locale.getDefault().toLanguageTag()
+            )
+            putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        runCatching { sr.startListening(intent) }.onFailure {
+            recognizing = false
+            Toast.makeText(context, context.getString(R.string.chat_voice_failed), Toast.LENGTH_SHORT).show()
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) {
-            launchRecognizer(context, launcher)
-        } else {
-            Toast.makeText(
-                context,
-                context.getString(R.string.chat_voice_permission_denied),
-                Toast.LENGTH_SHORT
-            ).show()
-        }
+        if (granted) startListening()
+        else Toast.makeText(
+            context,
+            context.getString(R.string.chat_voice_permission_denied),
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     IconButton(
         onClick = {
+            if (recognizing) {
+                stopListening()
+                return@IconButton
+            }
             val granted = androidx.core.content.ContextCompat.checkSelfPermission(
                 context, android.Manifest.permission.RECORD_AUDIO
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            if (granted) {
-                launchRecognizer(context, launcher)
-            } else {
-                permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-            }
+            if (granted) startListening()
+            else permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
         },
         enabled = enabled,
         modifier = Modifier.size(34.dp)
     ) {
         Icon(
             FeatherIcons.Mic,
-            contentDescription = stringResource(R.string.chat_voice_input),
-            tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+            contentDescription = stringResource(
+                if (recognizing) R.string.chat_voice_stop else R.string.chat_voice_input
+            ),
+            tint = if (recognizing) MaterialTheme.colorScheme.error
+            else if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
             else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
             modifier = Modifier.size(20.dp)
         )
-    }
-}
-
-/**
- * 拉起系统语音识别界面。
- *
- * 用 RecognizerIntent 而不是 SpeechRecognizer：后者需要自己管录音与
- * 识别回调、各 ROM 行为差异大；前者交给系统 UI，兼容性最好，也不需要
- * 我们自己处理音频流。
- */
-private fun launchRecognizer(
-    context: android.content.Context,
-    launcher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>
-) {
-    val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-        putExtra(
-            android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-            android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-        )
-        putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, context.getString(R.string.chat_voice_prompt))
-        // 跟随系统语言，不硬编码 zh-CN：多语言用户也能正常用。
-        putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, java.util.Locale.getDefault().toLanguageTag())
-    }
-    val available = intent.resolveActivity(context.packageManager) != null
-    if (!available) {
-        Toast.makeText(
-            context,
-            context.getString(R.string.chat_voice_unavailable),
-            Toast.LENGTH_SHORT
-        ).show()
-        return
-    }
-    runCatching { launcher.launch(intent) }.onFailure {
-        Toast.makeText(
-            context,
-            context.getString(R.string.chat_voice_unavailable),
-            Toast.LENGTH_SHORT
-        ).show()
     }
 }
 

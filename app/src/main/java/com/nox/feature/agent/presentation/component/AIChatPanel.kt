@@ -1996,7 +1996,14 @@ fun AIChatPanel(
                 pendingAttachments = pendingAttachments,
                 onRemoveAttachment = ::removePendingAttachment,
                 clipboardImageAvailable = clipboardImageAvailable,
-                onPasteClipboardImage = { uri: android.net.Uri -> handlePickedAttachments(listOf(uri), images = true) },
+                onPasteClipboardImage = { uri: android.net.Uri ->
+                    handlePickedAttachments(listOf(uri), images = true)
+                    // 插入后立刻隐藏提示：图片已经在附件列表里了，
+                    // 提示条继续挂着会让用户以为没插进去，也会挡住输入框。
+                    // 剪贴板内容并没有被清空（系统不允许随意清），所以若用户
+                    // 真的又截了一张，ON_RESUME 会重新把它显示出来。
+                    clipboardImageAvailable = false
+                },
                 canUploadFiles = canUploadFiles,
                 canUploadImages = canUploadImages,
                 onUploadFile = { filePicker.launch("*/*") },
