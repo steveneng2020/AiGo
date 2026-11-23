@@ -544,6 +544,7 @@ rl.on('close', () => process.exit(0));
 | `host.clipboard.read` / `write` | 剪贴板 |
 | `host.share.text` | 系统分享 |
 | `host.ui.openUrl` | 打开链接 |
+| `host.webview.login` | 打开受控 WebView 完成第三方网页登录，回传 `{ finalUrl, cookies }`；用户取消抛 `LOGIN_CANCELED` |
 | `host.tools.execute` / `pending` / `resolve` | 调用宿主工具、处理待审批 |
 | `host.mcp.status` | MCP 连接状态 |
 | `host.http.request` | 受管 HTTP：会经过 `agent.http.before` hook，可配代理与超时 |
@@ -594,6 +595,21 @@ const ctx = await aicode.context();                    // { pluginId, pageId, vi
 
 `aicode.invoke(handler, args)` 是最常用的一个：handler 名与 runtime 的 `handlers` 键名一致，宿主把它转成 `ui.invoke` 发给插件进程。**桥没有 `plugin` 命名空间**，`aicode.plugin.invoke(...)` 不存在。
 
+**网页登录**：`aicode.webview.login({ url, title?, finishText?, cookieUrls? })` 在 App 内打开受控全屏 WebView，
+用户完成第三方网页登录后返回 `{ finalUrl, cookies: { 地址: cookie 串 } }`；用户点「关闭」或返回抛 `LOGIN_CANCELED`。
+WebView 开启 JavaScript、DOM Storage 与第三方 Cookie，登录态写入 App 级 CookieManager 并落盘，下次打开仍登录。
+需要 Nox 1.0.10+。
+
+```js
+const result = await aicode.webview.login({
+  url: 'https://example.com/login',
+  title: '登录 Example',
+  cookieUrls: ['https://example.com', 'https://api.example.com']
+});
+await aicode.fs.write('data://session.json', JSON.stringify(result));
+// result.finalUrl / result.cookies
+```
+
 ### 可用方法
 
 **文件**：`fs.read`、`fs.readBinary`、`fs.write`、`fs.append`、`fs.list`、`fs.stat`、`fs.mkdir`、`fs.delete`、`fs.rename`、`fs.copy`、`fs.watch`、`fs.unwatch`
@@ -611,6 +627,8 @@ const cfg = JSON.parse(file.content || '{}');
 runtime 侧同样可用 `host.fs.read({ path: 'data://config.json' })`。**宿主不提供 `config.get/set` 这类接口**，配置就是自己读写一个 `data://` 下的 JSON 文件。
 
 **悬浮窗**：`overlay.create`、`overlay.update`、`overlay.close`、`overlay.self`、`overlay.resize`、`overlay.setDragRegion`、`overlay.postMessage`、`overlay.onMessage`
+
+**网页登录**：`webview.login`（见上节示例）
 
 只在 `overlay.surfaces` 声明的浮层页面里可用。`overlay.postMessage({type, ...})` 发给 runtime，runtime 侧用 `host.overlay.postMessage({surface, payload})` 发回来，浮层页面用 `overlay.onMessage(fn)` 收。
 
