@@ -1,6 +1,7 @@
 package com.nox.feature.plugin.presentation
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -53,8 +54,14 @@ internal fun buildPluginShareIntent(
     // 拿不到缩略图就报「获取资源失败」。octet-stream 会路由到通用的
     // 文件转发界面（ForwardRecentActivity），按文件处理。
     val mime = "application/octet-stream"
-    // newUri 会查询 MIME，description 里带真实 type；newRawUri 不会（见上面第 1 点）
-    val clip = ClipData.newUri(context.contentResolver, displayName, uri)
+    // 不用 ClipData.newUri：它内部会按 uri 反查真实 MIME（application/zip），
+    // 与 send.type（octet-stream）不一致；部分接收方以 ClipData 的 description
+    // 类型为准，又走回图片分享流程，依旧「获取资源失败」。
+    // 显式构造 description，让两处类型保持同一个值。
+    val clip = ClipData(
+        ClipDescription(displayName, arrayOf(mime)),
+        ClipData.Item(uri)
+    )
 
     val send = Intent(Intent.ACTION_SEND).apply {
         type = mime

@@ -43,7 +43,11 @@ object PluginManifestParser {
 
     private val TOP_LEVEL_KEYS = setOf(
         "manifestVersion", "id", "name", "version", "publisher", "repository",
-        "description", "license", "engines", "runtime", "contributes", "configPage", "icon"
+        "description", "license", "engines", "runtime", "contributes", "configPage", "icon",
+        // "$schema" 是 JSON Schema 的标准声明字段，只给编辑器做校验提示用，
+        // 运行时没有任何语义。社区插件普遍带它（例如 wxichen.dsh-pet 0.10.0），
+        // 当作未知字段直接判失败会让整包装不上。
+        "\$schema"
     )
     private val ENGINE_KEYS = setOf("pluginApi")
     private val RUNTIME_KEYS = setOf("type", "entry", "command", "dependencies", "resident")
