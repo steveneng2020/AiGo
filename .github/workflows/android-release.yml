@@ -137,8 +137,9 @@ jobs:
 
       # Robolectric 在测试运行时自己下载 android-all-instrumented jar（约 106MB），
       # 落在 ~/.m2 —— 不在 setup-gradle 的缓存范围内（它只缓存 Gradle User Home），
-      # 所以每次 CI 都要现场下载，是单测耗时里一段不稳定且不可见的开销。
-      # 缓存它可省 10-40 秒，并显著降低 Robolectric 抖动。
+      # 所以每次 CI 都要现场下载。缓存命中很快，未命中时必须先下载：
+      # 直接在测试里拉会因网络抖动失败（MavenArtifactFetcher IOException），
+      # 表现为 MigrationTest classMethod FAILED、整条发版流水线变红。
       - name: Cache Robolectric jars
         uses: actions/cache@v4
         with:
@@ -146,6 +147,30 @@ jobs:
           key: robolectric-${{ runner.os }}-${{ hashFiles('**/libs.versions.toml', '**/*.gradle.kts') }}
           restore-keys: |
             robolectric-${{ runner.os }}-
+
+      # 缓存未命中时显式预拉，允许重试，且与单测步骤分离便于定位。
+      - name: Prefetch Robolectric runtime
+        run: |
+          set -e
+          ver="9-robolectric-4913185-2-i7"
+          dir="$HOME/.m2/repository/org/robolectric/android-all-instrumented/$ver"
+          jar="$dir/android-all-instrumented-$ver.jar"
+          if [ -f "$jar" ]; then
+            echo "已缓存，跳过下载：$jar"
+            exit 0
+          fi
+          mkdir -p "$dir"
+          url="https://repo1.maven.org/maven2/org/robolectric/android-all-instrumented/$ver/android-all-instrumented-$ver.jar"
+          for i in 1 2 3; do
+            echo "下载尝试 $i ..."
+            if curl -fSL --retry 2 --retry-delay 5 -o "$jar" "$url"; then
+              echo "下载完成：$(du -h "$jar" | cut -f1)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::warning::Robolectric 运行时预下载失败，MigrationTest 可能跳过"
+          rm -f "$jar"
 
       # 单测只跑 universal debug：单测逻辑与 flavor 无关，跑多个变体是重复编译。
       - name: Run unit tests
