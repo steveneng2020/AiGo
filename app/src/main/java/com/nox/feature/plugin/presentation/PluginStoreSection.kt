@@ -84,6 +84,7 @@ import compose.icons.feathericons.Package
 import compose.icons.feathericons.Server
 import compose.icons.feathericons.ShoppingBag
 import compose.icons.feathericons.Tag
+import compose.icons.feathericons.EyeOff
 
 /** 非官方徽标固定用黄色，与主题主色区分开。 */
 private val UnofficialBadgeBackground = Color(0xFFFFE082)
@@ -94,6 +95,10 @@ private val UnofficialBadgeText = Color(0xFF5C4300)
 internal fun PluginStoreSection(
     onShowPreview: (PluginStorePreview) -> Unit,
     onOpenDetail: (PluginStoreItem) -> Unit,
+    /** 被屏蔽的插件 id：这些条目不在商店列表里展示。 */
+    blockedIds: Set<String> = emptySet(),
+    /** 屏蔽 / 取消屏蔽。为 null 时菜单里不显示该项。 */
+    onSetBlocked: ((String, Boolean) -> Unit)? = null,
     viewModel: PluginStoreViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -121,12 +126,17 @@ internal fun PluginStoreSection(
         }
     }
 
-    val filteredItems = remember(state.items, searchQuery, languageTag) {
+    // 屏蔽在搜索之前做：搜索也不应该把屏蔽掉的插件翻出来。
+    val visibleItems = remember(state.items, blockedIds) {
+        if (blockedIds.isEmpty()) state.items
+        else state.items.filterNot { it.plugin.id in blockedIds }
+    }
+    val filteredItems = remember(visibleItems, searchQuery, languageTag) {
         val query = searchQuery.trim().lowercase()
         if (query.isEmpty()) {
-            state.items
+            visibleItems
         } else {
-            state.items.filter { item ->
+            visibleItems.filter { item ->
                 item.plugin.name.resolve(languageTag).lowercase().contains(query) ||
                     item.plugin.id.lowercase().contains(query) ||
                     item.plugin.author.lowercase().contains(query) ||
@@ -275,6 +285,17 @@ internal fun PluginStoreSection(
                         viewModel.exportPackage(item, share = true)
                     }
                 )
+                if (onSetBlocked != null) {
+                    StoreSheetActionRow(
+                        icon = FeatherIcons.EyeOff,
+                        label = stringResource(R.string.plugin_menu_block),
+                        tint = MaterialTheme.colorScheme.error,
+                        onClick = {
+                            menuItem = null
+                            onSetBlocked(item.plugin.id, true)
+                        }
+                    )
+                }
             }
         }
     }

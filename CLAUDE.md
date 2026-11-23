@@ -16,6 +16,19 @@
 - 将 `origin` 改为非 fork 来源，或把上游历史整体替换
 - 任何 `git push --force` / 历史重写，导致与上游的 merge-base 不可追溯
 
+#### 判据：动手前先问「这会不会断开 fork 关系」
+
+以下任一情形出现，**先停下来确认，不要执行**：
+
+| 可能出现的场景 | 为什么危险 |
+| --- | --- |
+| 想 `git filter-branch` / `filter-repo` 清理历史 | 重写历史 → merge-base 丢失 |
+| 想 `git push --force` 或 `--force-with-lease` 到 main | 同上，且会冲掉别人的提交 |
+| 想删除 `.git` 重新 `git init` | 直接断根，fork 关系永久丢失 |
+| 想把上游当普通 remote 直接 merge 进无共同祖先的历史 | 产生双根历史，`git describe` / `rev-list --count` 失效 |
+| 想为了「干净」重建仓库 | fork 关系随仓库删除而丢失 |
+| 想改成 `git remote set-url origin <别的仓库>` | 推送目标一旦偏离，fork 网络里就对不上了 |
+
 **遇到 GitHub 对 fork 的限制时，只能找绕过办法，不能解散 fork。** 已知限制与对策：
 
 | fork 限制 | 正确对策 |
@@ -23,6 +36,12 @@
 | fork 仓库的 push / tag push 不触发 workflow | 改用 `workflow_dispatch` 手动触发，由 CI 自己创建 tag 与 Release |
 | fork 的 workflow 默认禁用 | 在 Actions 页面点一次授权，或用 API `enable` |
 | fork 的 PR 不带 Secrets | 在 Actions 设置里单独放行，或改为在 fork 内直接构建 |
+| 历史里混入了不该有的提交 | **不重写历史**；新提交回退内容，保留完整历史 |
+| 提交信息写错 | `git commit --amend` 只对**未推送**的提交安全；已推送的不改 |
+
+**禁止把 AiCode 加为 remote。** 它（`jieapi/aicode`）与 Nox 没有共同祖先，
+merge 进来会产生双根历史，versionCode 体系与 fork 关系同时失效。
+只能等 Nox 合入 AiCode 的改动，再从 Nox 同步过来。
 
 ### 1. 遇到问题必须找到根因，禁止猜测与退缩
 

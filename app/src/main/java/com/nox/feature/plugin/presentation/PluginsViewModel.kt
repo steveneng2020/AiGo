@@ -186,10 +186,26 @@ class PluginsViewModel @Inject constructor(
     private val systemService: PluginSystemService,
     private val introspectionService: PluginIntrospectionService,
     private val toolService: PluginToolService,
-    private val httpService: PluginHttpService
+    private val httpService: PluginHttpService,
+    private val blockRepository: com.nox.feature.plugin.data.PluginBlockRepository
 ) : ViewModel() {
 
     val plugins: StateFlow<List<InstalledPlugin>> = manager.plugins
+
+    /**
+     * 被屏蔽的插件 id。
+     *
+     * 屏蔽只影响列表展示（已安装页 / 插件市场），不改 manager 的加载状态：
+     * 屏蔽一个插件不应该让它从其他依赖它的地方消失（比如抽屉入口、工具注册），
+     * 那些由各自的开关控制。用户想彻底停用请用列表里的开关。
+     */
+    val blockedPluginIds: StateFlow<Set<String>> = blockRepository.blockedIdsFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /** 屏蔽 / 取消屏蔽插件。 */
+    fun setPluginBlocked(pluginId: String, blocked: Boolean) {
+        viewModelScope.launch { blockRepository.setBlocked(pluginId, blocked) }
+    }
 
     val loaded: StateFlow<Boolean> = manager.isLoaded
 

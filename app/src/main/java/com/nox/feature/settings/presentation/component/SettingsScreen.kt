@@ -445,6 +445,8 @@ fun SettingsScreen(
         androidx.hilt.navigation.compose.hiltViewModel()
     val plugins by pluginsViewModel.plugins.collectAsStateWithLifecycle()
     val pluginsLoaded by pluginsViewModel.loaded.collectAsStateWithLifecycle()
+    // 被屏蔽的插件 id：只影响列表展示，不影响插件本身的加载状态。
+    val pluginBlockedIds by pluginsViewModel.blockedPluginIds.collectAsStateWithLifecycle()
     val pluginsRefreshing by pluginsViewModel.refreshing.collectAsStateWithLifecycle()
     val pluginDependencyStates by pluginsViewModel.dependencyStates.collectAsStateWithLifecycle()
     val shizukuGrantedPluginIds by pluginsViewModel.shizukuGrantedPluginIds.collectAsStateWithLifecycle()
@@ -1570,6 +1572,34 @@ fun SettingsScreen(
                     onOpenStoreDetail = {
                         selectedStoreItem = it
                         section = SettingsSection.PluginStoreDetail
+                    },
+                    blockedIds = pluginBlockedIds,
+                    onSetBlocked = { plugin, blocked ->
+                        pluginsViewModel.setPluginBlocked(plugin.id, blocked)
+                        android.widget.Toast.makeText(
+                            pluginDrawerAppContext,
+                            pluginDrawerAppContext.getString(
+                                if (blocked) R.string.plugin_blocked_toast
+                                else R.string.plugin_unblocked_toast,
+                                plugin.displayName(pluginDrawerLanguageTag)
+                            ),
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    onSetBlockedPluginId = { pluginId, blocked ->
+                        pluginsViewModel.setPluginBlocked(pluginId, blocked)
+                        // 商店里的条目可能没装，查不到 InstalledPlugin 时退回用 id 当名字
+                        val name = plugins.firstOrNull { it.id == pluginId }
+                            ?.displayName(pluginDrawerLanguageTag) ?: pluginId
+                        android.widget.Toast.makeText(
+                            pluginDrawerAppContext,
+                            pluginDrawerAppContext.getString(
+                                if (blocked) R.string.plugin_blocked_toast
+                                else R.string.plugin_unblocked_toast,
+                                name
+                            ),
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
                     },
                 )
                 SettingsSection.PluginDetail -> selectedPlugin?.let { plugin ->

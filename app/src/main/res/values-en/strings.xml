@@ -2188,4 +2188,10 @@
     <string name="touch_lock_hold_min_hint">0.1 sec (tap)</string>
     <string name="touch_lock_hold_max_hint">5 sec</string>
     <string name="chat_clipboard_image_dismiss">Dismiss</string>
+    <string name="plugin_menu_block">Block this plugin</string>
+    <string name="plugin_blocked_toast">Blocked \"%1$s\"</string>
+    <string name="plugin_unblocked_toast">Unblocked \"%1$s\"</string>
+    <string name="plugins_blocked_entry">Blocked plugins</string>
+    <string name="plugins_blocked_empty">No plugins blocked</string>
+    <string name="plugins_update_action">Update</string>
 </resources>

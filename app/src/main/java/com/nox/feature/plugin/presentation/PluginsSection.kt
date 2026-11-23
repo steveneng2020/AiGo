@@ -102,6 +102,7 @@ import com.nox.feature.settings.presentation.component.SettingsRow
 import com.nox.feature.settings.presentation.component.openUrl
 import com.nox.feature.settings.presentation.component.settingsPageBackground
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.EyeOff
 import compose.icons.feathericons.Activity
 import compose.icons.feathericons.Book
 import compose.icons.feathericons.Download
@@ -171,7 +172,15 @@ internal fun PluginsSection(
     onShowStorePreview: (PluginStorePreview) -> Unit,
     onOpenStoreDetail: (PluginStoreItem) -> Unit,
     /** 长按已安装插件：导出（share=false）或分享（share=true）安装包。 */
-    onExportPackage: ((InstalledPlugin, Boolean) -> Unit)? = null
+    onExportPackage: ((InstalledPlugin, Boolean) -> Unit)? = null,
+    /** 被屏蔽的插件 id：这些插件不在列表里展示。 */
+    blockedIds: Set<String> = emptySet(),
+    /** 屏蔽 / 取消屏蔽插件。为 null 时长按菜单里不显示该项。 */
+    onSetBlocked: ((InstalledPlugin, Boolean) -> Unit)? = null,
+    /** 点「更新」按钮：直接走商店安装流程。 */
+    onUpdate: ((PluginStoreItem) -> Unit)? = null,
+    /** 按 id 屏蔽 / 取消屏蔽（商店条目可能未安装，拿不到 InstalledPlugin）。 */
+    onSetBlockedPluginId: ((String, Boolean) -> Unit)? = null
 ) {
     if (!loaded) return
 
@@ -216,7 +225,13 @@ internal fun PluginsSection(
                         },
                         onOpenDetail = onOpenDetail,
                         onToggleEnabled = onToggleEnabled,
-                        onExportPackage = onExportPackage
+                        onExportPackage = onExportPackage,
+                        blockedIds = blockedIds,
+                        onSetBlocked = onSetBlocked,
+                        // 直接调商店 VM 的 install()：它会走完整流程
+                        // （探测线路 → 下载 → 预览校验 → 确认框 → 安装）。
+                        // 已安装页与商店页共用同一条路径，避免两套安装逻辑分叉。
+                        onUpdate = { item -> storeViewModel.install(item) }
                     )
                     pageCount == 3 && page == 1 -> DevPluginsPage(
                         projects = devProjects,
@@ -232,7 +247,11 @@ internal fun PluginsSection(
                     else -> PluginStorePage(
                         onShowPreview = onShowStorePreview,
                         onOpenDetail = onOpenStoreDetail,
-                        viewModel = storeViewModel
+                        viewModel = storeViewModel,
+                        blockedIds = blockedIds,
+                        // 商店页的条目可能尚未安装，拿不到 InstalledPlugin，
+                        // 因此这里直接把 id 交给调用方（它自己查名字做提示）。
+                        onSetBlocked = onSetBlockedPluginId
                     )
                 }
             }
@@ -269,16 +288,26 @@ private fun InstalledPluginsPage(
     onOpenDetail: (InstalledPlugin) -> Unit,
     onToggleEnabled: (InstalledPlugin, Boolean) -> Unit,
     /** 长按插件：导出/分享安装包。为 null 时不启用长按。 */
-    onExportPackage: ((InstalledPlugin, Boolean) -> Unit)? = null
+    onExportPackage: ((InstalledPlugin, Boolean) -> Unit)? = null,
+    /** 被屏蔽的插件 id：这些插件不在列表里展示。 */
+    blockedIds: Set<String> = emptySet(),
+    /** 屏蔽 / 取消屏蔽。为 null 时菜单里不显示该项。 */
+    onSetBlocked: ((InstalledPlugin, Boolean) -> Unit)? = null,
+    /** 点「更新」按钮：直接走商店安装流程。 */
+    onUpdate: ((PluginStoreItem) -> Unit)? = null
 ) {
     // 长按选中的插件，用于弹操作菜单
     var menuPlugin by remember { mutableStateOf<InstalledPlugin?>(null) }
-    val filteredPlugins = remember(plugins, searchQuery, languageTag) {
+    // 屏蔽在过滤之前做：搜索也不应该把屏蔽掉的插件翻出来。
+    val visiblePlugins = remember(plugins, blockedIds) {
+        if (blockedIds.isEmpty()) plugins else plugins.filterNot { it.id in blockedIds }
+    }
+    val filteredPlugins = remember(visiblePlugins, searchQuery, languageTag) {
         val query = searchQuery.trim().lowercase()
         if (query.isEmpty()) {
-            plugins
+            visiblePlugins
         } else {
-            plugins.filter { plugin ->
+            visiblePlugins.filter { plugin ->
                 plugin.displayName(languageTag).lowercase().contains(query) ||
                     plugin.id.lowercase().contains(query) ||
                     plugin.manifest?.publisher?.lowercase()?.contains(query) == true ||
@@ -321,7 +350,7 @@ private fun InstalledPluginsPage(
                 }
             }
 
-            if (filteredPlugins.isEmpty() && plugins.isNotEmpty()) {
+            if (filteredPlugins.isEmpty() && visiblePlugins.isNotEmpty()) {
                 item(key = "search-empty", contentType = "empty") {
                     PluginSearchEmptyState()
                 }
@@ -346,7 +375,8 @@ private fun InstalledPluginsPage(
                                 { menuPlugin = plugin }
                             } else {
                                 null
-                            }
+                            },
+                            onUpdate = onUpdate
                         )
                     }
                 }
@@ -394,6 +424,17 @@ private fun InstalledPluginsPage(
                         onExportPackage?.invoke(plugin, true)
                     }
                 )
+                if (onSetBlocked != null) {
+                    InstalledPluginMenuRow(
+                        icon = FeatherIcons.EyeOff,
+                        label = stringResource(R.string.plugin_menu_block),
+                        tint = MaterialTheme.colorScheme.error,
+                        onClick = {
+                            menuPlugin = null
+                            onSetBlocked(plugin, true)
+                        }
+                    )
+                }
             }
         }
     }
@@ -437,11 +478,15 @@ private fun InstalledPluginMenuRow(
 private fun PluginStorePage(
     onShowPreview: (PluginStorePreview) -> Unit,
     onOpenDetail: (PluginStoreItem) -> Unit,
-    viewModel: PluginStoreViewModel
+    viewModel: PluginStoreViewModel,
+    blockedIds: Set<String> = emptySet(),
+    onSetBlocked: ((String, Boolean) -> Unit)? = null
 ) {
     PluginStoreSection(
         onShowPreview = onShowPreview,
         onOpenDetail = onOpenDetail,
+        blockedIds = blockedIds,
+        onSetBlocked = onSetBlocked,
         viewModel = viewModel
     )
 }
@@ -484,7 +529,9 @@ private fun PluginRow(
     update: PluginStoreItem?,
     onToggleEnabled: (Boolean) -> Unit,
     onClick: () -> Unit,
-    onLongClick: (() -> Unit)? = null
+    onLongClick: (() -> Unit)? = null,
+    /** 点「更新」按钮：直接走商店的安装流程。为 null 时只显示不可点的标签。 */
+    onUpdate: ((PluginStoreItem) -> Unit)? = null
 ) {
     val version = plugin.manifest?.version?.toString() ?: plugin.record.version
     val publisher = plugin.manifest?.publisher
@@ -565,7 +612,23 @@ private fun PluginRow(
                         backgroundColor = MaterialTheme.colorScheme.tertiaryContainer
                     )
                 }
-                if (update != null) {
+                if (update != null && onUpdate != null) {
+                    // 「可更新」原来是纯提示，用户得自己去商店找同一个插件。
+                    // 现在做成可点按钮，直接走商店页那套完整安装流程（含确认框、进度）。
+                    androidx.compose.material3.Surface(
+                        onClick = { onUpdate(update) },
+                        shape = RoundedCornerShape(999.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = stringResource(R.string.plugins_update_action),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                } else if (update != null) {
                     McpPill(
                         text = stringResource(R.string.plugins_update_available),
                         textColor = MaterialTheme.colorScheme.onPrimaryContainer,

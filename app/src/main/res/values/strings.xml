@@ -2386,4 +2386,10 @@
     <string name="touch_lock_hold_min_hint">0.1 秒（几乎点一下就开）</string>
     <string name="touch_lock_hold_max_hint">5 秒</string>
     <string name="chat_clipboard_image_dismiss">不再提示</string>
+    <string name="plugin_menu_block">屏蔽此插件</string>
+    <string name="plugin_blocked_toast">已屏蔽「%1$s」</string>
+    <string name="plugin_unblocked_toast">已恢复「%1$s」</string>
+    <string name="plugins_blocked_entry">已屏蔽的插件</string>
+    <string name="plugins_blocked_empty">没有屏蔽任何插件</string>
+    <string name="plugins_update_action">更新</string>
 </resources>
