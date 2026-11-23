@@ -26,6 +26,8 @@
 #   aigo gate [--fast]      跑完整门禁（敏感信息/迁移/品牌/编译/单测）
 #   aigo release-check      检查并清理会污染 versionName 的临时 tag
 #   aigo sync-archive      把归档副本快进到主副本 HEAD（秒级，手机 Git 面板立即可见）
+#   aigo clean-shots       归档验收截图到 验收截图/<日期>/，并清理 7 天前的旧归档
+#   aigo verify-push       确认本次 push 确实产生了 workflow run（防半成功推送）
 #   aigo sync-fuse         整目录覆盖重建归档副本（5~10 分钟，换设备/重建时用）
 #   aigo where              打印两个位置
 #
@@ -89,6 +91,59 @@ cmd_push() {
   git push origin HEAD "$@" || die "推送失败"
   # 推完立刻同步归档副本：手机 Git 面板看的是 $SRC，不同步就看不到新提交。
   cmd_sync_archive || echo "（归档副本同步失败，可稍后手动 aigo sync-archive）"
+  # 闭环验证：push 可能「ref 更新了但事件未投递」（TLS/RPC 半成功），
+  # 表现为代码在远端、Actions 却一次都没跑。这里等几秒后确认。
+  cmd_verify_push
+}
+
+# 推送后闭环：确认本次提交真的产生了 workflow run。
+#
+# 2026-11-22 踩过：git push 报 TLS/RPC 错误但 ref 已更新，push 事件没投递，
+# Actions 一次都没跑，而 git ls-remote 显示代码在，误以为一切正常。
+# 判据：查该 sha 的 workflow run 数，0 个就报错提示手动触发。
+cmd_verify_push() {
+  command -v curl >/dev/null 2>&1 || { echo "（无 curl，跳过 push 闭环检查）"; return 0; }
+  [ -f "$HOME/.nox/git-credential-nox" ] || { echo "（无凭据，跳过 push 闭环检查）"; return 0; }
+
+  sha=$(git -C "$MAIN" rev-parse HEAD 2>/dev/null) || return 0
+  # 凭据助手按目录生效（includeIf），必须在主副本目录里取。
+  token=$(cd "$MAIN" && echo "url=https://github.com" | git credential fill 2>/dev/null \
+          | grep '^password=' | sed 's/^password=//')
+  [ -n "$token" ] || { echo "（取不到凭据，跳过）"; return 0; }
+
+  echo "等待 Actions 接收 push 事件…"
+  sleep 15
+  runs=""
+  i=0
+  while [ "$i" -lt 4 ]; do
+    runs=$(curl -s -m 20 -H "Authorization: Bearer $token" \
+      "https://api.github.com/repos/steveneng2020/AiGo/actions/runs?per_page=10" 2>/dev/null \
+      | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print(''); raise SystemExit
+sha = '$sha'
+n = sum(1 for r in d.get('workflow_runs', []) if r.get('head_sha') == sha)
+print(n)
+" 2>/dev/null)
+    [ -n "$runs" ] && [ "$runs" != "0" ] && break
+    i=$((i + 1))
+    [ "$i" -lt 4 ] && sleep 10
+  done
+
+  case "$runs" in
+    ''|0)
+      echo "[WARN] 本次提交没有产生 workflow run（push 事件可能未投递）"
+      echo "       sha=$sha"
+      echo "       处理：Actions 页手动 Run workflow，或改动一行再推一次"
+      return 1
+      ;;
+    *)
+      echo "[OK] push 已触发 $runs 个 workflow run（sha=$(echo $sha | cut -c1-7)）"
+      ;;
+  esac
 }
 
 # 把主副本同步到 FUSE 源仓库，供宿主文件管理器查看/备份。
@@ -280,6 +335,51 @@ cmd_status() {
   echo "== 改动 =="; git status --short | head -20
 }
 
+# 整理真机验收产物：把根目录散落的截图与临时库副本收进验收截图/。
+#
+# 验收时用 adb/root 截图会直接落在 AiGo开发/ 根目录（容器内 ~/workspace），
+# 一轮下来几十个 v1.png/w2.png 堆在根目录，与 build-output、源码仓库混在一起。
+# 按日期分子目录归档，保留最近 N 天，更早的清掉。
+cmd_clean_shots() {
+  root="$HOME/workspace"
+  dest="$root/验收截图"
+  [ -d "$root" ] || die "工作区不存在: $root"
+  mkdir -p "$dest"
+
+  moved=0
+  # 根目录散落的 png 与临时库副本
+  for f in "$root"/*.png "$root"/*.db "$root"/*.db-wal "$root"/*.db-shm; do
+    [ -f "$f" ] || continue
+    day=$(date -r "$f" +%Y%m%d 2>/dev/null || date +%Y%m%d)
+    mkdir -p "$dest/$day"
+    mv "$f" "$dest/$day/" && moved=$((moved + 1))
+  done
+  [ "$moved" -gt 0 ] && echo "已归档 $moved 个文件到 $dest"
+
+  # 清理 N 天前的归档（默认 7 天，可用 AIGO_SHOT_KEEP_DAYS 覆盖）
+  keep=${AIGO_SHOT_KEEP_DAYS:-7}
+  cutoff=$(date -d "-$keep days" +%Y%m%d 2>/dev/null || echo "")
+  if [ -n "$cutoff" ]; then
+    removed=0
+    for d in "$dest"/*/; do
+      [ -d "$d" ] || continue
+      name=$(basename "$d")
+      case "$name" in
+        [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9])
+          if [ "$name" -lt "$cutoff" ]; then
+            rm -rf "$d" && removed=$((removed + 1))
+          fi
+          ;;
+      esac
+    done
+    [ "$removed" -gt 0 ] && echo "已清理 $removed 个超过 $keep 天的归档目录"
+  fi
+
+  echo "当前归档："
+  du -sh "$dest" 2>/dev/null || true
+  ls -1 "$dest" 2>/dev/null | head -10
+}
+
 cmd_where() {
   echo "源仓库（持久化，宿主可见）:"; echo "  $SRC"
   echo "  宿主: /storage/emulated/0/Download/AiGo/AiGo开发/AiGo-Android源码仓库"
@@ -298,6 +398,8 @@ case "${1:-}" in
   push)   shift; cmd_push "$@" ;;
   sync-fuse) cmd_sync_fuse ;;
   sync-archive) cmd_sync_archive ;;
+  clean-shots) cmd_clean_shots ;;
+  verify-push) cmd_verify_push ;;
   where)  cmd_where ;;
   *)      sed -n '23,44p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac
