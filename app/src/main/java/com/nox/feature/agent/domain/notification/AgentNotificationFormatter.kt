@@ -1,5 +1,6 @@
 package com.nox.feature.agent.domain.notification
 
+import com.nox.feature.agent.domain.model.AgentImage
 import com.nox.feature.agent.presentation.BACKGROUND_NOTIFICATION_PREFIX
 import com.nox.feature.terminal.domain.TAIL_LINES
 import kotlinx.serialization.json.JsonArray
@@ -103,6 +104,14 @@ object AgentNotificationFormatter {
             }
             AgentNotificationKind.USER_MESSAGE -> {
                 message?.takeIf { it.isNotBlank() }?.let { appendLine("  <message>${escapeXml(it)}</message>") }
+                // 插话的图片：AI 需要看到，聊天窗口也要显示，所以放进通知本身而不是另开通道。
+                if (images.isNotEmpty()) {
+                    appendLine("  <images>")
+                    images.forEach { img ->
+                        appendLine("    <image mime=\"${img.mimeType}\" data=\"${img.base64Data}\"/>")
+                    }
+                    appendLine("  </images>")
+                }
             }
         }
         appendLine("  <status>${statusText()}</status>")
@@ -147,6 +156,14 @@ object AgentNotificationFormatter {
             }
             AgentNotificationKind.USER_MESSAGE -> {
                 message?.takeIf { it.isNotBlank() }?.let { put("message", JsonPrimitive(it)) }
+                if (images.isNotEmpty()) {
+                    put("images", JsonArray(images.map { img ->
+                        buildJsonObject {
+                            put("mime", img.mimeType)
+                            put("data", img.base64Data)
+                        }
+                    }))
+                }
             }
         }
         put("status", statusText())

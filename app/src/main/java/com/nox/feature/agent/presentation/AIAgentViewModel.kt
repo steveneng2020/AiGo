@@ -104,6 +104,7 @@ import com.nox.feature.agent.presentation.notification.AgentLiveNotificationMana
 import com.nox.feature.agent.presentation.notification.AgentApprovalNotificationManager
 import com.nox.feature.agent.presentation.notification.AgentApprovalNotificationManager.ApprovalKind
 import com.nox.feature.agent.presentation.component.RewindOption
+import com.nox.feature.agent.presentation.component.SessionStatsUi
 import com.nox.feature.agent.presentation.component.toolRunningLabelRes
 import com.nox.feature.agent.presentation.component.formatTokenCount
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -1024,6 +1025,41 @@ class AIAgentViewModel @Inject constructor(
     private val _contextUsages = MutableStateFlow<Map<String, AgentEvent.ContextUsage>>(emptyMap())
     val contextUsages: StateFlow<Map<String, AgentEvent.ContextUsage>> = _contextUsages.asStateFlow()
 
+    /**
+     * 上下文用量面板的会话级明细，按 sessionId 缓存。
+     *
+     * 数据全部来自本地 llm_call_records，不额外请求上游：
+     * 每次 LLM 调用后刷新一次即可，面板打开时读缓存，避免反复查库。
+     */
+    private val _sessionStats = MutableStateFlow<Map<String, SessionStatsUi>>(emptyMap())
+    val sessionStats: StateFlow<Map<String, SessionStatsUi>> = _sessionStats.asStateFlow()
+
+    /** 刷新某个会话的用量明细；面板打开与每次调用结束都会调。 */
+    fun refreshSessionStats(sid: String) {
+        viewModelScope.launch {
+            val stats = runCatching {
+                val summary = llmCallRecordDao.getSessionSummary(sid).first()
+                val ttfbSamples = llmCallRecordDao.getSessionTtfbSamples(sid).first()
+                SessionStatsUi(
+                    calls = summary.calls,
+                    chatCalls = summary.chatCalls,
+                    compactionCalls = summary.compactionCalls,
+                    inputTokens = summary.inputTokens,
+                    outputTokens = summary.outputTokens,
+                    cachedInputTokens = summary.cachedInputTokens,
+                    cacheCreationTokens = summary.cacheCreationTokens,
+                    errors = summary.errors,
+                    avgTtfbMillis = summary.avgTtfbMillis,
+                    avgDurationMillis = summary.avgDurationMillis,
+                    retryCount = summary.retryCount,
+                    maxContextTokens = summary.maxContextTokens,
+                    ttfbSamples = ttfbSamples
+                )
+            }.getOrNull() ?: return@launch
+            _sessionStats.value = _sessionStats.value + (sid to stats)
+        }
+    }
+
     private val _llmCallEvents = MutableSharedFlow<LlmCallEvent>(extraBufferCapacity = 16)
     /** 每次单次 LLM 请求返回事件（携带单次 Token 统计）。 */
     val llmCallEvents: SharedFlow<LlmCallEvent> = _llmCallEvents.asSharedFlow()
@@ -1837,7 +1873,9 @@ class AIAgentViewModel @Inject constructor(
                 sourceId = sid,
                 title = "",
                 outcome = NotificationOutcome.COMPLETED,
-                message = req.request
+                message = req.request,
+                // 图片随插话一起带上，否则通知文本里只有文字，用户插的话里的图在聊天窗口看不到。
+                images = req.inputImages
             )
         )
     }

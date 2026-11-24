@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ClipEntry
@@ -584,6 +585,23 @@ private fun BackgroundNotificationBar(message: AgentUIMessage) {
         statuses.any { it == "message" } -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.semanticColors.success
     }
+    // 用户插话：summary 是固定文案（「用户在工作期间插入了一条消息」），
+    // 真正的要求在 <message> 里。只显示 summary 会让用户看不到自己说过什么，
+    // 也可能让 AI 的理解与用户原意产生偏差而无人察觉，所以把原文一并取出展示。
+    val userMessages = Regex("<message>(.*?)</message>", RegexOption.DOT_MATCHES_ALL)
+        .findAll(content)
+        .map { it.groupValues.getOrNull(1)?.trim().orEmpty() }
+        .filter { it.isNotEmpty() }
+        .toList()
+    val isUserMessage = content.contains("<user-message>")
+    // 插话图片：通知文本里以 <images><image mime=".." data=".."/></images> 形式携带，
+    // 与 Formatter 输出保持一致。解析成 (mime, base64) 对，供下方缩略图渲染。
+    val userImages = Regex("""<image\s+mime="([^"]*)"\s+data="([^"]*)"/>""")
+        .findAll(content)
+        .mapNotNull { it.groupValues.getOrNull(1)?.takeIf { m -> m.isNotBlank() }
+            ?.let { m -> it.groupValues.getOrNull(2)?.takeIf { d -> d.isNotBlank() }?.let { d -> m to d } } }
+        .toList()
+
     val label = when {
         summaries.size <= 1 -> summaries.firstOrNull() ?: stringResource(R.string.chat_bg_command_done)
         else -> {
@@ -614,12 +632,74 @@ private fun BackgroundNotificationBar(message: AgentUIMessage) {
                     .background(dotColor)
             )
             Text(
-                text = label,
+                // 用户插话时不显示那句固定的「用户在工作期间插入了一条消息」，
+                // 直接以「你在运行中补充」引出下面的原文，信息更直接。
+                text = if (isUserMessage) {
+                    stringResource(R.string.chat_user_interjection_label)
+                } else {
+                    label
+                },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+        // 用户插话的原文用真正的用户气泡渲染，而不是自造一块样式：
+        // 这样它和平时发的消息长得一模一样，用户一眼确认「我插的话被完整看到了」，
+        // 也不必另学一套视觉规则。气泡外观由 LocalChatBubbleStyle 决定，
+        // 跟随设置里的「聊天气泡」（经典白描边 / 柔和投影 / 清新绿 / 漫画方格 等 8 种）。
+        if (userMessages.isNotEmpty()) {
+            userMessages.forEachIndexed { index, text ->
+                Spacer(Modifier.height(Spacing.xs))
+                UserMessageBubble(
+                    text = if (userMessages.size > 1) "${index + 1}. $text" else text,
+                    maxWidth = LocalConfiguration.current.screenWidthDp.dp * 0.78f,
+                    emphasized = true,
+                    modifier = Modifier.align(Alignment.End)
+                )
+            }
+            // 插话若带了附件，在气泡下方照常展示：用户插入消息时同时附带的文件
+            // 不能因为走的是通知条路径就被吞掉。
+            if (message.attachments.isNotEmpty()) {
+                Spacer(Modifier.height(Spacing.xs))
+                MessageAttachmentList(
+                    attachments = message.attachments,
+                    compact = true
+                )
+            }
+            // 图片（base64 形式，随通知一起传来）同样在气泡下方展示，
+            // 让用户确认插话带了什么图，不必再回翻自己刚才那条消息。
+            if (userImages.isNotEmpty()) {
+                userImages.forEach { (mime, data) ->
+                    Spacer(Modifier.height(Spacing.xs))
+                    val bitmap = remember(mime, data) {
+                        runCatching {
+                            android.util.Base64.decode(data, android.util.Base64.DEFAULT)
+                        }.getOrNull()?.let { bytes ->
+                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        }
+                    }
+                    // foundation.Image 只接受 ImageBitmap，Android 的 Bitmap 需转换一次。
+                    val imageBitmap = remember(bitmap) { bitmap?.asImageBitmap() }
+                    if (imageBitmap != null) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.End)
+                                .padding(end = Spacing.md)
+                        ) {
+                            androidx.compose.foundation.Image(
+                                bitmap = imageBitmap,
+                                contentDescription = mime,
+                                modifier = Modifier
+                                    .widthIn(max = 240.dp)
+                                    .heightIn(max = 240.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

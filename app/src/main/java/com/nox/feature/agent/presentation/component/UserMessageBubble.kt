@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.nox.core.theme.Spacing
 import com.nox.feature.settings.data.repository.ChatBubbleStyle
@@ -42,7 +43,9 @@ import com.nox.feature.settings.data.repository.ChatBubbleStyle
 internal fun UserMessageBubble(
     text: String,
     maxWidth: Dp,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 加粗显示：用户运行中插话的原文用它强调，让用户一眼确认内容被完整看到。 */
+    emphasized: Boolean = false
 ) {
     val style = LocalChatBubbleStyle.current
     val bubbleColor = chatUserBubbleColor()
@@ -69,6 +72,7 @@ internal fun UserMessageBubble(
                     text = text,
                     color = textColor,
                     style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                    fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal,
                     modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)
                 )
             }

@@ -62,6 +62,31 @@ data class ModelProviderCostStats(
     val cacheCreationTokens: Long
 )
 
+/**
+ * 会话级汇总：上下文用量面板的数据源。
+ *
+ * 比 [CallSummary] 多两项：
+ * - compactionCalls / chatCalls：按 kind 拆开，压缩调用单独计数；
+ * - maxContextTokens：本会话单次请求的最大输入 token，即「当前上下文占用」的实测上界。
+ *
+ * 为什么用 max 而不是最后一次：上下文只增不减（除压缩），max 就是当前真实占用，
+ * 且不受「最后一次是压缩调用（输入只有摘要摘要）」干扰。
+ */
+data class SessionCallSummary(
+    val calls: Int,
+    val chatCalls: Int,
+    val compactionCalls: Int,
+    val inputTokens: Long,
+    val outputTokens: Long,
+    val cachedInputTokens: Long,
+    val cacheCreationTokens: Long,
+    val errors: Int,
+    val avgTtfbMillis: Double?,
+    val avgDurationMillis: Double?,
+    val retryCount: Long,
+    val maxContextTokens: Long = 0
+)
+
 /** 当前周期的整体汇总，供概览卡片使用。 */
 data class CallSummary(
     val calls: Int,
@@ -245,6 +270,42 @@ interface LlmCallRecordDao {
         providerId: String? = null,
         model: String? = null
     ): Flow<CallSummary>
+
+    /**
+     * 会话级汇总，供上下文用量面板使用。
+     *
+     * maxContextTokens 取 MAX(inputTokens)：上下文只增不减（压缩除外），
+     * 最大值即当前占用上界；用最后一次会被压缩调用（输入仅摘要）拉低。
+     * 压缩调用按 kind = 'compaction' 单独计数，不混进 chatCalls。
+     */
+    @Query(
+        """
+        SELECT COUNT(*) AS calls,
+               SUM(CASE WHEN kind = 'chat' THEN 1 ELSE 0 END) AS chatCalls,
+               SUM(CASE WHEN kind = 'compaction' THEN 1 ELSE 0 END) AS compactionCalls,
+               COALESCE(SUM(inputTokens), 0) AS inputTokens,
+               COALESCE(SUM(outputTokens), 0) AS outputTokens,
+               COALESCE(SUM(cachedInputTokens), 0) AS cachedInputTokens,
+               COALESCE(SUM(cacheCreationTokens), 0) AS cacheCreationTokens,
+               SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
+               AVG(ttfbMillis) AS avgTtfbMillis,
+               AVG(durationMillis) AS avgDurationMillis,
+               COALESCE(SUM(retryCount), 0) AS retryCount,
+               COALESCE(MAX(CASE WHEN kind = 'chat' THEN inputTokens ELSE 0 END), 0) AS maxContextTokens
+        FROM llm_call_records
+        WHERE sessionId = :sessionId
+        """
+    )
+    fun getSessionSummary(sessionId: String): Flow<SessionCallSummary>
+
+    /** 会话内的 TTFT 样本数：用于区分「每次都慢」与「偶发一次慢」。 */
+    @Query(
+        """
+        SELECT COUNT(*) FROM llm_call_records
+        WHERE sessionId = :sessionId AND ttfbMillis IS NOT NULL AND kind = 'chat'
+        """
+    )
+    fun getSessionTtfbSamples(sessionId: String): Flow<Int>
 
     /** 当前周期调用总数，供分页显示总页数。 */
     @Query(

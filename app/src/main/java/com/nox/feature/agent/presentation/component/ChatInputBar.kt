@@ -124,6 +124,7 @@ import com.nox.feature.workspace.presentation.component.WorkspaceIconButton
 import com.nox.core.ui.ExpandableChevronIcon
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.AlertCircle
+import compose.icons.feathericons.Activity
 import compose.icons.feathericons.ArrowUp
 import compose.icons.feathericons.Box
 import compose.icons.feathericons.Check
@@ -207,6 +208,17 @@ internal fun ChatInputBar(
     onInterjectQueued: (String) -> Unit = {},
     tokenProgress: Float = 0f,
     tokenEstimated: Boolean = false,
+    /** 本次请求的输入 token 与预算，供上下文用量面板显示明细（与 [tokenProgress] 同源）。 */
+    contextInputTokens: Int = 0,
+    contextBudget: Int = 0,
+    /** 自动压缩阈值百分比，面板里可调。 */
+    compactionThresholdPercent: Int = 85,
+    onCompactionThresholdChange: (Int) -> Unit = {},
+    /** 会话级用量明细（缓存命中 / TTFB / 失败重试等），由 ViewModel 聚合本地记录得到。 */
+    sessionStats: SessionStatsUi? = null,
+    /** 正在压缩：面板里的按钮显示进行中。 */
+    isCompacting: Boolean = false,
+    onCompactContext: () -> Unit = {},
     /** 上下文用量弧的颜色；由 ChatInputBar 内部状态维护，长按发送键可改。 */
     contextArcColor: Color = DefaultContextArcColor,
     onSetContextArcColor: (Color) -> Unit = {},
@@ -235,6 +247,7 @@ internal fun ChatInputBar(
     val canSend = hasContent
     val context = LocalContext.current
     var showAttachmentSheet by remember { mutableStateOf(false) }
+    var showContextUsagePanel by remember { mutableStateOf(false) }
     var showFullScreenInput by remember { mutableStateOf(false) }
     // TextField 的 String 重载在整串替换时会保留旧 selection 下标（点快捷命令补全时光标会停在中间），
     // 这里自持 TextFieldValue：外部改值时把光标移到末尾。
@@ -690,6 +703,16 @@ internal fun ChatInputBar(
                     // 语音输入不在应用内做：Android 没有标准 API 能让应用唤起输入法的语音键，
                     // 而本机又没有可用的系统语音识别引擎。搜狗输入法自带的语音键识别后
                     // 直接写入焦点输入框，效果更好且不依赖应用内实现。
+                    // 上下文用量入口：放在 + 左侧，与 + 之间留 14dp。
+                    // 之所以要拉开：+ 是「添加附件」，误触会弹出文件选择，
+                    // 而查看用量是高频道动作，两者挤在一起容易点错。
+                    ContextUsageIconButton(
+                        progress = tokenProgress,
+                        thresholdPercent = compactionThresholdPercent,
+                        enabled = true,
+                        onClick = { showContextUsagePanel = true }
+                    )
+                    Spacer(Modifier.width(14.dp))
                     UploadIconButton(
                         enabled = true,
                         icon = FeatherIcons.Plus,
@@ -840,6 +863,53 @@ private fun FullScreenInputDialog(
                 )
             }
         }
+    }
+}
+
+/**
+ * 上下文用量入口按钮（方案 6）。
+ *
+ * 与发送键外圈的蓝环分工：
+ * - 蓝环：始终表示「占用了多少」，是比例指示器，不承担预警；
+ * - 本按钮：实心渐变块，用颜色表示「该不该处理了」，同时是面板入口。
+ *
+ * 三态预警：正常蓝 → 接近阈值琥珀 → 达阈值红。
+ * 阈值由自动压缩设置决定，用户调整阈值后这里立即跟着变。
+ */
+@Composable
+internal fun ContextUsageIconButton(
+    progress: Float,
+    thresholdPercent: Int,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val pct = (progress.coerceIn(0f, 1f) * 100)
+    // 达到阈值的 85% 即转琥珀，给用户留出「还来得及手动清理」的缓冲。
+    val colors = when {
+        pct >= thresholdPercent -> listOf(Color(0xFFEF4444), Color(0xFFDC2626))
+        pct >= thresholdPercent * 0.85f -> listOf(Color(0xFFF59E0B), Color(0xFFD97706))
+        else -> listOf(Color(0xFF2563EB), Color(0xFF1D4ED8))
+    }
+    val label = stringResource(
+        if (pct >= thresholdPercent) R.string.context_btn_warn
+        else R.string.context_btn_normal,
+        pct.toInt()
+    )
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(Brush.linearGradient(colors))
+            .clickable(enabled = enabled, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = FeatherIcons.Activity,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = if (enabled) 1f else 0.5f),
+            modifier = Modifier.size(19.dp)
+        )
     }
 }
 

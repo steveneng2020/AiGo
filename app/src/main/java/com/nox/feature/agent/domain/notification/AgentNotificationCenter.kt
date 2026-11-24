@@ -1,6 +1,7 @@
 package com.nox.feature.agent.domain.notification
 
 import com.nox.feature.agent.domain.model.AgentMode
+import com.nox.feature.agent.domain.model.AgentImage
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -42,6 +43,13 @@ data class PendingNotification(
     val newMode: AgentMode? = null,
     val resultExcerpt: String? = null,
     val changedFiles: List<String> = emptyList(),
+    /**
+     * 用户插话携带的图片。
+     *
+     * 只在 USER_MESSAGE 类型有意义：插话的消息本身可能带图，但通知文本只放了文字，
+     * 不带上图片会导致用户插的话里的图在聊天窗口看不到。
+     */
+    val images: List<AgentImage> = emptyList(),
     val seq: Long = 0
 )
 
