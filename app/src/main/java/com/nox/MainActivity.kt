@@ -533,22 +533,13 @@ fun AppNavigation(
         } else if (!share) {
             null
         } else {
-            val failed = withContext(Dispatchers.Main) {
-                runCatching {
-                    val uri = pluginDrawerDeps.pluginPackageExporter().shareUri(zip)
-                    // 显式授权 + ClipData：createChooser 会隔一层系统 Chooser，
-                    // 只靠 Intent 标志时微信/QQ 拿不到临时授权，
-                    // 读文件报「获取资源失败」/「文件不存在」。
-                    activityCtx.startActivity(
-                        com.nox.feature.plugin.presentation.buildPluginShareIntent(
-                            activityCtx,
-                            uri,
-                            ctx.getString(R.string.plugins_share_package)
-                        )
-                    )
-                }
-            }.isFailure
-            if (failed) ctx.getString(R.string.plugins_share_failed) else null
+            // 不再走系统分享。实测同一个 zip 用系统文件管理器分享给微信
+            // 同样失败，而微信自己的「聊天 → + → 文件」能发——微信的
+            // ShareImgUI 不处理 zip，这是对方行为，改我方 Intent 无效。
+            val saved = runCatching { pluginDrawerDeps.pluginPackageExporter().publishToDefault(zip) }
+                .getOrNull()
+            if (saved == null) ctx.getString(R.string.plugins_export_failed)
+            else ctx.getString(R.string.plugins_exported_for_wechat, saved.absolutePath)
         }
     }
 

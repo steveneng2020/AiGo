@@ -561,25 +561,23 @@ fun SettingsScreen(
             )
 
         if (share) {
-            val failure = withContext(kotlinx.coroutines.Dispatchers.Main) {
-                runCatching {
-                    val uri = deps.pluginPackageExporter().shareUri(staging)
-                    context.startActivity(
-                        com.nox.feature.plugin.presentation.buildPluginShareIntent(
-                            context,
-                            uri,
-                            pluginDrawerAppContext.getString(R.string.plugins_share_package)
-                        )
-                    )
-                }
-            }.exceptionOrNull()
-            // 不能在 Intent 发出后立即删：接收方（微信 / QQ）是异步读文件的，
-            // 等它开始读时文件已经被删，表现为「获取资源失败」/「文件不存在」。
-            // 这里只记录失败情况下的清理；正常路径交给 cache 目录自己淘汰。
-            if (failure != null) staging.delete()
-            return if (failure != null) {
-                pluginDrawerAppContext.getString(R.string.plugins_share_failed)
-            } else null
+            // 不再走系统分享（ACTION_SEND）。
+            //
+            // 实测：同一个 zip 用系统「文件管理」分享给微信，微信同样报
+            // 「获取资源失败」；而微信自己的「聊天 → + → 文件」可以正常发送。
+            // 微信的 ShareImgUI 是给图片/视频/链接用的界面，application/*
+            // 只是顺带注册，实际不处理 zip。QQ 同理。这是微信侧的行为，
+            // 改我方 Intent 的参数无法绕过。
+            //
+            // 所以这里只负责把包放到公共下载目录，由用户自己从微信的文件
+            // 选择器里挑——那条路是通的。
+            val saved = runCatching { deps.pluginPackageExporter().publishToDefault(staging) }
+                .getOrNull()
+                ?: return pluginDrawerAppContext.getString(R.string.plugins_export_failed)
+            return pluginDrawerAppContext.getString(
+                R.string.plugins_exported_for_wechat,
+                saved.absolutePath
+            )
         }
 
         // 导出到本地：用户选过目录就直接写，没选过就交给调用方弹目录选择器。
@@ -639,19 +637,14 @@ fun SettingsScreen(
         } else if (!share) {
             null
         } else {
-            val failed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                runCatching {
-                    val uri = pluginDrawerExportDeps.pluginPackageExporter().shareUri(zip)
-                    context.startActivity(
-                        com.nox.feature.plugin.presentation.buildPluginShareIntent(
-                            context,
-                            uri,
-                            pluginDrawerAppContext.getString(R.string.plugins_share_package)
-                        )
-                    )
-                }
-            }.isFailure
-            if (failed) pluginDrawerAppContext.getString(R.string.plugins_share_failed) else null
+            val saved = runCatching {
+                pluginDrawerExportDeps.pluginPackageExporter().publishToDefault(zip)
+            }.getOrNull()
+            if (saved == null) pluginDrawerAppContext.getString(R.string.plugins_export_failed)
+            else pluginDrawerAppContext.getString(
+                R.string.plugins_exported_for_wechat,
+                saved.absolutePath
+            )
         }
     }
     val pluginZipLauncher = rememberLauncherForActivityResult(

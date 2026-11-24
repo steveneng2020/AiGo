@@ -798,12 +798,13 @@
     <string name="plugins_export_failed">导出失败，请确认插件已完整安装</string>
     <string name="plugins_export_failed_reason">导出失败：%1$s</string>
     <string name="plugins_export_done">已保存到：%1$s</string>
-    <string name="plugins_share_failed">无法打开分享面板</string>
-    <string name="plugins_share_package">分享插件安装包</string>
+    <!-- 微信/QQ 不接收系统分享的 zip（实测：系统文件管理器分享同样失败），
+         只能从微信「聊天 → + → 文件」里选，所以这里直接给路径。 -->
+    <string name="plugins_exported_for_wechat">已保存到 %1$s\n微信发送请用聊天窗口的 + → 文件，选这个包</string>
     <string name="plugins_drawer_visibility_title">抽屉显示</string>
     <string name="plugins_drawer_visibility_hint">关闭后该入口不再出现在侧边抽屉里，插件本身仍正常工作</string>
     <string name="plugins_drawer_more_row_hint">抽屉底部「更多插件」入口，关掉后可从设置重新打开</string>
-    <string name="plugins_store_export_share">下载并分享安装包</string>
+    <string name="plugins_store_export_share">下载安装包到本地</string>
     <string name="chat_pin_session">置顶</string>
     <string name="chat_unpin_session">取消置顶</string>
     <string name="chat_delete_session">删除会话</string>

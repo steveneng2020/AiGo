@@ -83,7 +83,7 @@ data class PluginStoreUiState(
     /** 正在导出（下载）安装包的插件 id，用于按钮转圈。 */
     val exportingPluginId: String? = null,
     /** 导出完成后的分享文件；UI 消费后置空。 */
-    val exportShareFile: File? = null
+    val exportedPath: String? = null
 )
 
 @HiltViewModel
@@ -351,8 +351,8 @@ class PluginStoreViewModel @Inject constructor(
     }
 
     /** 分享文件已被 UI 消费（拉起分享面板），清空避免重复触发。 */
-    fun consumeExportShareFile() {
-        _state.update { it.copy(exportShareFile = null) }
+    fun consumeExportedPath() {
+        _state.update { it.copy(exportedPath = null) }
     }
 
     /**
@@ -383,9 +383,15 @@ class PluginStoreViewModel @Inject constructor(
                 }
                 return@launch
             }
+            // 直接落到公共下载目录。微信/QQ 不接收 ACTION_SEND 传的 zip
+            // （实测系统文件管理器分享同样失败），所以这里不再走系统分享，
+            // 由用户从微信「聊天 → + → 文件」里自己选这个包。
             val cached = runCatching {
                 val safeId = item.plugin.id.replace(Regex("[^A-Za-z0-9._-]"), "_")
-                val target = File(context.cacheDir, "plugin-export/$safeId-${downloaded.asset.version}.zip")
+                val dir = android.os.Environment.getExternalStoragePublicDirectory(
+                    android.os.Environment.DIRECTORY_DOWNLOADS
+                )
+                val target = File(File(dir, "AiGo"), "$safeId-${downloaded.asset.version}.zip")
                 target.parentFile?.mkdirs()
                 downloaded.file.copyTo(target, overwrite = true)
                 target
@@ -395,7 +401,7 @@ class PluginStoreViewModel @Inject constructor(
             _state.update {
                 it.copy(
                     exportingPluginId = null,
-                    exportShareFile = if (share) cached else null,
+                    exportedPath = cached?.absolutePath,
                     error = if (cached == null) {
                         PluginStoreError(PluginStoreErrorCode.NETWORK, pluginId = item.plugin.id)
                     } else {

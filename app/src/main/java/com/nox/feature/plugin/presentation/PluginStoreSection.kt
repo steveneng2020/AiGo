@@ -526,28 +526,15 @@ internal fun PluginStoreDetailSection(
         viewModel.consumePreview()
     }
 
-    // 商店页导出：下载完直接拉系统分享面板（可选微信/QQ 等）。
-    LaunchedEffect(state.exportShareFile) {
-        val file = state.exportShareFile ?: return@LaunchedEffect
-        runCatching {
-            val uri = androidx.core.content.FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file
-            )
-            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                type = "application/zip"
-                putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            context.startActivity(
-                android.content.Intent.createChooser(
-                    intent,
-                    context.getString(R.string.plugins_share_package)
-                )
-            )
-        }
-        viewModel.consumeExportShareFile()
+    // 商店页导出：包已由 ViewModel 落到公共下载目录，这里只提示路径。
+    LaunchedEffect(state.exportedPath) {
+        val path = state.exportedPath ?: return@LaunchedEffect
+        Toast.makeText(
+            context,
+            context.getString(R.string.plugins_exported_for_wechat, path),
+            Toast.LENGTH_LONG
+        ).show()
+        viewModel.consumeExportedPath()
     }
 
     Column(
