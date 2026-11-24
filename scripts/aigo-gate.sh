@@ -757,6 +757,19 @@ if [ -d "$OUT_DIR2" ]; then
     echo "        处理：从对应 GitHub Release 下载 AiGo-arm64-<版本>-<日期>.apk，"
     echo "              重命名为 AiGo-arm64-v8a-<版本>-release-<摘要>-<日期>.apk"
   fi
+  # 顺序校验：mtime 从新到旧应恰好等于版本号从大到小。
+  # 文件管理器按修改时间倒序排列，几个包同一批下载时 mtime 几乎相同，
+  # 会出现 v1.0.2 排在 v1.0.3 前面。归档后要按 Release published_at 回填。
+  order_by_time=$(ls -t "$OUT_DIR2"/AiGo-*-release-*.apk 2>/dev/null \
+    | sed -n 's/^AiGo-[a-z0-9-]*-[a-z0-9_+]*-\([0-9]\+\.[0-9]\+\.[0-9]\+\)-release-.*\.apk$/\1/p')
+  order_by_ver=$(printf '%s\n' "$order_by_time" | sort -rV)
+  if [ -n "$order_by_time" ] && [ "$order_by_time" != "$order_by_ver" ]; then
+    bad "release 包的修改时间顺序与版本号不一致（文件管理器会乱序显示）："
+    printf '%s\n' "$order_by_time" | sed 's/^/        按时间: /'
+    echo "        处理：按各版本 Release 的 published_at 执行 touch -d 回填 mtime"
+  else
+    ok "release 包按时间倒序与版本号一致"
+  fi
 else
   echo "  [SKIP] 未找到 build-output 目录"
 fi
