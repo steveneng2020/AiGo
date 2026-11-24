@@ -116,6 +116,7 @@ import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.CheckSquare
 import compose.icons.feathericons.Clipboard
 import compose.icons.feathericons.Copy
+import compose.icons.feathericons.ExternalLink
 import compose.icons.feathericons.Download
 import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.FilePlus
@@ -182,6 +183,7 @@ fun ChatDrawerContent(
     onPasteOverwrite: () -> Unit,
     onCancelPasteOverwrite: () -> Unit,
     onClearClipboard: () -> Unit,
+    onOpenExternal: (String) -> Unit = {},
     onNavigateToBrowser: (() -> Unit)? = null,
     onNavigateToSettings: () -> Unit,
     onNavigateToRoles: (() -> Unit)? = null,
@@ -375,7 +377,8 @@ fun ChatDrawerContent(
                     onCopyEntry = onCopyEntry,
                     onCutEntry = onCutEntry,
                     onPasteEntry = onPasteEntry,
-                    onClearClipboard = onClearClipboard
+                    onClearClipboard = onClearClipboard,
+                    onOpenExternal = onOpenExternal
                 )
             }
         }
@@ -923,7 +926,8 @@ private fun FileBrowserTab(
     onCopyEntry: (String, String) -> Unit,
     onCutEntry: (String, String) -> Unit,
     onPasteEntry: (String, (Boolean) -> Unit) -> Unit,
-    onClearClipboard: () -> Unit
+    onClearClipboard: () -> Unit,
+    onOpenExternal: (String) -> Unit = {}
 ) {
     var creating by remember { mutableStateOf<CreateTarget?>(null) }
     var menuNode by remember { mutableStateOf<FileTreeNode?>(null) }
@@ -1088,6 +1092,10 @@ private fun FileBrowserTab(
                 menuNode = null
                 onCutEntry(node.path, node.entry.name)
             },
+            onOpenExternal = {
+                menuNode = null
+                onOpenExternal(node.path)
+            },
             onPasteHere = {
                 val target = node.path
                 menuNode = null
@@ -1220,6 +1228,7 @@ private fun FileTreeActionSheet(
     onCopy: () -> Unit,
     onCut: () -> Unit,
     onPasteHere: () -> Unit,
+    onOpenExternal: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     AdaptiveModalBottomSheet(
@@ -1265,6 +1274,12 @@ private fun FileTreeActionSheet(
                     onClick = onNewFolder
                 )
             }
+            SheetActionRow(
+                icon = FeatherIcons.ExternalLink,
+                label = stringResource(R.string.file_browser_open_external),
+                tint = MaterialTheme.colorScheme.onSurface,
+                onClick = onOpenExternal
+            )
             if (node.root == null) {
                 SheetActionRow(
                     icon = FeatherIcons.Copy,

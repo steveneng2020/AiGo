@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -49,11 +50,14 @@ import com.nox.feature.agent.presentation.AgentAttachment
 import com.nox.feature.workspace.domain.FileAccessProvider
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronRight
+import compose.icons.feathericons.Download
+import compose.icons.feathericons.Share2
 import compose.icons.feathericons.FileText
 import compose.icons.feathericons.Image
 import compose.icons.feathericons.Package
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 附件缩略图边长：一行一个文件时左侧的小图，够看清是截图还是照片即可。 */
@@ -87,8 +91,128 @@ internal fun MessageAttachmentList(
                 compact -> MessageAttachmentRow(attachment = attachment, onClick = onClick)
                 attachment.isVideo -> VideoClip(attachment)
                 attachment.isHtml -> HtmlClip(attachment)
+                attachment.isImage -> LargeImageAttachment(attachment)
                 else -> MessageAttachmentRow(attachment = attachment, onClick = onClick)
             }
+        }
+    }
+}
+
+/**
+ * 图片附件的画廊式展示：4:3 裁切预览 + 「保存 / 分享」操作条。
+ *
+ * 图片是结果本身（生图、发图），按 4:3 大图展示比 44dp 缩略图行更直观；
+ * 保存直接写入系统相册（Pictures/Nox），分享走系统分享面板。
+ */
+@Composable
+private fun LargeImageAttachment(attachment: AgentAttachment) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val viewer = LocalImageViewer.current
+    val fileAccess = LocalAttachmentFileAccess.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var saving by remember { mutableStateOf(false) }
+    val name = attachment.fileName.ifBlank { stringResource(R.string.common_image) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(4f / 3f)
+                .clip(RoundedCornerShape(Radius.md))
+                .clickable(onClickLabel = stringResource(R.string.chat_attachment_preview, name)) {
+                    viewer.show(attachment.toViewerRequest())
+                }
+        ) {
+            AttachmentImageThumb(attachment = attachment)
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = Spacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            ImageActionChip(
+                icon = FeatherIcons.Download,
+                label = stringResource(R.string.common_save),
+                enabled = !saving,
+                onClick = {
+                    if (saving) return@ImageActionChip
+                    val access = fileAccess
+                    if (access == null) {
+                        Toast.makeText(context, context.getString(R.string.chat_image_save_failed), Toast.LENGTH_SHORT).show()
+                        return@ImageActionChip
+                    }
+                    saving = true
+                    scope.launch {
+                        val local = withContext(Dispatchers.IO) {
+                            runCatching { access.copyToLocal(attachment.containerPath) }.getOrNull()
+                        }
+                        val result = if (local == null) {
+                            SaveImageResult.Failed
+                        } else {
+                            saveImageToGallery(context, local, name)
+                        }
+                        saving = false
+                        val message = when (result) {
+                            is SaveImageResult.Saved -> context.getString(R.string.chat_image_saved)
+                            SaveImageResult.PermissionDenied -> context.getString(R.string.chat_image_save_no_permission)
+                            SaveImageResult.Failed -> context.getString(R.string.chat_image_save_failed)
+                        }
+                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+            ImageActionChip(
+                icon = FeatherIcons.Share2,
+                label = stringResource(R.string.common_share),
+                enabled = true,
+                onClick = {
+                    val access = fileAccess ?: return@ImageActionChip
+                    scope.launch {
+                        openSentAttachment(
+                            context,
+                            attachment,
+                            access
+                        )
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ImageActionChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(Radius.md),
+        color = chatMutedSurfaceColor(),
+        modifier = Modifier
+            .clip(RoundedCornerShape(Radius.md))
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (enabled) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+            )
         }
     }
 }
@@ -499,5 +623,94 @@ private fun HtmlClip(attachment: AgentAttachment) {
 
     if (fullscreen && content != null) {
         FullscreenHtmlDialog(html = content, onDismiss = { fullscreen = false })
+    }
+}
+
+/** MT 管理器的包名；装了就直接跳过去，没装退回系统选择器。 */
+private const val MT_MANAGER_PACKAGE = "bin.mt.plus"
+
+/**
+ * 目录没有可读的数据流，不能用文件那条 content:// 路径。
+ *
+ * 以 `resource/folder` 类型的 URI 交给文件管理器：MT 收到后直接按路径浏览目录，
+ * 而不是尝试打开数据流。外部工作区/挂载源的目录不在 FileProvider 目录树内时，
+ * URI 授权会失败，此时退回相册外的通用选择器也无意义，直接提示不支持。
+ */
+private fun openDirectoryExternally(context: Context, dir: File) {
+    val uri = runCatching {
+        FileProvider.getUriForFile(context, context.packageName + ".fileprovider", dir)
+    }.getOrNull()
+    if (uri == null) {
+        Toast.makeText(context, context.getString(R.string.chat_open_file_unshareable), Toast.LENGTH_SHORT).show()
+        return
+    }
+    val base = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(uri, "resource/folder")
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    val launched = runCatching {
+        context.startActivity(Intent(base).setPackage(MT_MANAGER_PACKAGE))
+    }.isSuccess
+    if (!launched) {
+        runCatching {
+            context.startActivity(
+                Intent.createChooser(base, context.getString(R.string.file_browser_open_external))
+            )
+        }.onFailure {
+            Toast.makeText(context, context.getString(R.string.chat_open_file_no_app), Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+/**
+ * 用外部文件管理器打开工作区文件（优先 MT 管理器）。
+ *
+ * 容器路径先经 [FileAccessProvider.copyToLocal] 落成本机文件，再用 FileProvider 授权 URI 打开；
+ * 落点不在 FileProvider 目录树内（外部工作区、自定义挂载源）时先复制进 cacheDir。
+ */
+internal suspend fun openInExternalFileManager(
+    context: Context,
+    containerPath: String,
+    fileAccess: FileAccessProvider
+) {
+    val devicePath = withContext(Dispatchers.IO) {
+        runCatching { fileAccess.resolvePath(containerPath) }.getOrNull()
+    }
+    val resolved = devicePath?.let(::File)
+    if (resolved != null && resolved.isDirectory) {
+        openDirectoryExternally(context, resolved)
+        return
+    }
+    val local = withContext(Dispatchers.IO) {
+        runCatching { fileAccess.copyToLocal(containerPath) }.getOrNull()
+    }
+    if (local == null || !local.isFile) {
+        Toast.makeText(context, context.getString(R.string.chat_open_file_missing), Toast.LENGTH_SHORT).show()
+        return
+    }
+    val shareable = withContext(Dispatchers.IO) {
+        if (isShareable(context, local)) local else copyToShareCache(context, local)
+    }
+    val uri = shareable?.let {
+        runCatching { FileProvider.getUriForFile(context, context.packageName + ".fileprovider", it) }.getOrNull()
+    }
+    if (uri == null) {
+        Toast.makeText(context, context.getString(R.string.chat_open_file_unshareable), Toast.LENGTH_SHORT).show()
+        return
+    }
+    val mime = context.contentResolver.getType(uri) ?: "*/*"
+    val base = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(uri, mime)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    val launched = runCatching {
+        context.startActivity(Intent(base).setPackage(MT_MANAGER_PACKAGE))
+    }.isSuccess
+    if (!launched) {
+        runCatching {
+            context.startActivity(
+                Intent.createChooser(base, context.getString(R.string.file_browser_open_external))
+            )
+        }.onFailure {
+            Toast.makeText(context, context.getString(R.string.chat_open_file_no_app), Toast.LENGTH_SHORT).show()
+        }
     }
 }
