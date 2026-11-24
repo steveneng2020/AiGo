@@ -556,5 +556,13 @@ Tag 驱动发版，平时 `main` 上的提交不影响发布包。
    - **删除同版本的 debug 测试包**：正式包归档后 `AiGo-*-debug-*.apk` 不应留在该目录，否则装机时容易拿错
    - **若历史版本缺 release 包**（只有 debug），一并从对应 Release 下载补齐
    - 校验：`aapt2 dump badging` 确认 versionCode / versionName，`apksigner verify --print-certs` 确认签名证书为 `CN=AiGo`
+   - **按 Release 真实发布时间回填 mtime（否则文件管理器顺序会乱）**：
+     系统的文件管理器按修改时间倒序排列。批量下载归档时几个包 mtime 几乎相同，
+     会出现「v1.0.2 排在 v1.0.3 前面」这类错序。归档后逐个设为该版本的
+     `published_at`（GitHub API 返回 UTC，本地时区 +8）：
+     ```bash
+     touch -d "2026-11-24 09:14:20" "AiGo-arm64-v8a-1.0.3-release-xxx-20261124.apk"
+     ```
+     设完用 `ls -lt *.apk` 确认顺序为版本号从新到旧。
    - 门禁 `4d` 会检查「每个已发布版本都有 release 包」且「无 debug 残留」
    - 若 hotfix 带数据库迁移：迁移号随 tag 发布即冻结（发布即冻结），合回 `main` 时 `main` 上编号更小的未发布迁移必须后移（见〈数据库与迁移〉合流后移），push 前先跑 `check_migrations.py`，CI 兜底拦截。
