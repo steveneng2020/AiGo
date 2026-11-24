@@ -128,9 +128,13 @@ screencap -p /data/local/tmp/s.png && cp /data/local/tmp/s.png ~/workspace/s.png
 改完编译型代码（`.kt` / `.kts` / `AndroidManifest.xml` / `res/`）后，**一条命令跑完整门禁**：
 
 ```bash
-aigo gate          # 5 步：敏感信息 → 迁移对账 → 品牌一致性 → 冒烟编译 → 单元测试
+aigo gate          # 8 步：敏感信息 → 迁移对账 → 品牌一致性 → 冒烟编译
+                   #        （含 4b APK 内容 / 4c 出包文件名 / 4d Release 归档）
+                   #        → 单元测试
 aigo gate --fast   # 跳过单元测试（只改 UI/资源、或赶时间时用）
 ```
+
+其中 **4d** 检查发版归档：每个已发布版本都要在 `build-output` 有对应的 `release` 包，且不得残留 `debug` 测试包。发版成功后未归档会被它拦下。
 
 任一步 FAIL 就停下修，不要带着失败往下走。门禁脚本是 `/root/bin/aigo-gate`，检查项会随踩过的坑持续增加；新增检查时同步更新本节。
 
@@ -276,6 +280,87 @@ cat /proc/self/mountinfo | grep -E "bind"
 ```
 
 **不要依次试** `/storage/emulated/0`、`/mnt/...`、`/data/local/tmp`：它们在容器内都不存在，只会浪费时间。
+
+## 排查经验（血泪教训，动手前先读）
+
+这一节记录的每一条都是实际踩过、且造成过多轮无效返工的坑。**遇到同类问题时先对照，不要重新摸索。**
+
+### 1. 真机问题先取证据，不要读自己的代码猜
+
+**反面案例**：插件「分享到微信」失败，连续 5 轮都在改自己的 Intent（ClipData、MIME、EXTRA_STREAM 形态、URI 归属、FileProvider vs MediaStore），每次都说「找到根因」，每次都被打回。
+
+**真正的证据链**：
+- 微信侧 logcat → `ShareImgUI.onCreate` 后 **104ms** `onDetachedFromWindow`，说明界面起来了立刻销毁
+- `dumpsys package com.tencent.mm` → 微信对 `application/*` 只注册 `ShareImgUI`（图片/视频界面）
+- **对照实验**：用系统「文件管理」把同一个 zip 分享给微信 → **同样失败**
+
+结论：微信根本不接收通过系统分享（`ACTION_SEND`）传来的 zip，改我方代码完全无效。最终方案是移除分享、改为导出到下载目录 + 提示用微信聊天窗口的 `+ → 文件` 发送。
+
+**沉淀成规则**：
+- 涉及第三方 App 行为的问题，**先做对照实验**（用别的应用 / 系统自带功能做同样的事）。能排除「我方代码问题」，避免长时间白费。
+- 只在真的看不到时才去猜，且猜之前先想办法**把不可见变成可见**（加落盘日志、查系统状态）。
+
+### 2. logcat 会丢日志，关键诊断必须落盘
+
+**坑**：反复 `logcat -s PluginShare` 抓不到任何输出，误以为代码没执行。实际是 **logcat 环形缓冲区只有 256KB**，被 MIUI 系统日志几秒内冲掉。
+
+**做法**：需要事后排查的诊断日志一律双写——`Log.w` 给人看，`FileLogger.w` 落盘可持久查看。日志位置：
+
+```
+/storage/emulated/0/Android/data/<包名>/files/logs/log-<日期>.txt
+```
+
+用 Root 复制到 workspace 再 `grep`，比反复 `logcat` 可靠得多。
+
+### 3. 错误被静默吞掉 = 「点了没反应」，这是最难查的一类 bug
+
+**反面案例**：已安装页点「更新」毫无反应。真因是 `install()` 失败时把错误写进了 `storeState.error`，但**只有商店详情页渲染这个错误**，已安装页没有——错误产生了却没人显示。
+
+**做法**：
+- 任何用户触发的异步操作，失败路径必须有**可见反馈**（Toast / 行内文案 / 日志），不能只 `runCatching {}.getOrNull()` 就完事
+- `runCatching` 吞异常的地方，至少 `onFailure { FileLogger.w(...) }`
+- 同一个状态（如 error）被多个页面消费时，确认每个消费方都渲染了它
+
+### 4. 「找到了根因」这句话必须有证据支撑
+
+**规则**：说「根因是 X」之前，自查三点：
+1. X 有**直接观测证据**吗（日志原文、错误码、返回值、对照实验）？
+2. 修掉 X 之后，**现象消失**了吗？
+3. 有没有可能是「X 确实有问题，但不是主因」？
+
+三条都不满足时说「推测」，不要包装成结论。反复宣称「重大突破」然后被现实打回，比承认不知道伤害大得多。
+
+### 5. 第三方 SDK/App 的组件注册表是重要的排查入口
+
+排查 intent 类问题时，先看对方到底注册了什么：
+
+```bash
+dumpsys package <对方包名> | grep -A 8 "Activity Resolver Table"
+```
+
+能看到它声明了哪些 action / MIME / 组件。本案就是靠这个发现微信对 `application/*` 只有一个入口，从而确认换 MIME 不可能改变行为。
+
+### 6. 增量构建缓存损坏时，清目录比反复重试快
+
+**坑**：改了代码后编译报 `error: cannot find symbol`，指向 KSP 生成的 Dagger 工厂类引用不存在的源码类（`TouchLockManager`、`AgentMessageDao` 等）。
+
+**处理**：这是 KSP/Kotlin 增量缓存与源码不同步，不是代码问题。按顺序清：
+
+```bash
+rm -rf app/build/generated app/build/kspCaches app/build/kotlin
+```
+
+只清 `generated/` 不够，`kspCaches/` 里还留着增量状态，会继续报同样的错。
+
+### 7. 清单解析器这类「严格校验」要区分「真不支持」与「编辑器辅助字段」
+
+**坑**：第三方插件包 `plugin.json` 顶层带 `"$schema"`（JSON Schema 标准声明，只给编辑器提示用，运行时无语义），被白名单判为未知字段，**整包装不上**，表现为「安装包校验失败」。
+
+**做法**：未知字段校验要判断字段性质——纯元数据/编辑器辅助字段应容忍，真正不支持的字段才报错。一个无害字段不应放大成整包失败。
+
+### 8. 一次只改一个变量，否则无法归因
+
+多个修复一起上，成功了不知道哪个起作用，失败了也不知道哪个有害。分享问题之所以拖了 5 轮，很大原因是每轮同时改 2~3 处（MIME + ClipData + flags），结果永远无法判断哪处有效。
 
 ## 基本约定
 
@@ -463,4 +548,13 @@ Tag 驱动发版，平时 `main` 上的提交不影响发布包。
 2. CI 自己创建 tag 与 Release，并用输入的 tag 覆盖 versionName（避免构建时仓库无 tag 导致版本号落到 dev 形态）。
 3. **真机装 RC 包**，至少跑通 AI 对话 + 终端 + 容器启动三条主线。
 4. **有问题**：从该 RC Tag 拉 `hotfix/xxx` 修复（**勿从最新 `main` 或功能分支拉**，否则会把已合入的未发版功能带进修复包）→ 升 rc 序号打 Tag 重发 → 修复合回 `main` 并推送 → 删 hotfix 分支。这是允许在非 `main` 分支打 Tag 的唯一例外。**无问题**：直接打正式 Tag（`v1.7.0`）转正。
+5. **归档 Release 资产到 build-output（发版成功后必做）**：
+   - 从 GitHub Release 下载 arm64 包，存到 `/storage/emulated/0/Download/AiGo/AiGo开发/build-output/`
+   - **必须重命名**为 `AiGo-arm64-v8a-<版本>-release-<摘要>-<日期>.apk`（CI 产物名是 `AiGo-arm64-1.0.3-20261124.apk`，不含 ABI 短横线形式、不含 release 标识与摘要，直接存会和本地包混不清）
+     - `<摘要>` 取 Release 正文首句里的关键词，与同目录历史包保持风格一致
+     - `<日期>` 用 Release 的发布日期，与 CHANGELOG 的版本日期一致
+   - **删除同版本的 debug 测试包**：正式包归档后 `AiGo-*-debug-*.apk` 不应留在该目录，否则装机时容易拿错
+   - **若历史版本缺 release 包**（只有 debug），一并从对应 Release 下载补齐
+   - 校验：`aapt2 dump badging` 确认 versionCode / versionName，`apksigner verify --print-certs` 确认签名证书为 `CN=AiGo`
+   - 门禁 `4d` 会检查「每个已发布版本都有 release 包」且「无 debug 残留」
    - 若 hotfix 带数据库迁移：迁移号随 tag 发布即冻结（发布即冻结），合回 `main` 时 `main` 上编号更小的未发布迁移必须后移（见〈数据库与迁移〉合流后移），push 前先跑 `check_migrations.py`，CI 兜底拦截。
