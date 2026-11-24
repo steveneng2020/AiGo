@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.Image as ComposeImage
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -688,7 +689,7 @@ private fun BackgroundNotificationBar(message: AgentUIMessage) {
                                 .align(Alignment.End)
                                 .padding(end = Spacing.md)
                         ) {
-                            androidx.compose.foundation.Image(
+                            ComposeImage(
                                 bitmap = imageBitmap,
                                 contentDescription = mime,
                                 modifier = Modifier
