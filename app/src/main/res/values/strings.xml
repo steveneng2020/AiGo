@@ -2430,4 +2430,5 @@
     <!-- 上下文用量入口按钮的无障碍描述 -->
     <string name="context_btn_normal">上下文已用 %1$d%%，点开查看用量明细</string>
     <string name="context_btn_warn">上下文已达 %1$d%%，点开立即压缩</string>
+    <string name="context_panel_close">关闭</string>
 </resources>

@@ -743,6 +743,9 @@ fun AIChatPanel(
     val sessionOutputTokens = currentSession?.totalOutputTokens ?: 0
     val sessionLastInputTokens = currentSession?.lastInputTokens ?: 0
     val contextUsages by viewModel.contextUsages.collectAsStateWithLifecycle()
+    val sessionStats by viewModel.sessionStats.collectAsStateWithLifecycle()
+    val compactionThresholdPercent = settingsViewModel?.compactionThresholdPercent
+        ?.collectAsStateWithLifecycle()?.value ?: 85
     val messagesReady = messagesState.loaded && messagesState.sessionId == currentSessionId
     val runningTool by viewModel.runningTool.collectAsStateWithLifecycle()
     val isCompacting by viewModel.isCompacting.collectAsStateWithLifecycle()
@@ -2089,6 +2092,13 @@ fun AIChatPanel(
                     }
                 },
                 tokenEstimated = contextUsages[currentSessionId]?.estimated ?: (sessionLastInputTokens <= 0 && currentSessionId != null),
+                contextInputTokens = contextUsages[currentSessionId]?.inputTokens ?: 0,
+                contextBudget = contextUsages[currentSessionId]?.inputBudget ?: 0,
+                compactionThresholdPercent = compactionThresholdPercent,
+                onCompactionThresholdChange = { settingsViewModel?.setCompactionThresholdPercent(it) },
+                sessionStats = sessionStats[currentSessionId],
+                isCompacting = isCompacting,
+                onCompactContext = { viewModel.compactCurrentSession() },
                 contextArcColor = if (contextArcColorArgb == 0) DefaultContextArcColor
                     else Color(contextArcColorArgb),
                 onSetContextArcColor = { color -> viewModel.setContextArcColor(color.toArgb()) },

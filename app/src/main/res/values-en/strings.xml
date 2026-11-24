@@ -2231,4 +2231,5 @@
     <!-- Context usage button semantics -->
     <string name="context_btn_normal">Context %1$d%% used, tap to view usage</string>
     <string name="context_btn_warn">Context reached %1$d%%, tap to compact now</string>
+    <string name="context_panel_close">Close</string>
 </resources>

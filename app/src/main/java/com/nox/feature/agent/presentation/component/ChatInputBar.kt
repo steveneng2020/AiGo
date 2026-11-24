@@ -43,7 +43,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -248,6 +250,30 @@ internal fun ChatInputBar(
     val context = LocalContext.current
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var showContextUsagePanel by remember { mutableStateOf(false) }
+    if (showContextUsagePanel) {
+        AlertDialog(
+            onDismissRequest = { showContextUsagePanel = false },
+            title = { Text(stringResource(R.string.context_panel_title)) },
+            text = {
+                ContextUsagePanel(
+                    stats = sessionStats ?: SessionStatsUi(),
+                    contextInputTokens = contextInputTokens,
+                    contextBudget = contextBudget,
+                    contextEstimated = tokenEstimated,
+                    thresholdPercent = compactionThresholdPercent,
+                    onThresholdChange = onCompactionThresholdChange,
+                    compacting = isCompacting,
+                    canCompact = !isCompacting,
+                    onCompact = onCompactContext
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showContextUsagePanel = false }) {
+                    Text(stringResource(R.string.context_panel_close))
+                }
+            }
+        )
+    }
     var showFullScreenInput by remember { mutableStateOf(false) }
     // TextField 的 String 重载在整串替换时会保留旧 selection 下标（点快捷命令补全时光标会停在中间），
     // 这里自持 TextFieldValue：外部改值时把光标移到末尾。
@@ -697,22 +723,21 @@ internal fun ChatInputBar(
                             )
                         }
                     }
-                    // 运行中也允许添加附件：sendMessage 会把附件随队列消息一起提交（
-                    // enqueueAgentRequest 已接收 inputImages / inputAttachments），
-                    // 禁用只是拦住了入口，反而让「插队/排队补资料」变得不可用。
-                    // 语音输入不在应用内做：Android 没有标准 API 能让应用唤起输入法的语音键，
-                    // 而本机又没有可用的系统语音识别引擎。搜狗输入法自带的语音键识别后
-                    // 直接写入焦点输入框，效果更好且不依赖应用内实现。
-                    // 上下文用量入口：放在 + 左侧，与 + 之间留 14dp。
-                    // 之所以要拉开：+ 是「添加附件」，误触会弹出文件选择，
-                    // 而查看用量是高频道动作，两者挤在一起容易点错。
+                    // 上下文用量入口：紧贴推理档位文字，间距与档位和左边图标一致。
+                    // 放在加权区内部，+ 左侧自然留出大段空白，减少误触。
+                    Spacer(Modifier.width(Spacing.xs))
                     ContextUsageIconButton(
                         progress = tokenProgress,
                         thresholdPercent = compactionThresholdPercent,
                         enabled = true,
                         onClick = { showContextUsagePanel = true }
                     )
-                    Spacer(Modifier.width(14.dp))
+                    // 运行中也允许添加附件：sendMessage 会把附件随队列消息一起提交（
+                    // enqueueAgentRequest 已接收 inputImages / inputAttachments），
+                    // 禁用只是拦住了入口，反而让「插队/排队补资料」变得不可用。
+                    // 语音输入不在应用内做：Android 没有标准 API 能让应用唤起输入法的语音键，
+                    // 而本机又没有可用的系统语音识别引擎。搜狗输入法自带的语音键识别后
+                    // 直接写入焦点输入框，效果更好且不依赖应用内实现。
                     UploadIconButton(
                         enabled = true,
                         icon = FeatherIcons.Plus,
