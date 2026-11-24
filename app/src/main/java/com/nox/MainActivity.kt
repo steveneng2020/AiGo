@@ -86,6 +86,7 @@ import com.nox.feature.agent.presentation.component.AIChatPanel
 import com.nox.feature.agent.presentation.component.ChatDrawerContent
 import com.nox.feature.agent.presentation.component.chatImageLoader
 import com.nox.feature.agent.presentation.component.openSentAttachment
+import com.nox.feature.agent.presentation.component.openInExternalFileManager
 import com.nox.feature.agreement.presentation.AgreementGate
 import com.nox.feature.editor.presentation.CodeEditorScreen
 import com.nox.feature.editor.presentation.EditorLeaveGuard
@@ -809,6 +810,9 @@ fun AppNavigation(
                 agentViewModel.pasteBrowseEntry(targetDir, onResult)
             },
             onClearClipboard = { agentViewModel.clearBrowseClipboard() },
+            onOpenExternal = { path ->
+                scope.launch { openInExternalFileManager(context, path, agentViewModel.fileAccess) }
+            },
             onPasteOverwrite = { agentViewModel.pasteBrowseEntryOverwrite() },
             onCancelPasteOverwrite = { agentViewModel.clearPasteConflict() },
             onSelect = {

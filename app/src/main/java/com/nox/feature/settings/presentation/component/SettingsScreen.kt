@@ -113,6 +113,7 @@ import compose.icons.feathericons.Package
 import compose.icons.feathericons.BookOpen
 import compose.icons.feathericons.Box
 import compose.icons.feathericons.Cloud
+import compose.icons.feathericons.Clock
 import compose.icons.feathericons.Cpu
 import compose.icons.feathericons.Download
 import compose.icons.feathericons.FileText
@@ -2567,7 +2568,7 @@ internal fun SettingsMenu(
             )
             SettingsDivider()
             SettingsRow(
-                icon = FeatherIcons.MessageSquare,
+                icon = FeatherIcons.Sliders,
                 title = stringResource(SettingsSection.Prompts.titleRes),
                 onClick = { onOpen(SettingsSection.Prompts) }
             )
@@ -2645,7 +2646,7 @@ internal fun SettingsMenu(
             )
             SettingsDivider()
             SettingsRow(
-                icon = FeatherIcons.MessageSquare,
+                icon = FeatherIcons.Clock,
                 title = stringResource(SettingsSection.SessionManagement.titleRes),
                 onClick = { onOpen(SettingsSection.SessionManagement) }
             )

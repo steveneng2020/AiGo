@@ -463,6 +463,11 @@
     <string name="common_go_to_settings">去设置</string>
     <string name="common_name">名称</string>
     <string name="common_image_preview">图片预览</string>
+    <string name="common_image">图片</string>
+    <string name="common_share">分享</string>
+    <string name="chat_image_saved">已保存到相册（Pictures/Nox）</string>
+    <string name="chat_image_save_failed">保存失败</string>
+    <string name="chat_image_save_no_permission">没有存储权限，无法保存图片</string>
     <string name="common_image_load_failed">图片加载失败，文件可能已被移动或删除</string>
     <string name="common_expand">展开</string>
     <string name="common_workspace">工作区</string>
@@ -839,6 +844,7 @@
     <string name="common_overwrite">覆盖</string>
     <string name="file_browser_clipboard_cut">已剪切</string>
     <string name="file_browser_clipboard_copy">已复制</string>
+    <string name="file_browser_open_external">在外部打开</string>
     <string name="editor_undo">撤销</string>
     <string name="editor_redo">重做</string>
     <string name="editor_save_success">已保存</string>

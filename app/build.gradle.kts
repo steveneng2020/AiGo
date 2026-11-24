@@ -190,6 +190,9 @@ android {
         // 导致每次发版 versionCode 不变、应用内更新自检（ApkVerifier 要求更高 versionCode）永远失败。
         // 本地调试开关：-PversionCodeOverride=14 -PversionNameOverride=1.0.0-dev
         // 固定版本号后反复重建可直接覆盖安装，不必先卸载，也不会让应用内更新误判。
+        //
+        // 上游 0bcb5a1 把这里改回硬编码 16 / "1.0.15"，合并时保留本仓库的 git 派生方案：
+        // 硬编码会让 versionCode 每次发版都不变，应用内更新永远失败（见 CLAUDE.md 铁律 5）。
         versionCode = localVersionCodeOverride() ?: gitCommitCount()
         versionName = localVersionNameOverride() ?: gitVersionName()
 
