@@ -56,6 +56,9 @@ class PhoneControlManager @Inject constructor(
     /** 无障碍服务是否已开启。 */
     fun isEnabled(): Boolean = PhoneControlService.current() != null
 
+    /** 无障碍服务是否被系统关闭过（用于把错误文案区分成「被关闭」与「从没开」）。 */
+    fun wasDisabledBySystem(): Boolean = AccessibilityKeepAlive.disabledCount(appContext) > 0
+
     /** 跳转系统的无障碍设置页（各家 ROM 入口不同，ACTION_ACCESSIBILITY_SETTINGS 最通用）。 */
     fun openAccessibilitySettings() {
         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {

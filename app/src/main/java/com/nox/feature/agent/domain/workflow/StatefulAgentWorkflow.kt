@@ -726,7 +726,9 @@ class StatefulAgentWorkflow @Inject constructor(
                                         outputTokens = usage?.outputTokens ?: 0,
                                         cachedInputTokens = usage?.cachedInputTokens ?: 0,
                                         cacheCreationTokens = usage?.cacheCreationTokens ?: 0,
+                                        reasoningTokens = usage?.reasoningTokens ?: 0,
                                         ttfbMillis = stream.ttfbElapsed?.toInt(),
+                                        headersMillis = stream.headersElapsed?.toInt(),
                                         durationMillis = durationMillis,
                                         status = when {
                                             callCompleted -> "success"
@@ -936,6 +938,14 @@ class StatefulAgentWorkflow @Inject constructor(
 
         var finalResponse: AIResponse? = null
         var ttfbElapsed: Long? = null
+
+        /**
+         * 首个 chunk 到达的耗时（ms）：即响应头已到达、流已开始推数据的时刻。
+         *
+         * 与 ttfbElapsed 的差（ttfb - headers）才是服务端真实 prefill + 生成首 token 的耗时；
+         * headers 本身是网络往返 + 排队。ttfb 偏高时能直接分辨问题出在哪一段。
+         */
+        var headersElapsed: Long? = null
         var retryAttempts = 0
 
         private var pendingText: String? = null
@@ -944,6 +954,10 @@ class StatefulAgentWorkflow @Inject constructor(
         private var lastReasoningSentAt = 0L
 
         suspend fun onChunk(chunk: AIStreamChunk) {
+            // 收到任何 chunk 都说明响应头已到、流已建立：与正文/思考无关，先记下这一段。
+            if (headersElapsed == null) {
+                headersElapsed = SystemClock.elapsedRealtime() - callStartElapsed
+            }
             when (chunk) {
                 is AIStreamChunk.TextDelta -> {
                     markTtfb()
@@ -1151,6 +1165,7 @@ class StatefulAgentWorkflow @Inject constructor(
                         outputTokens = usage?.outputTokens ?: 0,
                         cachedInputTokens = usage?.cachedInputTokens ?: 0,
                         cacheCreationTokens = usage?.cacheCreationTokens ?: 0,
+                                        reasoningTokens = usage?.reasoningTokens ?: 0,
                         ttfbMillis = null,
                         durationMillis = durationMillis,
                         status = if (callCompleted) "success" else "error",

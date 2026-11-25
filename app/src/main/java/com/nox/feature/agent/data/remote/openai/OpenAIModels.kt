@@ -92,7 +92,16 @@ data class Usage(
     val prompt_tokens: Int,
     val completion_tokens: Int,
     val total_tokens: Int,
-    val prompt_tokens_details: PromptTokensDetails? = null
+    val prompt_tokens_details: PromptTokensDetails? = null,
+    val completion_tokens_details: CompletionTokensDetails? = null
+)
+
+/**
+ * Chat Completions 的输出 token 明细：reasoning_tokens 为推理（思考）消耗，
+ * 已包含在 completion_tokens 内，需要单独展示以便判断是否开了思考。
+ */
+data class CompletionTokensDetails(
+    val reasoning_tokens: Int? = null
 )
 
 /**

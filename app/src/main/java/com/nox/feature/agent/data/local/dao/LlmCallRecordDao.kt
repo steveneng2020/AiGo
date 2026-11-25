@@ -92,9 +92,13 @@ data class SessionCallSummary(
     val cacheCreationTokens: Long,
     val errors: Int,
     val avgTtfbMillis: Double?,
+    /** 响应头到达平均耗时（ms）：与 avgTtfbMillis 相减可拆出服务端 prefill 耗时。 */
+    val avgHeadersMillis: Double? = null,
     val avgDurationMillis: Double?,
     val retryCount: Long,
-    val maxContextTokens: Long = 0
+    val maxContextTokens: Long = 0,
+    /** 本会话输出中推理（思考）token 的合计，已包含在 outputTokens 内。 */
+    val reasoningTokens: Long = 0
 )
 
 /** 当前周期的整体汇总，供概览卡片使用。 */
@@ -299,8 +303,10 @@ interface LlmCallRecordDao {
                COALESCE(SUM(cacheCreationTokens), 0) AS cacheCreationTokens,
                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
                AVG(ttfbMillis) AS avgTtfbMillis,
+               AVG(headersMillis) AS avgHeadersMillis,
                AVG(durationMillis) AS avgDurationMillis,
                COALESCE(SUM(retryCount), 0) AS retryCount,
+               COALESCE(SUM(reasoningTokens), 0) AS reasoningTokens,
                COALESCE(MAX(CASE WHEN kind = 'chat' THEN inputTokens ELSE 0 END), 0) AS maxContextTokens
         FROM llm_call_records
         WHERE sessionId = :sessionId

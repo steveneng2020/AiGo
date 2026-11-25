@@ -47,6 +47,17 @@ data class AIResponse(
     /** 本轮写入服务端缓存的 token 数（Anthropic cache_creation_input_tokens）。按高于普通输入的单价计费，取不到时为 0。 */
     val cacheCreationTokens: Int = 0,
     /**
+     * 本轮输出里的推理（思考）token 数，已包含在 [outputTokens] 内。
+     *
+     * 各家字段不同，由各 adapter 负责归一到本字段：
+     * - OpenAI Chat Completions：`completion_tokens_details.reasoning_tokens`
+     * - OpenAI Responses：`output_tokens_details.reasoning_tokens`
+     * - Anthropic：`usage.thinking_output_tokens`
+     * - Gemini：`total_thought_tokens` / `thoughtsTokenCount`
+     * 取不到时为 0（不伪造，面板也不会显示这行）。
+     */
+    val reasoningTokens: Int = 0,
+    /**
      * 本轮模型直接输出的图片（Gemini Nano Banana 图像模型走 Interactions 时产出）。
      * 元素带 base64 数据；工作流负责落盘并构造 UI 附件。其他 provider / 模型恒为空。
      */

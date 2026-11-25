@@ -218,6 +218,8 @@ internal fun ChatInputBar(
     onCompactionThresholdChange: (Int) -> Unit = {},
     /** 会话级用量明细（缓存命中 / TTFB / 失败重试等），由 ViewModel 聚合本地记录得到。 */
     sessionStats: SessionStatsUi? = null,
+    /** 面板打开时拉一次最新统计：缓存为空时（新装的 App、未跑新轮次）就直接显示只有 0 的空面板。 */
+    onRefreshSessionStats: () -> Unit = {},
     /** 正在压缩：面板里的按钮显示进行中。 */
     isCompacting: Boolean = false,
     onCompactContext: () -> Unit = {},
@@ -251,9 +253,12 @@ internal fun ChatInputBar(
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var showContextUsagePanel by remember { mutableStateOf(false) }
     if (showContextUsagePanel) {
+        // 每次打开都拉一次：统计缓存只在调用结束时刷新，冷启动或刚切会话时可能还是空的。
+        LaunchedEffect(Unit) { onRefreshSessionStats() }
         AlertDialog(
             onDismissRequest = { showContextUsagePanel = false },
-            title = { Text(stringResource(R.string.context_panel_title)) },
+            // 标题由面板内部自己画（带图标与估值标签），这里不再重复给 title，
+            // 否则会多出一行「上下文用量」并挤掉面板的标签行布局。
             text = {
                 ContextUsagePanel(
                     stats = sessionStats ?: SessionStatsUi(),

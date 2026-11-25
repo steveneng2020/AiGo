@@ -152,7 +152,7 @@ class AnthropicAdapter @Inject constructor(
             }
         }
 
-        return AIResponse(content = contentText, toolCalls = toolCalls, stopReason = response.stop_reason, stopDetail = response.stop_details?.explanation, reasoning = thinkingText.ifEmpty { null }, signature = signature, thinkingBlocksJson = encodeThinkingBlocks(thinkingBlocks), inputTokens = totalInputTokens(response.usage.input_tokens, response.usage.cache_read_input_tokens, response.usage.cache_creation_input_tokens), outputTokens = response.usage.output_tokens, cachedInputTokens = response.usage.cache_read_input_tokens ?: 0, cacheCreationTokens = response.usage.cache_creation_input_tokens ?: 0)
+        return AIResponse(content = contentText, toolCalls = toolCalls, stopReason = response.stop_reason, stopDetail = response.stop_details?.explanation, reasoning = thinkingText.ifEmpty { null }, signature = signature, thinkingBlocksJson = encodeThinkingBlocks(thinkingBlocks), inputTokens = totalInputTokens(response.usage.input_tokens, response.usage.cache_read_input_tokens, response.usage.cache_creation_input_tokens), outputTokens = response.usage.output_tokens, cachedInputTokens = response.usage.cache_read_input_tokens ?: 0, cacheCreationTokens = response.usage.cache_creation_input_tokens ?: 0, reasoningTokens = response.usage.thinking_output_tokens ?: 0)
     }
 
     // 必须用 channelFlow + send（而非 flow + emit）：首字节超时靠取消 attempt 作用域实现，
@@ -215,6 +215,7 @@ class AnthropicAdapter @Inject constructor(
             var streamOutputTokens = 0
             var streamCachedInputTokens = 0
             var streamCacheCreationTokens = 0
+            var streamReasoningTokens = 0
             // thinking block 的加密签名（signature_delta 事件携带），随 Final 上抛供工具循环回传。
             var signature: String? = null
             // content block index -> thinking / redacted_thinking 累积；按 index 分槽，避免一轮多个思考块被合并。
@@ -262,6 +263,8 @@ class AnthropicAdapter @Inject constructor(
                                     // 缓存命中/写入数在 message_start 的 usage 里返回；部分上游会在 message_delta 补全，见该分支的覆盖逻辑。
                                     streamCachedInputTokens = usage?.get("cache_read_input_tokens")?.takeIf { !it.isJsonNull }?.asInt ?: 0
                                     streamCacheCreationTokens = usage?.get("cache_creation_input_tokens")?.takeIf { !it.isJsonNull }?.asInt ?: 0
+                                    // Anthropic 的思考 token 在 usage.thinking_output_tokens（已含在 output_tokens 内）。
+                                    streamReasoningTokens = usage?.get("thinking_output_tokens")?.takeIf { !it.isJsonNull }?.asInt ?: streamReasoningTokens
                                 }
                                 "content_block_start" -> {
                                     val index = obj.get("index")?.asInt ?: continue
@@ -388,7 +391,7 @@ class AnthropicAdapter @Inject constructor(
             val toolCalls = toolBlocks.values.map { acc ->
                 ToolCall(id = acc.id, name = acc.name, arguments = parseArgs(acc.args.toString()))
             }
-            send(AIStreamChunk.Final(AIResponse(content = textBuilder.toString(), toolCalls = toolCalls, stopReason = stopReason, stopDetail = stopDetail, signature = signature, thinkingBlocksJson = encodeThinkingBlocks(thinkingBlocks.values.map { it.toBlock() }), inputTokens = totalInputTokens(streamInputTokens, streamCachedInputTokens, streamCacheCreationTokens), outputTokens = streamOutputTokens, cachedInputTokens = streamCachedInputTokens, cacheCreationTokens = streamCacheCreationTokens)))
+            send(AIStreamChunk.Final(AIResponse(content = textBuilder.toString(), toolCalls = toolCalls, stopReason = stopReason, stopDetail = stopDetail, signature = signature, thinkingBlocksJson = encodeThinkingBlocks(thinkingBlocks.values.map { it.toBlock() }), inputTokens = totalInputTokens(streamInputTokens, streamCachedInputTokens, streamCacheCreationTokens), outputTokens = streamOutputTokens, cachedInputTokens = streamCachedInputTokens, cacheCreationTokens = streamCacheCreationTokens, reasoningTokens = streamReasoningTokens)))
                     }
                 },
                 onRetry = { attempt, max, error -> send(AIStreamChunk.Retrying(attempt, max, error)) }

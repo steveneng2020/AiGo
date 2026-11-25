@@ -137,10 +137,15 @@ class PhoneControlTool @Inject constructor(
             ?: return ToolResult.Error("缺少必需参数：action", "MISSING_ACTION")
 
         if (!manager.isEnabled()) {
-            return ToolResult.Error(
-                "手机控制未开启：请到「软件权限 → 手机控制」打开 AiGo 的无障碍服务",
-                code = PhoneControlManager.ERROR_NOT_ENABLED
-            )
+            // 区分「从没开过」与「被系统关掉」：后者才是常态（MIUI/HyperOS 会在内存紧张、
+            // 省电策略、覆盖安装后静默关闭），告诉用户原因比只说「未开启」更可行动。
+            val disabledBefore = manager.wasDisabledBySystem()
+            val hint = if (disabledBefore) {
+                "手机控制已被系统关闭：请到「软件权限 → 手机控制」重新开启 AiGo 的无障碍服务"
+            } else {
+                "手机控制未开启：请到「软件权限 → 手机控制」打开 AiGo 的无障碍服务"
+            }
+            return ToolResult.Error(hint, code = PhoneControlManager.ERROR_NOT_ENABLED)
         }
 
         return try {

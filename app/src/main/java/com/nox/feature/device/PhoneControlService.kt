@@ -48,6 +48,9 @@ class PhoneControlService : AccessibilityService() {
         FileLogger.i(TAG, "无障碍服务已断开")
         instance = null
         foregroundPackage = null
+        // 记录被关：系统静默关闭无障碍后用户往往很久才发现，
+        // 应用下次回前台时靠这条记录提示恢复，而不是要求用户自己翻设置。
+        runCatching { AccessibilityKeepAlive.recordDisabled(this) }
         return super.onUnbind(intent)
     }
 

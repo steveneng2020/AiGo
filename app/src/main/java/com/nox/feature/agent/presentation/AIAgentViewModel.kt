@@ -1045,9 +1045,11 @@ class AIAgentViewModel @Inject constructor(
     /** 刷新某个会话的用量明细；面板打开与每次调用结束都会调。 */
     fun refreshSessionStats(sid: String) {
         viewModelScope.launch {
-            runCatching {
-                _sessionCallPoints.value = _sessionCallPoints.value +
-                    (sid to llmCallRecordDao.getSessionCallPoints(sid).first())
+            val points = runCatching {
+                llmCallRecordDao.getSessionCallPoints(sid).first()
+            }.getOrDefault(emptyList())
+            if (points.isNotEmpty()) {
+                _sessionCallPoints.value = _sessionCallPoints.value + (sid to points)
             }
             val stats = runCatching {
                 val summary = llmCallRecordDao.getSessionSummary(sid).first()
@@ -1062,14 +1064,35 @@ class AIAgentViewModel @Inject constructor(
                     cacheCreationTokens = summary.cacheCreationTokens,
                     errors = summary.errors,
                     avgTtfbMillis = summary.avgTtfbMillis,
+                    avgHeadersMillis = summary.avgHeadersMillis,
                     avgDurationMillis = summary.avgDurationMillis,
                     retryCount = summary.retryCount,
                     maxContextTokens = summary.maxContextTokens,
-                    ttfbSamples = ttfbSamples
+                    ttfbSamples = ttfbSamples,
+                    toolMillis = estimateToolMillis(points),
+                    reasoningTokens = summary.reasoningTokens
                 )
             }.getOrNull() ?: return@launch
             _sessionStats.value = _sessionStats.value + (sid to stats)
         }
+    }
+
+    /**
+     * 从调用时间线反推工具耗时：相邻两次调用之间的空档之和。
+     *
+     * 每次调用有自己的 createdAt（发出时刻）与 durationMillis（耗时），
+     * 则 上一次结束时刻 = createdAt + duration，下一次开始 = 下一次 createdAt，
+     * 中间的空档就是工具执行与等待的时间。只计入非负值，避免记录乱序时算出负数。
+     */
+    private fun estimateToolMillis(points: List<SessionCallPoint>): Long {
+        if (points.size < 2) return 0L
+        var total = 0L
+        for (i in 1 until points.size) {
+            val prevEnd = points[i - 1].createdAt + (points[i - 1].durationMillis ?: 0)
+            val gap = points[i].createdAt - prevEnd
+            if (gap > 0) total += gap
+        }
+        return total
     }
 
     private val _llmCallEvents = MutableSharedFlow<LlmCallEvent>(extraBufferCapacity = 16)

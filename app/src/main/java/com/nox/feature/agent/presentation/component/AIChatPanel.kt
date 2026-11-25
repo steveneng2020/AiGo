@@ -426,6 +426,39 @@ internal fun buildChatItems(
     return items
 }
 
+/**
+ * 把「用户插话」与其后的后台通知条换位：让通知条排在插话气泡**上方**。
+ *
+ * 为什么要换：插话在 interjectQueuedRequest 里立即落库，通知要等下一批工具结果搭车送达，
+ * 于是时间戳上通知总比插话晚，渲染出来就成了「插话气泡 → 通知条」。
+ * 而这条通知说的就是这次插话（「用户在工作期间插入了一条消息」），
+ * 排在下面会被误读成又插了一次，放上方才能读成「先告知、再展示内容」。
+ *
+ * 只交换相邻的这一对，不重排其他消息，避免扰动轮次划分与历史顺序。
+ */
+internal fun moveInterjectionNoticeAbove(items: List<ChatRenderItem>): List<ChatRenderItem> {
+    if (items.size < 2) return items
+    val out = ArrayList<ChatRenderItem>(items.size)
+    var i = 0
+    while (i < items.size) {
+        val cur = items[i]
+        val next = items.getOrNull(i + 1)
+        if (next != null &&
+            cur.message.isUserInterjection &&
+            next.message.isBackgroundNotification
+        ) {
+            // 通知条在前，插话气泡在后。
+            out += next
+            out += cur
+            i += 2
+        } else {
+            out += cur
+            i += 1
+        }
+    }
+    return out
+}
+
 internal fun flattenChatProcesses(items: List<ChatRenderItem>): List<ChatRenderItem> = buildList {
     for (item in items) {
         if (item.turnHeader == null) {
@@ -903,14 +936,14 @@ fun AIChatPanel(
     // 切换会话后的首版仍同步算，避免短暂显示上一个会话的内容。
     val chatItemsKey = remember(messages, toolGroupOverrideSnapshot, turnOverrideSnapshot, activeTurnKey, currentSessionId, stableTurnKeys) { Any() }
     val buildItems = {
-        flattenChatProcesses(buildChatItems(
+        moveInterjectionNoticeAbove(flattenChatProcesses(buildChatItems(
             messages = messages,
             groupOverrides = toolGroupOverrideSnapshot,
             turnOverrides = turnOverrideSnapshot,
             activeTurnKey = activeTurnKey,
             sessionId = currentSessionId,
             turnKeys = stableTurnKeys,
-        ))
+        )))
     }
     val useAsyncItems = messages.size > ASYNC_CHAT_ITEMS_THRESHOLD
     var asyncItems by remember { mutableStateOf<AsyncChatItems?>(null) }
@@ -2106,6 +2139,7 @@ fun AIChatPanel(
                 compactionThresholdPercent = compactionThresholdPercent,
                 onCompactionThresholdChange = { settingsViewModel?.setCompactionThresholdPercent(it) },
                 sessionStats = sessionStats[currentSessionId],
+                onRefreshSessionStats = { currentSessionId?.let { viewModel.refreshSessionStats(it) } },
                 isCompacting = isCompacting,
                 onCompactContext = { viewModel.compactCurrentSession() },
                 contextArcColor = if (contextArcColorArgb == 0) DefaultContextArcColor

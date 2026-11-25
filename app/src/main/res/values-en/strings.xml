@@ -2204,17 +2204,20 @@
     <!-- Context usage panel -->
     <string name="context_panel_title">Context usage</string>
     <string name="context_panel_estimated">Estimated</string>
-    <string name="context_panel_section_context">Context occupancy</string>
-    <string name="context_panel_section_tokens">Session totals</string>
+    <string name="context_panel_section_context">Context usage</string>
+    <string name="context_panel_section_tokens">Token usage</string>
     <string name="context_panel_section_performance">Performance</string>
     <string name="context_panel_section_calls">Call breakdown</string>
     <string name="context_panel_section_compaction">Compaction</string>
     <string name="context_panel_input">Input</string>
     <string name="context_panel_output">Output</string>
+    <string name="context_panel_output_with_reasoning">%1$s (reasoning %2$s)</string>
     <string name="context_panel_cache_hit">Cache hit</string>
     <string name="context_panel_cache_miss">Cache miss</string>
     <string name="context_panel_cache_write">Cache write</string>
     <string name="context_panel_ttfb">Time to first token</string>
+    <string name="context_panel_ttfb_network">· network + queue</string>
+    <string name="context_panel_ttfb_server">· server processing</string>
     <string name="context_panel_avg_duration">Average duration</string>
     <string name="context_panel_tps">Output speed</string>
     <string name="context_panel_total_calls">Total calls</string>
@@ -2247,4 +2250,6 @@
     <string name="chat_turn_detail_tool_time">Tool time</string>
     <string name="chat_turn_detail_ttfb">Time to first token</string>
     <string name="chat_turn_detail_tps">Output speed</string>
+    <string name="chat_meta_ttfb_short">TTFT %1$ss</string>
+    <string name="chat_meta_tps_short">%1$d tok/s</string>
 </resources>

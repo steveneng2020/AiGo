@@ -88,5 +88,10 @@ data class AnthropicUsage(
     /** 命中缓存的前缀 token 数（prompt caching 生效时返回）。 */
     val cache_read_input_tokens: Int? = null,
     /** 本次写入缓存的新增 token 数。 */
-    val cache_creation_input_tokens: Int? = null
+    val cache_creation_input_tokens: Int? = null,
+    /**
+     * extended thinking 产生的思考 token 数（Anthropic 在 2026 版 usage 中新增）。
+     * 已包含在 [output_tokens] 内；老版本或未开 thinking 时为空。
+     */
+    val thinking_output_tokens: Int? = null
 )

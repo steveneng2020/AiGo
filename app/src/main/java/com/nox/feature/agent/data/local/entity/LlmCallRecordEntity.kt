@@ -41,8 +41,21 @@ data class LlmCallRecordEntity(
     val cachedInputTokens: Int = 0,
     /** 本轮写入服务端缓存的 token 数（Anthropic cache_creation_input_tokens），按高于输入的单价计费。 */
     val cacheCreationTokens: Int = 0,
+    /**
+     * 输出中的推理（思考）token 数，已包含在 outputTokens 内。
+     * 各家字段不同，由 adapter 归一到 AIResponse.reasoningTokens；取不到时为 0。
+     */
+    val reasoningTokens: Int = 0,
     /** 首字延迟（毫秒）：流式调用首个文本块到达 - 请求发出；非流式或失败为 null。 */
     val ttfbMillis: Int? = null,
+    /**
+     * 响应头到达耗时（毫秒）：请求发出 → 收到 HTTP 响应头（拿到响应体流）。
+     *
+     * 用于拆解 ttfbMillis：这段差值是网络往返 + 服务端排队（不含模型生成），
+     * 而 ttfbMillis - 本字段就是服务端 prefill + 生成首 token 的耗时。
+     * TTFT 偏高时能直接分辨是链路/排队问题还是上下文太大。
+     */
+    val headersMillis: Int? = null,
     /** 总耗时（毫秒）：结束 - 请求发出。 */
     val durationMillis: Int? = null,
     /** 调用结果：success / error。 */

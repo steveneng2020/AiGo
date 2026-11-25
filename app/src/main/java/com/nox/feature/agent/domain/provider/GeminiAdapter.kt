@@ -174,6 +174,8 @@ class GeminiAdapter @Inject constructor(
         val outputTokens = (usageMetadata?.get("candidatesTokenCount")?.takeIf { !it.isJsonNull }?.asInt ?: 0) +
             (usageMetadata?.get("thoughtsTokenCount")?.takeIf { !it.isJsonNull }?.asInt ?: 0)
         val cachedInputTokens = usageMetadata?.get("cachedContentTokenCount")?.takeIf { !it.isJsonNull }?.asInt ?: 0
+        // 思考 token：Gemini 单独放在 thoughtsTokenCount，已包含在 outputTokens 里。
+        val reasoningTokens = usageMetadata?.get("thoughtsTokenCount")?.takeIf { !it.isJsonNull }?.asInt ?: 0
 
         // 响应结构损坏（解析过程抛异常）且没有可展示的正文/原因：返回明确的中止结果而非崩溃，
         // stopReason=failed 命中 isAborted，上层会展示错误文案。
@@ -188,6 +190,7 @@ class GeminiAdapter @Inject constructor(
             inputTokens = inputTokens,
             outputTokens = outputTokens,
             cachedInputTokens = cachedInputTokens,
+            reasoningTokens = reasoningTokens,
             images = images
         )
     }
@@ -237,6 +240,7 @@ class GeminiAdapter @Inject constructor(
                 var streamInputTokens = 0
                 var streamOutputTokens = 0
                 var streamCachedInputTokens = 0
+                var streamReasoningTokens = 0
 
                 val body = firstContent.awaitBody(api.streamGenerateContent(url = resolveGenerateContentUrl(stream = true), apiKey = apiKey, extraHeaders = extraHeaders(), request = request))
 
@@ -269,6 +273,8 @@ class GeminiAdapter @Inject constructor(
                                         streamOutputTokens = (candidateTokens ?: 0) + (thoughtTokens ?: 0)
                                     }
                                     streamCachedInputTokens = um.get("cachedContentTokenCount")?.takeIf { !it.isJsonNull }?.asInt ?: streamCachedInputTokens
+                                    // 思考 token：已合入 streamOutputTokens，这里只单独留一份供面板展示。
+                                    streamReasoningTokens = um.get("thoughtsTokenCount")?.takeIf { !it.isJsonNull }?.asInt ?: streamReasoningTokens
                                 }
                                 val chunkCandidates = obj.getAsJsonArray("candidates")
                                 chunkCandidates?.firstOrNull()?.asJsonObject?.let { candidate ->
@@ -333,7 +339,7 @@ class GeminiAdapter @Inject constructor(
                     }
                 }
 
-                send(AIStreamChunk.Final(AIResponse(content = textBuilder.toString(), toolCalls = toolCalls, stopReason = currentFinishReason, thinkingBlocksJson = snapshotOf(snapshotParts), inputTokens = streamInputTokens, outputTokens = streamOutputTokens, cachedInputTokens = streamCachedInputTokens, images = images)))
+                send(AIStreamChunk.Final(AIResponse(content = textBuilder.toString(), toolCalls = toolCalls, stopReason = currentFinishReason, thinkingBlocksJson = snapshotOf(snapshotParts), inputTokens = streamInputTokens, outputTokens = streamOutputTokens, cachedInputTokens = streamCachedInputTokens, reasoningTokens = streamReasoningTokens, images = images)))
                     }
                 },
                 onRetry = { attempt, max, error -> send(AIStreamChunk.Retrying(attempt, max, error)) }

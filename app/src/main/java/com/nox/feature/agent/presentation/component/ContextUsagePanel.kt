@@ -1,8 +1,6 @@
 package com.nox.feature.agent.presentation.component
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,7 +19,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -31,19 +28,23 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.nox.R
 import com.nox.core.theme.Brand
 import com.nox.core.theme.Spacing
-import compose.icons.FeatherIcons
+import com.nox.core.theme.PanelTokens
+import com.nox.core.ui.PanelSectionHeader
+import com.nox.core.ui.PanelValueRow
 import compose.icons.feathericons.Activity
 import compose.icons.feathericons.Aperture
-import compose.icons.feathericons.ChevronDown
-import compose.icons.feathericons.ChevronUp
 import compose.icons.feathericons.ChevronsDown
 import compose.icons.feathericons.Clock
+import compose.icons.feathericons.Database
+import compose.icons.feathericons.HardDrive
 import java.util.Locale
 
 /**
@@ -63,12 +64,24 @@ data class SessionStatsUi(
     val cacheCreationTokens: Long = 0L,
     val errors: Int = 0,
     val avgTtfbMillis: Double? = null,
+    /** 响应头到达平均耗时（ms）：网络往返 + 服务端排队，不含模型生成。 */
+    val avgHeadersMillis: Double? = null,
     val avgDurationMillis: Double? = null,
     val retryCount: Long = 0L,
     /** 本会话单次请求的最大输入 token，作为当前上下文占用的实测上界。 */
     val maxContextTokens: Long = 0L,
     /** TTFT 的有效样本数：用于区分「每次都慢」与「偶发一次慢」。 */
-    val ttfbSamples: Int = 0
+    val ttfbSamples: Int = 0,
+    /**
+     * 工具调用耗时（ms）：相邻两次模型调用之间的空档之和。
+     *
+     * 口径：两次调用之间的间隔 = 工具执行 + 等待用户授权 + 网络间隙。这是从调用记录
+     * 能反推出的唯一可行口径；比「轮挂钟 − 模型耗时」略小（不含首轮前与末轮后的空档），
+     * 但不需要额外埋点，也不会把思考时间误计入工具。
+     */
+    val toolMillis: Long = 0L,
+    /** 本会话输出中推理（思考）token 的合计，已包含在 [outputTokens] 内。 */
+    val reasoningTokens: Long = 0L
 ) {
     val totalTokens: Long get() = inputTokens + outputTokens
     val cacheHitPercent: Int?
@@ -81,105 +94,73 @@ data class SessionStatsUi(
         get() {
             val ms = avgDurationMillis?.takeIf { it > 0 } ?: return null
             val out = outputTokens.takeIf { it > 0 } ?: return null
+            // 生成耗时 = 总耗时 − 首 token 等待。不扣 TTFT 会把等待当成生成，
+            // 速度偏低一个量级（实测 23 tok/s vs 扣除后 ~152 tok/s）。
+            val genMs = (ms - (avgTtfbMillis ?: 0.0)).coerceAtLeast(1.0)
             val avgOut = out.toDouble() / calls.coerceAtLeast(1)
-            return avgOut / (ms / 1000.0)
+            return avgOut / (genMs / 1000.0)
         }
 }
 
 /**
- * 面板分组标题：小图标 + 名称，右侧可选补充信息。
- *
- * 图标不只是装饰：分组多了以后纯靠字号和颜色区分，扫视时容易串行，
- * 给每组一个固定图形后，视线可以先落到图标上再读数值。
+ * 分组分隔线：0.5dp 细线，上 8dp 下 10dp。
  */
 @Composable
-private fun PanelGroupHeader(
-    icon: ImageVector,
-    title: String,
-    trailing: String? = null,
-    trailingEmphasis: Boolean = false
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(bottom = Spacing.sm),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-            modifier = Modifier.size(14.dp)
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        if (trailing != null) {
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = trailing,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = if (trailingEmphasis) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (trailingEmphasis) MaterialTheme.colorScheme.onSurface
-                else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-/** 键值行。value 用等宽数字对齐，便于纵向对比大小。 */
-@Composable
-private fun StatRow(
-    label: String,
-    value: String,
-    suffix: String? = null,
-    emphasize: Boolean = false,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = if (emphasize) FontWeight.SemiBold else FontWeight.Medium,
-            color = valueColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        if (suffix != null) {
-            Spacer(Modifier.width(3.dp))
-            Text(
-                text = suffix,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-/** 区块之间的细分割线。比整块留白更省高度，也比什么都不留更清晰。 */
-@Composable
-private fun GroupDivider() {
+private fun PanelSectionDivider() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(1.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            .padding(top = 8.dp, bottom = 10.dp)
+            .height(0.5.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     )
+}
+
+/**
+ * 完整的 token 计数：千分位分隔，不缩写（如 12,987,460）。
+ * 用在组标题右侧与各组明细值上；缩写只在空间紧张的气泡统计行用。
+ */
+internal fun formatExactTokenCount(tokens: Long): String =
+    java.text.NumberFormat.getIntegerInstance(java.util.Locale.US).format(tokens.coerceAtLeast(0))
+
+/**
+ * 紧凑的 token 计数：1M 以下保留两位小数的 K，1M 以上用 M（如 197.88K / 1M）。
+ *
+ * 与 [formatTokenCount] 的区别：那个用于气泡下方窄条，只留一位省宽度；
+ * 面板空间充足，两位小数更接近真值，也便于跨行对比。
+ */
+internal fun formatCompactTokenCount(tokens: Long): String = when {
+    tokens >= 1_000_000_000L -> {
+        val v = tokens / 1_000_000_000.0
+        if (v == v.toLong().toDouble()) "${v.toLong()}B" else String.format(Locale.US, "%.2fB", v)
+    }
+    tokens >= 1_000_000L -> {
+        val v = tokens / 1_000_000.0
+        if (v == v.toLong().toDouble()) "${v.toLong()}M" else String.format(Locale.US, "%.2fM", v)
+    }
+    tokens >= 1_000L -> String.format(Locale.US, "%.2fK", tokens / 1_000.0)
+    else -> tokens.toString()
+}
+
+
+/** 秒级指标（首 token 平均）在统计行里的短写法：保留一位小数，整数不带小数点。 */
+internal fun formatMetaSeconds(millis: Double): String {
+    val seconds = millis / 1000.0
+    return if (seconds >= 10 || seconds == seconds.toLong().toDouble()) {
+        String.format(Locale.US, "%.0f", seconds)
+    } else {
+        String.format(Locale.US, "%.1f", seconds)
+    }
 }
 
 /** 毫秒转「x 分 y 秒」/「x.x 秒」，面板里统一用这个。 */
 internal fun formatPanelDuration(ms: Long): String = when {
+    // 超过一小时按「x 时 y 分」：纯分钟数（如 942 分）无法直观判断时长量级。
+    ms >= 3_600_000 -> {
+        val h = ms / 3_600_000
+        val m = (ms % 3_600_000) / 60_000
+        if (m > 0) "${h} 时 ${m} 分" else "${h} 时"
+    }
     ms >= 60_000 -> {
         val m = ms / 60_000
         val s = (ms % 60_000) / 1000
@@ -192,7 +173,7 @@ internal fun formatPanelDuration(ms: Long): String = when {
 /**
  * 上下文用量面板。
  *
- * 结构参照 Eta：顶部一行总览，下面按「上下文用量 / Token 明细 / 会话统计 / 自动压缩」
+ * 结构：顶部一行总览，下面按「Token 用量 / 会话统计 / 自动压缩」
  * 四组分列，每组一个图标一个标题，字段用紧凑键值行平铺。
  * 去掉了原来「本次会话累计」「性能」「调用明细」这类三层嵌套与内部术语
  * （总调用 / 对话调用 / TTFT / TPS），用户不需要知道底层调了几次 API。
@@ -216,39 +197,11 @@ fun ContextUsagePanel(
     } else 0f
     val percent = (progress * 100)
     val overThreshold = percent >= thresholdPercent
-    var expanded by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxWidth()) {
 
-        // ── 上下文用量：标签行（图标 + 名称 + 估值标签）→ 值 + 占比 → 带阈值刻度的进度条 ──
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = FeatherIcons.Aperture,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                modifier = Modifier.size(13.dp)
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = stringResource(R.string.context_panel_section_context),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (contextEstimated) {
-                Spacer(Modifier.width(Spacing.xs))
-                Text(
-                    text = stringResource(R.string.context_panel_estimated),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFB54708),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Color(0xFFFEF0C7))
-                        .padding(horizontal = 5.dp, vertical = 1.dp)
-                )
-            }
-        }
-        Spacer(Modifier.height(Spacing.xs))
+        // ── 顶部概览：大数字 + 百分比 + 带阈值刻度的进度条。
+        // 顶部概览区不带图标与标签行，上下文用量的明细值放在 Token 用量组内。
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = formatTokenCount(contextInputTokens.toLong()),
@@ -311,133 +264,148 @@ fun ContextUsagePanel(
                 }
             }
         }
-        // 「估算」已上提到标签行，此处不再重复占一行。
-
-        // 展开条：常态只显示上面的上下文用量概要，点开才看其余明细。
-        Spacer(Modifier.height(Spacing.sm))
-        GroupDivider()
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = !expanded }
-                .padding(vertical = Spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = stringResource(
-                    if (expanded) R.string.common_collapse_action
-                    else R.string.context_panel_expand_detail
-                ),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.width(4.dp))
-            Icon(
-                imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
-                contentDescription = null,
-                tint = Brand.IconGray,
-                modifier = Modifier.size(14.dp)
-            )
-        }
-
-        if (expanded) {
+        // 打开即全文，不折叠。下面按分组顺序平铺：
+        // Token 用量（含上下文用量行）→ 会话统计 → 自动压缩。
         Spacer(Modifier.height(Spacing.sm))
 
-        // ── ② Token 明细：缓存四项 + 输出（含推理）──
+        // ── ② Token 用量：会话总量 + 上下文占用量 + 缓存四项 + 输出 ──
+        PanelSectionHeader(
+            icon = PanelIcons.TokenUsage,
+            title = stringResource(R.string.context_panel_section_tokens),
+            trailing = if (stats.totalTokens > 0) formatExactTokenCount(stats.totalTokens) + " tok" else null
+        )
+        PanelSectionDivider()
+        // 上下文用量作为组内第一行：值与占比、预算同排，读者不用回头找。
+        // 数值用带两位小数的 K/M 缩写，比 310.2k 更接近原值的精度。
+        PanelValueRow(
+            label = stringResource(R.string.context_panel_section_context),
+            value = String.format(
+                Locale.US,
+                "%s / %s · %.1f%%",
+                formatCompactTokenCount(contextInputTokens.toLong()),
+                formatCompactTokenCount(contextBudget.toLong()),
+                percent
+            ),
+            valueColor = if (overThreshold) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurface
+        )
         // 缓存命中与否直接决定花费，所以放在最前；只有存在缓存活动时才占位置。
         if (stats.cacheHitPercent != null) {
-            StatRow(
+            PanelValueRow(
                 label = stringResource(R.string.context_panel_cache_hit),
                 value = "${stats.cacheHitPercent}%",
                 valueColor = Color(0xFF2563EB),
                 emphasize = true
             )
-            StatRow(
+            PanelValueRow(
                 label = stringResource(R.string.context_panel_cache_miss),
-                value = formatTokenCount(stats.uncachedInputTokens),
+                value = formatExactTokenCount(stats.uncachedInputTokens),
                 suffix = "tok"
             )
-            StatRow(
+            PanelValueRow(
                 label = stringResource(R.string.context_panel_cache_write),
-                value = formatTokenCount(stats.cacheCreationTokens),
+                value = formatExactTokenCount(stats.cacheCreationTokens),
                 suffix = "tok"
             )
-            StatRow(
+            PanelValueRow(
                 label = stringResource(R.string.context_panel_cache_read),
-                value = formatTokenCount(stats.cachedInputTokens),
+                value = formatExactTokenCount(stats.cachedInputTokens),
                 suffix = "tok"
             )
         } else {
-            StatRow(
+            PanelValueRow(
                 label = stringResource(R.string.context_panel_input),
-                value = formatTokenCount(stats.inputTokens),
+                value = formatExactTokenCount(stats.inputTokens),
                 suffix = "tok"
             )
         }
-        StatRow(
+        // 输出行：推理 token 标在输出后面，括号内、灰色小字。
+        // 推理已含在输出里，这里只作拆分说明，不再相加。
+        PanelValueRow(
             label = stringResource(R.string.context_panel_output),
-            value = formatTokenCount(stats.outputTokens),
+            value = if (stats.reasoningTokens > 0) {
+                stringResource(
+                    R.string.context_panel_output_with_reasoning,
+                    formatExactTokenCount(stats.outputTokens),
+                    formatExactTokenCount(stats.reasoningTokens)
+                )
+            } else {
+                formatExactTokenCount(stats.outputTokens)
+            },
             suffix = "tok"
         )
 
-        if (stats.calls > 0 || stats.avgTtfbMillis != null || stats.avgDurationMillis != null) {
-            Spacer(Modifier.height(Spacing.md))
-            GroupDivider()
-            Spacer(Modifier.height(Spacing.md))
+        // ── ③ 会话统计：始终显示，数据为空时各行为 0，不整块藏起来 ──
+        Spacer(Modifier.height(14.dp))
 
-            // ── ③ 会话统计：调用次数 + 用时 + 速度 ──
-            PanelGroupHeader(
-                icon = FeatherIcons.Clock,
-                title = stringResource(R.string.context_panel_section_session),
-                // 原来这里把「对话调用次数 / 总调用次数」当成「轮 / 步」显示，语义是错的：
-                // 两者都是 API 调用计数，不是用户发起的轮次，也不是工具步数。
-                // 真实可得的只有调用次数，改为如实展示「n 次调用」。
-                trailing = if (stats.calls > 0) {
-                    stringResource(R.string.context_panel_call_count, stats.calls)
-                } else null
+        PanelSectionHeader(
+            icon = PanelIcons.SessionStats,
+            title = stringResource(R.string.context_panel_section_session),
+            // 原来这里把「对话调用次数 / 总调用次数」当成「轮 / 步」显示，语义是错的：
+            // 两者都是 API 调用计数，不是用户发起的轮次，也不是工具步数。
+            // 真实可得的只有调用次数，改为如实展示「n 次调用」。
+            trailing = if (stats.calls > 0) {
+                stringResource(R.string.context_panel_call_count, stats.calls)
+            } else null
+        )
+        PanelSectionDivider()
+        // 四项始终显示：无数据时给 0，不整行消失，避免空态跳版。
+        PanelValueRow(
+            stringResource(R.string.context_panel_model_time),
+            formatPanelDuration(
+                ((stats.avgDurationMillis ?: 0.0) * stats.calls.coerceAtLeast(1)).toLong()
             )
-            stats.avgDurationMillis?.let {
-                StatRow(
-                    stringResource(R.string.context_panel_model_time),
-                    formatPanelDuration((it * stats.calls.coerceAtLeast(1)).toLong())
+        )
+        // 工具调用用时：由调用时间线的相邻空档反推（见 estimateToolMillis）。
+        PanelValueRow(
+            stringResource(R.string.chat_turn_detail_tool_time),
+            formatPanelDuration(stats.toolMillis)
+        )
+        PanelValueRow(
+            label = stringResource(R.string.context_panel_ttfb),
+            value = formatPanelDuration((stats.avgTtfbMillis ?: 0.0).toLong())
+        )
+        // 首 token 耗时拆解：让用户看出长等到底在链路/排队还是服务端处理。
+        // 只在有 headers 样本（新版本埋点后的调用）时显示，历史数据没这段。
+        stats.avgTtfbMillis?.let { ttfb ->
+            stats.avgHeadersMillis?.let { headers ->
+                PanelValueRow(
+                    label = stringResource(R.string.context_panel_ttfb_network),
+                    value = formatPanelDuration(headers.toLong())
                 )
-            }
-            stats.avgTtfbMillis?.let { ttfb ->
-                StatRow(
-                    label = stringResource(R.string.context_panel_ttfb),
-                    value = formatPanelDuration(ttfb.toLong())
-                )
-            }
-            stats.outputTps?.let {
-                StatRow(
-                    stringResource(R.string.context_panel_tps),
-                    String.format(Locale.US, "%.0f", it),
-                    suffix = "tok/s"
-                )
-            }
-            // 失败与重试是异常信号，只在真的发生时才出现，正常使用时完全不占版面。
-            if (stats.errors > 0 || stats.retryCount > 0) {
-                StatRow(
-                    label = stringResource(R.string.context_panel_errors_retries),
-                    value = "${stats.errors} / ${stats.retryCount}",
-                    valueColor = MaterialTheme.colorScheme.error
+                val serverMs = (ttfb - headers).coerceAtLeast(0.0)
+                PanelValueRow(
+                    label = stringResource(R.string.context_panel_ttfb_server),
+                    value = formatPanelDuration(serverMs.toLong())
                 )
             }
         }
+        PanelValueRow(
+            stringResource(R.string.context_panel_tps),
+            String.format(Locale.US, "%.0f", stats.outputTps ?: 0.0),
+            suffix = "tok/s"
+        )
+        // 失败与重试是异常信号，只在真的发生时才出现，正常使用时完全不占版面。
+        if (stats.errors > 0 || stats.retryCount > 0) {
+            PanelValueRow(
+                label = stringResource(R.string.context_panel_errors_retries),
+                value = "${stats.errors} / ${stats.retryCount}",
+                valueColor = MaterialTheme.colorScheme.error
+            )
+        }
 
-        Spacer(Modifier.height(Spacing.md))
-        GroupDivider()
-        Spacer(Modifier.height(Spacing.md))
+        Spacer(Modifier.height(14.dp))
 
-        // ── ④ 自动压缩：阈值可调 + 立即压缩 ──
-        PanelGroupHeader(
-            icon = FeatherIcons.ChevronsDown,
+        PanelSectionDivider()
+
+        // ── 自动压缩：阈值可调 + 立即压缩（本应用独有）──
+        PanelSectionHeader(
+            icon = PanelIcons.Compact,
             title = stringResource(R.string.context_panel_section_auto_compact),
             trailing = "$thresholdPercent%",
             trailingEmphasis = true
         )
+        PanelSectionDivider()
         var sliderValue by remember(thresholdPercent) {
             mutableFloatStateOf(thresholdPercent.toFloat())
         }
@@ -453,19 +421,19 @@ fun ContextUsagePanel(
         Row(modifier = Modifier.fillMaxWidth()) {
             Text(
                 text = "50%",
-                style = MaterialTheme.typography.labelSmall,
+                style = TextStyle(fontSize = PanelTokens.rowValueSize, lineHeight = PanelTokens.rowLine),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.weight(1f))
             Text(
                 text = "95%",
-                style = MaterialTheme.typography.labelSmall,
+                style = TextStyle(fontSize = PanelTokens.rowValueSize, lineHeight = PanelTokens.rowLine),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Text(
             text = stringResource(R.string.context_panel_threshold_desc),
-            style = MaterialTheme.typography.labelSmall,
+            style = TextStyle(fontSize = PanelTokens.rowValueSize, lineHeight = PanelTokens.rowLine),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = Spacing.xs)
         )
@@ -473,21 +441,19 @@ fun ContextUsagePanel(
         Button(
             onClick = onCompact,
             enabled = canCompact,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(17.dp)
         ) {
-            Icon(
-                imageVector = FeatherIcons.ChevronsDown,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(Modifier.width(Spacing.xs))
+            // 压缩按钮保持纯文字（不加图标）：面板里只有分组标题带图标，
+            // 按钮再加一个会削弱图标的「分组」语义。
             Text(
                 text = stringResource(
                     if (compacting) R.string.context_panel_compacting
                     else R.string.context_panel_compact_now_sc
-                )
+                ),
+                style = TextStyle(fontSize = PanelTokens.sectionTitleSize, lineHeight = PanelTokens.sectionTitleLine),
+                fontWeight = FontWeight.Medium
             )
-        }
         }
     }
 }

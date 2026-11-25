@@ -184,7 +184,7 @@ class OpenAIAdapter @Inject constructor(
             ?: message?.reasoning?.takeIf { it.isNotEmpty() }
         val usage = response.usage
 
-        return AIResponse(content = content, toolCalls = toolCalls, stopReason = finishReason, reasoning = reasoning, inputTokens = usage?.prompt_tokens ?: 0, outputTokens = usage?.completion_tokens ?: 0, cachedInputTokens = usage?.prompt_tokens_details?.cached_tokens ?: 0, cacheCreationTokens = usage?.prompt_tokens_details?.cache_write_tokens ?: 0, images = images)
+        return AIResponse(content = content, toolCalls = toolCalls, stopReason = finishReason, reasoning = reasoning, inputTokens = usage?.prompt_tokens ?: 0, outputTokens = usage?.completion_tokens ?: 0, cachedInputTokens = usage?.prompt_tokens_details?.cached_tokens ?: 0, cacheCreationTokens = usage?.prompt_tokens_details?.cache_write_tokens ?: 0, reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens ?: 0, images = images)
     }
 
     /**
@@ -412,6 +412,7 @@ class OpenAIAdapter @Inject constructor(
             var streamOutputTokens = 0
             var streamCachedInputTokens = 0
             var streamCacheCreationTokens = 0
+            var streamReasoningTokens = 0
 
             val body = firstContent.awaitBody(api.streamChatCompletion(
                 url = resolveApiUrl(),
@@ -459,6 +460,15 @@ class OpenAIAdapter @Inject constructor(
                                 streamOutputTokens = u.get("completion_tokens")?.takeIf { !it.isJsonNull }?.asInt ?: streamOutputTokens
                                 streamCachedInputTokens = u.getAsJsonObject("prompt_tokens_details")?.get("cached_tokens")?.takeIf { !it.isJsonNull }?.asInt ?: streamCachedInputTokens
                                 streamCacheCreationTokens = u.getAsJsonObject("prompt_tokens_details")?.get("cache_write_tokens")?.takeIf { !it.isJsonNull }?.asInt ?: streamCacheCreationTokens
+                                // 推理 token：各家 OpenAI 兼容端点的字段位置不统一，按优先级逐个尝试——
+                                // 1) completion_tokens_details.reasoning_tokens（OpenAI / DeepSeek / 多数国内厂商）
+                                // 2) output_tokens_details.reasoning_tokens（DeepSeek Responses / 部分新端点）
+                                // 3) 顶层 reasoning_tokens（少数非标准端点）
+                                streamReasoningTokens =
+                                    u.getAsJsonObject("completion_tokens_details")?.get("reasoning_tokens")?.takeIf { !it.isJsonNull }?.asInt
+                                        ?: u.getAsJsonObject("output_tokens_details")?.get("reasoning_tokens")?.takeIf { !it.isJsonNull }?.asInt
+                                        ?: u.get("reasoning_tokens")?.takeIf { !it.isJsonNull }?.asInt
+                                        ?: streamReasoningTokens
                             }
                             val choice = obj.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject ?: continue
                             val delta = choice.getAsJsonObject("delta") ?: continue
@@ -550,7 +560,7 @@ class OpenAIAdapter @Inject constructor(
             val toolCalls = toolAccs.values
                 .filter { it.id.isNotEmpty() || it.name.isNotEmpty() }
                 .map { acc -> ToolCall(id = acc.id, name = acc.name, arguments = parseToolArguments(acc.args.toString())) }
-            send(AIStreamChunk.Final(AIResponse(content = textBuilder.toString(), toolCalls = toolCalls, stopReason = finishReason, inputTokens = streamInputTokens, outputTokens = streamOutputTokens, cachedInputTokens = streamCachedInputTokens, cacheCreationTokens = streamCacheCreationTokens, images = streamedImages)))
+            send(AIStreamChunk.Final(AIResponse(content = textBuilder.toString(), toolCalls = toolCalls, stopReason = finishReason, inputTokens = streamInputTokens, outputTokens = streamOutputTokens, cachedInputTokens = streamCachedInputTokens, cacheCreationTokens = streamCacheCreationTokens, reasoningTokens = streamReasoningTokens, images = streamedImages)))
                     }
             },
             onRetry = { attempt, max, error -> send(AIStreamChunk.Retrying(attempt, max, error)) }

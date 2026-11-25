@@ -51,6 +51,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -61,7 +64,11 @@ import com.nox.R
 import com.nox.core.theme.Brand
 import com.nox.core.theme.Radius
 import com.nox.core.theme.Spacing
+import com.nox.core.theme.PanelTokens
+import com.nox.core.ui.PanelSection
+import com.nox.core.ui.PanelValueRow
 import com.nox.core.theme.semanticColors
+import com.nox.core.ui.AnchorPopup
 import com.nox.core.ui.ChevronRotationStyle
 import com.nox.core.ui.ContentWidth
 import com.nox.core.ui.ExpandableChevronIcon
@@ -109,13 +116,18 @@ internal data class TurnUsage(
     /** 模型用时（ms）：本轮所有调用 duration 求和。 */
     val modelMillis: Long = 0,
     /** 首 token 平均（ms）：本轮有 TTFT 样本的调用求均值。 */
-    val avgTtfbMillis: Double? = null
+    val avgTtfbMillis: Double? = null,
+    /** 本轮所有调用的 TTFT 之和（ms）：算输出速度时要从总耗时里扣掉。 */
+    val totalTtfbMillis: Long = 0L
 ) {
     /** 输出速度（tok/s）：本轮输出 token / 模型总用时（步骤与耗时都有效时给值）。 */
     val outputTps: Double?
         get() {
             if (outputTokens <= 0 || modelMillis <= 0) return null
-            return outputTokens / (modelMillis / 1000.0)
+            // 生成耗时必须扣掉每轮的「等首 token」时间：总耗时里包含 TTFT，
+            // 不扣的话等待时间被当成生成时间，速度会偏低一个量级（实测 23 vs 真实 ~152）。
+            val genMillis = (modelMillis - totalTtfbMillis).coerceAtLeast(1L)
+            return outputTokens / (genMillis / 1000.0)
         }
 }
 
@@ -130,14 +142,24 @@ internal fun aggregateTurnCallPoints(
     points: List<SessionCallPoint>,
     startMillis: Long,
     endMillis: Long
-): Triple<Int, Long, Double?> {
+): TurnCallAggregate {
     val window = points.filter { it.createdAt in startMillis..endMillis }
-    if (window.isEmpty()) return Triple(0, 0L, null)
+    if (window.isEmpty()) return TurnCallAggregate(0, 0L, null, 0L)
     val modelMillis = window.sumOf { (it.durationMillis ?: 0).toLong() }
     val ttfbSamples = window.mapNotNull { it.ttfbMillis }.filter { it > 0 }
     val avgTtfb = if (ttfbSamples.isEmpty()) null else ttfbSamples.average()
-    return Triple(window.size, modelMillis, avgTtfb)
+    // TTFT 总和：算输出速度时要从模型耗时里扣掉，否则等待时间被当成生成时间。
+    val totalTtfb = ttfbSamples.sumOf { it.toLong() }
+    return TurnCallAggregate(window.size, modelMillis, avgTtfb, totalTtfb)
 }
+
+/** [aggregateTurnCallPoints] 的聚合结果；用具名字段而不是 Triple，避免四个同型数值搞混。 */
+internal data class TurnCallAggregate(
+    val steps: Int,
+    val modelMillis: Long,
+    val avgTtfbMillis: Double?,
+    val totalTtfbMillis: Long
+)
 
 /**
  * 把消息按「用户消息 → 下一个用户消息之前」切成轮。
@@ -205,7 +227,7 @@ internal fun computeTurnUsage(
     lastTurnFinished: Boolean,
     callPoints: List<SessionCallPoint> = emptyList()
 ): Map<String, TurnUsage> = splitTurns(messages, lastTurnFinished).associate { turn ->
-    val (steps, modelMillis, avgTtfb) = aggregateTurnCallPoints(
+    val agg = aggregateTurnCallPoints(
         callPoints,
         turn.startMillis,
         turn.endMessage.timestamp
@@ -214,9 +236,10 @@ internal fun computeTurnUsage(
         inputTokens = turn.assistantMessages.sumOf { it.inputTokens },
         outputTokens = turn.assistantMessages.sumOf { it.outputTokens },
         cachedInputTokens = turn.assistantMessages.sumOf { it.cachedInputTokens },
-        steps = steps,
-        modelMillis = modelMillis,
-        avgTtfbMillis = avgTtfb
+        steps = agg.steps,
+        modelMillis = agg.modelMillis,
+        avgTtfbMillis = agg.avgTtfbMillis,
+        totalTtfbMillis = agg.totalTtfbMillis
     )
 }
 
@@ -456,16 +479,38 @@ internal fun AgentMessageItem(
                     formatCacheHitRate(it.inputTokens, it.cachedInputTokens)
                 }
                 val durationText = taskDurationMs?.let { formatTaskDuration(it) }
-                val hasMeta = isUser || tokenStats != null || cacheHitRate != null || durationText != null
-                // 本轮明细可展开：只在有轮末统计（token 或耗时）的助手消息上生效，
-                // 且需要调用记录对齐到数据（steps > 0），否则展开出来只能是一排空值。
+                // 首 token 平均与输出速度直接排在统计行里，不必展开就能看到。
+                val ttfbText = turnUsage?.avgTtfbMillis?.let {
+                    stringResource(R.string.chat_meta_ttfb_short, formatMetaSeconds(it))
+                }
+                val tpsText = turnUsage?.outputTps?.let {
+                    stringResource(R.string.chat_meta_tps_short, it.roundToInt())
+                }
+                val hasMeta = isUser || tokenStats != null || cacheHitRate != null ||
+                    durationText != null || ttfbText != null || tpsText != null
+                // 本轮明细可展开：只在轮末助手消息上生效，且有调用记录可对齐（steps > 0）。
                 val hasTurnDetail = !isUser && turnUsage != null &&
                     (tokenStats != null || durationText != null) && turnUsage.steps > 0
                 var detailExpanded by rememberSaveable(message.id) { mutableStateOf(false) }
+                // 锚点矩形：统计行在窗口中的位置，供浮层做上下翻转判断。
+                // 未测量到（Zero）时浮层不显示，避免闪到屏幕左上角。
+                var anchorRect by remember { mutableStateOf(androidx.compose.ui.unit.IntRect.Zero) }
                 val actionsVisible = isUser || showActions
                 if ((hasContent || hasAttachments) && message.role != MessageRole.TOOL && isChunkFooter &&
                     (actionsVisible || hasMeta)
                 ) {
+                    // 明细以悬浮层呈现：不参与消息流布局，展开与收起都不会推挤下方内容。
+                    if (hasTurnDetail && detailExpanded && turnUsage != null) {
+                        AnchorPopup(
+                            anchor = anchorRect,
+                            onDismiss = { detailExpanded = false }
+                        ) {
+                            TurnDetailCard(
+                                usage = turnUsage,
+                                wallClockMs = taskDurationMs
+                            )
+                        }
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val iconTint = MaterialTheme.colorScheme.onSurfaceVariant
                         // 排过内容才补间隔，否则本行首个元素会被凭空缩进一格
@@ -504,64 +549,82 @@ internal fun AgentMessageItem(
                             }
                             emitted = true
                         }
-                        if (tokenStats != null) {
-                            if (emitted) Spacer(Modifier.width(Spacing.sm))
-                            // 统计区整块可点：就在原来这行上点开，不另起一行。
-                            // 点完在下方一起展开明细，箭头朝下/朝上提示状态。
-                            Row(
-                                modifier = if (hasTurnDetail) {
-                                    Modifier
-                                        .clip(RoundedCornerShape(Radius.xs))
-                                        .clickable(
-                                            onClickLabel = stringResource(
-                                                if (detailExpanded) R.string.common_collapse_action
-                                                else R.string.context_panel_expand_detail
-                                            )
-                                        ) { detailExpanded = !detailExpanded }
-                                } else {
-                                    Modifier
-                                },
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                ChatMetaText(text = tokenStats)
-                                if (hasTurnDetail) {
-                                    Spacer(Modifier.width(2.dp))
-                                    ExpandableChevronIcon(
-                                        expanded = detailExpanded,
-                                        contentDescription = stringResource(
+                        // 整行统计区（token / 缓存 / 耗时 / 首 token / 速度）共用一个点击区：
+                        // 点任何一项都在下方展开同一份明细，不必先找准哪一项可点。
+                        // 把可用项包成列表再统一渲染，避免嵌套 Row 后漏掉其中某项的点击响应。
+                        Row(
+                            modifier = if (hasTurnDetail) {
+                                Modifier
+                                    // 记下统计行的窗口坐标：浮层用它在上下两侧之间自动选边。
+                                    .onGloballyPositioned { coords ->
+                                        // boundsInWindow 给的是 Float 矩形，Popup 定位要 IntRect，逐值取整。
+                                        val r = coords.boundsInWindow()
+                                        anchorRect = androidx.compose.ui.unit.IntRect(
+                                            left = r.left.toInt(),
+                                            top = r.top.toInt(),
+                                            right = r.right.toInt(),
+                                            bottom = r.bottom.toInt()
+                                        )
+                                    }
+                                    .clip(RoundedCornerShape(Radius.xs))
+                                    .clickable(
+                                        onClickLabel = stringResource(
                                             if (detailExpanded) R.string.common_collapse_action
                                             else R.string.context_panel_expand_detail
-                                        ),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        size = 12.dp
-                                    )
-                                }
+                                        )
+                                    ) { detailExpanded = !detailExpanded }
+                            } else {
+                                Modifier
+                            },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (tokenStats != null) {
+                                if (emitted) Spacer(Modifier.width(Spacing.sm))
+                                ChatMetaText(text = tokenStats)
+                                emitted = true
                             }
-                            emitted = true
-                        }
-                        if (cacheHitRate != null) {
-                            if (emitted) Spacer(Modifier.width(Spacing.sm))
-                            Icon(
-                                FeatherIcons.Database,
-                                contentDescription = stringResource(R.string.chat_cache_hit_rate, cacheHitRate),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(Modifier.width(2.dp))
-                            ChatMetaText(text = cacheHitRate)
-                            emitted = true
-                        }
-                        if (durationText != null) {
-                            if (emitted) Spacer(Modifier.width(Spacing.sm))
-                            Icon(
-                                FeatherIcons.Clock,
-                                contentDescription = stringResource(R.string.chat_task_duration, durationText),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Spacer(Modifier.width(2.dp))
-                            ChatMetaText(text = durationText)
-                            emitted = true
+                            if (cacheHitRate != null) {
+                                if (emitted) Spacer(Modifier.width(Spacing.sm))
+                                Icon(
+                                    // 与面板同源：用统一的堆叠图标，不再混用两套图标体系。
+                                    PanelIcons.TokenUsage,
+                                    contentDescription = stringResource(R.string.chat_cache_hit_rate, cacheHitRate),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(Modifier.width(2.dp))
+                                ChatMetaText(text = cacheHitRate)
+                                emitted = true
+                            }
+                            if (durationText != null) {
+                                if (emitted) Spacer(Modifier.width(Spacing.sm))
+                                Icon(
+                                    // 时长用仪表图标，与面板「会话统计」一致。
+                                    PanelIcons.SessionStats,
+                                    contentDescription = stringResource(R.string.chat_task_duration, durationText),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(Modifier.width(2.dp))
+                                ChatMetaText(text = durationText)
+                                emitted = true
+                            }
+                            // 首 token 平均与输出速度，与上面几项同行显示。
+                            if (ttfbText != null) {
+                                if (emitted) Spacer(Modifier.width(Spacing.sm))
+                                ChatMetaText(text = ttfbText)
+                                emitted = true
+                            }
+                            if (tpsText != null) {
+                                if (emitted) Spacer(Modifier.width(Spacing.sm))
+                                ChatMetaText(text = tpsText)
+                                emitted = true
+                            }
+                            if (hasTurnDetail) {
+                                // 不加箭头：整行可点、点一下往上展开，箭头反而多占位子。
+                                // 可点性靠点击区域的涟漪反馈与展开后的卡片本身传达。
+                                Spacer(Modifier.width(0.dp))
+                            }
                         }
                         // 助手消息的复制按钮排在「更多选项」左边（统计信息之后）
                         if (!isUser && actionsVisible && hasContent) {
@@ -581,13 +644,6 @@ internal fun AgentMessageItem(
                             )
                         }
                     }
-                    // 本轮明细：展开后接在统计行下方，与上面那行用量同一数据源、同一处入口。
-                    if (hasTurnDetail && detailExpanded && turnUsage != null) {
-                        TurnDetailCard(
-                            usage = turnUsage,
-                            wallClockMs = taskDurationMs
-                        )
-                    }
                     // 复制成功 1.5s 后恢复图标
                     if (copied) {
                         LaunchedEffect(copied) {
@@ -602,10 +658,8 @@ internal fun AgentMessageItem(
 }
 
 /**
- * 本轮明细卡：由上层统计行点击展开后显示，自身不再管展开态。
- *
- * 四行键值对（模型用时 / 工具调用用时 / 首 token 平均 / 输出速度），
- * 字段名与面板口径保持一致。
+ * 本轮明细卡内容：分组三件套（图标 + 标题 + 分隔线）与行尺寸全部来自
+ * `PanelSection` / `PanelValueRow`，此处不再手写任何字号与间距。
  *
  * 数据口径：步数、模型用时与 TTFT 来自 llm_call_records 按轮时间窗聚合（见
  * [aggregateTurnCallPoints]）；工具用时 = 本轮挂钟耗时 − 模型用时，即工具执行与等待的净时间。
@@ -616,42 +670,45 @@ private fun TurnDetailCard(
     wallClockMs: Long?
 ) {
     val toolMillis = wallClockMs?.takeIf { it > usage.modelMillis }?.minus(usage.modelMillis)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = Spacing.xs)
-            .clip(RoundedCornerShape(ChatStyle.panelCorner))
-            .background(chatMutedSurfaceColor())
-            .padding(horizontal = Spacing.sm, vertical = Spacing.sm)
+    PanelSection(
+        icon = PanelIcons.TokenUsage,
+        title = stringResource(R.string.context_panel_section_tokens)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                FeatherIcons.Activity,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(13.dp)
-            )
-            Spacer(Modifier.width(Spacing.xs))
-            Text(
-                text = stringResource(R.string.context_panel_section_session),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                // steps 是本轮的 LLM 调用次数（工具循环每转一次就多一次），不是工具步数也不是轮次。
-                text = stringResource(R.string.context_panel_call_count, usage.steps),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        if (usage.inputTokens > 0) {
+            PanelValueRow(
+                label = stringResource(R.string.context_panel_input),
+                value = formatExactTokenCount(usage.inputTokens.toLong()),
+                suffix = "tok"
             )
         }
-        Spacer(Modifier.height(Spacing.xs))
+        if (usage.outputTokens > 0) {
+            PanelValueRow(
+                label = stringResource(R.string.context_panel_output),
+                value = formatExactTokenCount(usage.outputTokens.toLong()),
+                suffix = "tok"
+            )
+        }
+        formatCacheHitRate(usage.inputTokens, usage.cachedInputTokens)?.let { rate ->
+            PanelValueRow(
+                label = stringResource(R.string.context_panel_cache_hit),
+                value = rate
+            )
+            PanelValueRow(
+                label = stringResource(R.string.context_panel_cache_read),
+                value = formatExactTokenCount(usage.cachedInputTokens.toLong()),
+                suffix = "tok"
+            )
+        }
+    }
+
+    PanelSection(
+        icon = PanelIcons.SessionStats,
+        title = stringResource(R.string.context_panel_section_session),
+        trailing = stringResource(R.string.context_panel_call_count, usage.steps),
+        topSpacing = PanelTokens.groupSpacing
+    ) {
         if (usage.modelMillis > 0) {
-            TurnDetailRow(
+            PanelValueRow(
                 label = stringResource(R.string.context_panel_model_time),
                 value = formatPanelDuration(usage.modelMillis)
             )
@@ -659,45 +716,24 @@ private fun TurnDetailCard(
         // 工具用时只在挂钟耗时大于模型用时（确实跑过工具/等待）时才显示：直接相减可能出现
         // 负数（调用记录未及时落库）或 0，展示出来只让人困惑。
         if (toolMillis != null && toolMillis > 0) {
-            TurnDetailRow(
+            PanelValueRow(
                 label = stringResource(R.string.chat_turn_detail_tool_time),
                 value = formatPanelDuration(toolMillis)
             )
         }
         usage.avgTtfbMillis?.let { ttfb ->
-            TurnDetailRow(
+            PanelValueRow(
                 label = stringResource(R.string.chat_turn_detail_ttfb),
                 value = formatPanelDuration(ttfb.toLong())
             )
         }
-        val tps = usage.outputTps
-        if (tps != null) {
-            TurnDetailRow(
+        usage.outputTps?.let { tps ->
+            PanelValueRow(
                 label = stringResource(R.string.chat_turn_detail_tps),
-                value = String.format(Locale.US, "%.0f tok/s", tps)
+                value = String.format(Locale.US, "%.0f", tps),
+                suffix = "tok/s"
             )
         }
-    }
-}
-
-@Composable
-private fun TurnDetailRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
     }
 }
 
