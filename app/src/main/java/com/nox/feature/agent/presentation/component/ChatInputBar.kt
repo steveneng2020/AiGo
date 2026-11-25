@@ -1,5 +1,9 @@
 package com.nox.feature.agent.presentation.component
 
+// ui-tokens-exempt: 存量文件，字号尚未迁移到 PanelTokens（1 处）。
+// 迁移时按界面的信息密度选择令牌档位，不要机械替换成最小值；
+// 迁移完成前本文件不参与 UI 门禁检查。
+
 import android.content.ClipData
 import android.widget.Toast
 import android.net.Uri
@@ -69,6 +73,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -96,6 +102,7 @@ import com.nox.R
 import com.nox.core.theme.Brand
 import com.nox.core.theme.Radius
 import com.nox.core.theme.Spacing
+import com.nox.core.ui.AnchorPopup
 import com.nox.core.theme.semanticColors
 import com.nox.core.ui.rememberImeBottomInset
 import com.nox.feature.onboarding.domain.OnboardingStep
@@ -252,32 +259,29 @@ internal fun ChatInputBar(
     val context = LocalContext.current
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var showContextUsagePanel by remember { mutableStateOf(false) }
+    // 面板锚点：用量按钮在窗口中的矩形。浮层靠它决定往哪边弹、对齐到哪。
+    var usageAnchor by remember { mutableStateOf(androidx.compose.ui.unit.IntRect.Zero) }
     if (showContextUsagePanel) {
         // 每次打开都拉一次：统计缓存只在调用结束时刷新，冷启动或刚切会话时可能还是空的。
         LaunchedEffect(Unit) { onRefreshSessionStats() }
-        AlertDialog(
-            onDismissRequest = { showContextUsagePanel = false },
-            // 标题由面板内部自己画（带图标与估值标签），这里不再重复给 title，
-            // 否则会多出一行「上下文用量」并挤掉面板的标签行布局。
-            text = {
-                ContextUsagePanel(
-                    stats = sessionStats ?: SessionStatsUi(),
-                    contextInputTokens = contextInputTokens,
-                    contextBudget = contextBudget,
-                    contextEstimated = tokenEstimated,
-                    thresholdPercent = compactionThresholdPercent,
-                    onThresholdChange = onCompactionThresholdChange,
-                    compacting = isCompacting,
-                    canCompact = !isCompacting,
-                    onCompact = onCompactContext
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showContextUsagePanel = false }) {
-                    Text(stringResource(R.string.context_panel_close))
-                }
-            }
-        )
+        // 用浮层而不是对话框：面板是「随手看一眼当前用量」的轻量信息，
+        // 弹对话框会压暗整个界面并强制走「关闭」按钮，点外部自然消失更顺手。
+        AnchorPopup(
+            anchor = usageAnchor,
+            onDismiss = { showContextUsagePanel = false }
+        ) {
+            ContextUsagePanel(
+                stats = sessionStats ?: SessionStatsUi(),
+                contextInputTokens = contextInputTokens,
+                contextBudget = contextBudget,
+                contextEstimated = tokenEstimated,
+                thresholdPercent = compactionThresholdPercent,
+                onThresholdChange = onCompactionThresholdChange,
+                compacting = isCompacting,
+                canCompact = !isCompacting,
+                onCompact = onCompactContext
+            )
+        }
     }
     var showFullScreenInput by remember { mutableStateOf(false) }
     // TextField 的 String 重载在整串替换时会保留旧 selection 下标（点快捷命令补全时光标会停在中间），
@@ -734,7 +738,8 @@ internal fun ChatInputBar(
                             progress = tokenProgress,
                             thresholdPercent = compactionThresholdPercent,
                             enabled = true,
-                            onClick = { showContextUsagePanel = true }
+                            onClick = { showContextUsagePanel = true },
+                            onBoundsChange = { usageAnchor = it }
                         )
                     }
                     // 运行中也允许添加附件：sendMessage 会把附件随队列消息一起提交（
@@ -911,7 +916,9 @@ internal fun ContextUsageIconButton(
     progress: Float,
     thresholdPercent: Int,
     enabled: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    /** 按钮在窗口中的矩形，供浮层定位。 */
+    onBoundsChange: (androidx.compose.ui.unit.IntRect) -> Unit = {}
 ) {
     val pct = (progress.coerceIn(0f, 1f) * 100)
     // 达到阈值的 85% 即转琥珀，给用户留出「还来得及手动清理」的缓冲。
@@ -928,6 +935,17 @@ internal fun ContextUsageIconButton(
     Box(
         modifier = Modifier
             .size(34.dp)
+            .onGloballyPositioned { coords ->
+                val r = coords.boundsInWindow()
+                onBoundsChange(
+                    androidx.compose.ui.unit.IntRect(
+                        left = r.left.toInt(),
+                        top = r.top.toInt(),
+                        right = r.right.toInt(),
+                        bottom = r.bottom.toInt()
+                    )
+                )
+            }
             .clip(RoundedCornerShape(9.dp))
             .background(Brush.linearGradient(colors))
             .clickable(enabled = enabled, onClick = onClick)

@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# pre-commit hook：提交前跑一遍能在几秒内完成的静态门禁。
+#
+# 为什么需要它：.githooks/commit-msg 只校验提交信息格式，对代码质量零检查；
+# 而 aigo-gate.sh 需要编译与单测，几分钟起步，人不会每次都跑。
+# 结果就是「门禁存在但从不执行」——这里把快检固化到 git 自身，不依赖自觉。
+#
+# 覆盖范围：只跑静态检查（UI 设计系统、敏感信息、迁移对账），
+# 不含编译与单测（那是 aigo-gate 的事，提交后/推送前再跑）。
+#
+# 跳过：git commit --no-verify（紧急情况，事后必须补跑 aigo-gate）
+
+set -u
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+fail=0
+red()   { printf '\033[31m%s\033[0m\n' "$1"; }
+green() { printf '\033[32m%s\033[0m\n' "$1"; }
+bold()  { printf '\033[1m%s\033[0m\n' "$1"; }
+
+bold "▸ pre-commit 快检"
+
+# ---------- 1. UI 设计系统 ----------
+if [ -f scripts/check_ui_tokens.py ]; then
+  if python3 scripts/check_ui_tokens.py >/tmp/precommit_ui.log 2>&1; then
+    green "  ✔ UI 设计系统"
+  else
+    red "  ✘ UI 设计系统"
+    sed 's/^/    /' /tmp/precommit_ui.log
+    fail=1
+  fi
+fi
+
+# ---------- 2. 敏感信息 ----------
+# 只查本次暂存的内容，避免历史遗留文件误报。
+secret_hits=$(git diff --cached -U0 2>/dev/null \
+  | grep -E '^\+' \
+  | grep -vE '^\+\+\+' \
+  | grep -inE '(sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)' \
+  || true)
+if [ -n "$secret_hits" ]; then
+  red "  ✘ 疑似提交了密钥："
+  printf '%s\n' "$secret_hits" | sed 's/^/    /' | head -5
+  fail=1
+else
+  green "  ✔ 敏感信息"
+fi
+
+# ---------- 3. 括号/结构自检：反复踩过的坑 ----------
+# Kotlin 文件括号不配对时编译要等几分钟才报错，这里提前拦下。
+# 用专门脚本而非行内计数：字符串与注释里的括号会干扰简单统计（曾误报 3 个合法文件）。
+if [ -f scripts/check_braces.py ]; then
+  kt_files=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '\.kt$' || true)
+  if [ -n "$kt_files" ]; then
+    if printf '%s\n' "$kt_files" | tr '\n' '\0' | xargs -0 python3 scripts/check_braces.py 2>&1 | sed 's/^/    /' > /tmp/precommit_brace.log; then
+      :
+    fi
+    if [ -s /tmp/precommit_brace.log ]; then
+      red "  ✘ Kotlin 括号不平衡："
+      cat /tmp/precommit_brace.log
+      fail=1
+    else
+      green "  ✔ Kotlin 括号平衡"
+    fi
+  fi
+fi
+
+# ---------- 4. 提交信息里禁止「参照/对标」这类表述 ----------
+# 功能说明只写「做了什么、对使用者有什么影响」，不写「照谁的做的」。
+# 排除规则定义文件本身：规则说明必然要举出被禁字样作为例子，
+# 把 CLAUDE.md/.githooks/scripts 一起检查只会导致规则自锁。
+# 这些文件的改动仍需人工审阅，但不由机器按关键字拦。
+msg_bad=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | while read -r f; do
+  [ -f "$f" ] || continue
+  case "$f" in .githooks/*|scripts/*|CLAUDE.md|AGENTS.md) continue ;; esac
+  grep -nE '参照|对标' "$f" 2>/dev/null | sed "s|^|    $f:|"
+done | head -5)
+if [ -n "$msg_bad" ]; then
+  red "  ✘ 文档/注释里出现「参照/对标」表述："
+  printf '%s\n' "$msg_bad"
+  fail=1
+else
+  green "  ✔ 无对标表述"
+fi
+
+# ---------- 5. 工作目录污染 ----------
+# 踩过的坑：为了把 APK 传给设备，直接丢在共享根目录，事后忘了清理。
+# 根目录是用户肉眼浏览的地方，乱放文件会立刻变成一团乱麻。
+WS_ROOT="${AIGO_WS_ROOT:-$HOME/workspace}"
+if [ -d "$WS_ROOT" ]; then
+  stray=$(find "$WS_ROOT" -maxdepth 1 -type f \( -name '*.apk' -o -name '*.png' -o -name '*.jpg' -o -name '*.html' -o -name '*.log' \) 2>/dev/null | head -10)
+  if [ -n "$stray" ]; then
+    red "  ✘ 工作区根目录有临时文件（应放 build-output / 验收截图 等专用目录）："
+    printf '%s\n' "$stray" | sed 's|.*/|    |'
+    fail=1
+  else
+    green "  ✔ 工作区根目录干净"
+  fi
+fi
+
+# ---------- 6. 出包文件名规则 ----------
+OUT_DIR="$WS_ROOT/build-output"
+if [ -d "$OUT_DIR" ]; then
+  bad_names=""
+  for f in $(ls -t "$OUT_DIR"/*.apk 2>/dev/null | head -5); do
+    name=$(basename "$f")
+    if ! printf '%s' "$name" | grep -qE '^AiGo-(arm64-v8a|x86_64|universal)(\+[a-z0-9_-]+)*-[0-9]+\.[0-9]+\.[0-9]+.*-[0-9]{8}\.apk$'; then
+      bad_names="$bad_names\n    $name"
+    fi
+  done
+  if [ -n "$bad_names" ]; then
+    red "  ✘ 出包文件名不符合 AiGo-<abi>-<版本>-<摘要>-<日期>.apk："
+    printf "$bad_names\n"
+    fail=1
+  else
+    green "  ✔ 出包文件名"
+  fi
+fi
+
+# ---------- 7. 是否有未推送的提交 ----------
+if git rev-parse --verify -q origin/main >/dev/null 2>&1; then
+  unpushed=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
+  # 本次提交还没生成，所以此处只在「已有旧提交未推送」时报警
+  if [ "$unpushed" -gt 0 ]; then
+    red "  ✘ 有 $unpushed 个提交未推送（做完整项工作必须 push，本地提交不算交付）"
+    fail=1
+  else
+    green "  ✔ 无未推送提交"
+  fi
+fi
+
+echo
+if [ "$fail" != "0" ]; then
+  red "提交被门禁拦下。修完再提交，或紧急时 git commit --no-verify（事后必须补跑 aigo-gate）"
+  exit 1
+fi
+green "快检通过"
+exit 0

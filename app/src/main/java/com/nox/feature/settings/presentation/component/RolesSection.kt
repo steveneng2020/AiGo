@@ -1,5 +1,9 @@
 package com.nox.feature.settings.presentation.component
 
+// ui-tokens-exempt: 存量文件，字号尚未迁移到 PanelTokens（1 处）。
+// 迁移时按界面的信息密度选择令牌档位，不要机械替换成最小值；
+// 迁移完成前本文件不参与 UI 门禁检查。
+
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult

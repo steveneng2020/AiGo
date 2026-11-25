@@ -2439,6 +2439,11 @@
 <string name="context_panel_cache_read">缓存读取</string>
     <string name="context_panel_section_session">会话统计</string>
     <string name="context_panel_section_auto_compact">自动压缩</string>
+    <string name="context_panel_last_compaction">上次压缩（共 %1$d 次）</string>
+    <string name="context_panel_compaction_total">压缩产出合计</string>
+    <string name="context_panel_subagent_count">子代理（%1$d 个）</string>
+    <string name="context_panel_subagent_output">子代理输出</string>
+    <string name="context_panel_non_incremental_miss">非增量未命中</string>
     <string name="context_panel_rounds_steps">%1$d 轮 · %2$d 步</string>
     <string name="context_panel_call_count">%1$d 次调用</string>
     <string name="context_panel_model_time">模型用时</string>

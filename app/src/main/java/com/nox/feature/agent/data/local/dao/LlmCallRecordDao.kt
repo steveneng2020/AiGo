@@ -82,6 +82,17 @@ data class ModelProviderCostStats(
  * 为什么用 max 而不是最后一次：上下文只增不减（除压缩），max 就是当前真实占用，
  * 且不受「最后一次是压缩调用（输入只有摘要摘要）」干扰。
  */
+/**
+ * 子代理用量汇总：子代理是独立会话（`parentId` 指向父会话），其调用记录挂在子会话 id 下，
+ * 因此要跨会话聚合才能算出「这次任务连带子代理一共花了多少」。
+ */
+data class SubagentCallSummary(
+    val subagentCount: Int,
+    val promptTokens: Long,
+    val cachedTokens: Long,
+    val outputTokens: Long
+)
+
 data class SessionCallSummary(
     val calls: Int,
     val chatCalls: Int,
@@ -92,13 +103,25 @@ data class SessionCallSummary(
     val cacheCreationTokens: Long,
     val errors: Int,
     val avgTtfbMillis: Double?,
-    /** 响应头到达平均耗时（ms）：与 avgTtfbMillis 相减可拆出服务端 prefill 耗时。 */
+    /**
+     * 与 [avgHeadersMillis] **同批样本**的首 token 平均耗时（ms）。
+     *
+     * 单独一份而不是复用 avgTtfbMillis：后者包含全部历史调用（其中多数没有 headers 埋点），
+     * 两者相减会得出负数或倒挂的拆分项。
+     */
+    val avgTtfbWithHeadersMillis: Double? = null,
+    /** 响应头到达平均耗时（ms）：与 avgTtfbWithHeadersMillis 相减才是服务端耗时。 */
     val avgHeadersMillis: Double? = null,
     val avgDurationMillis: Double?,
+    val reasoningTokens: Long = 0,
     val retryCount: Long,
     val maxContextTokens: Long = 0,
-    /** 本会话输出中推理（思考）token 的合计，已包含在 outputTokens 内。 */
-    val reasoningTokens: Long = 0
+    /** 最近一次压缩的输入 token 数。 */
+    val lastCompactionInputTokens: Long = 0,
+    /** 最近一次压缩的缓存命中 token 数。 */
+    val lastCompactionCachedTokens: Long = 0,
+    /** 所有压缩调用的输出 token 合计。 */
+    val compactionOutputTokens: Long = 0
 )
 
 /** 当前周期的整体汇总，供概览卡片使用。 */
@@ -303,16 +326,73 @@ interface LlmCallRecordDao {
                COALESCE(SUM(cacheCreationTokens), 0) AS cacheCreationTokens,
                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
                AVG(ttfbMillis) AS avgTtfbMillis,
-               AVG(headersMillis) AS avgHeadersMillis,
+               -- 首 token 拆解必须落在同一批样本上：两个独立 AVG 各自跳过 NULL 行时，
+               -- 历史数据（无 headers 埋点）会把 avgTtfb 拉到与 avgHeaders 不可比的量级，
+               -- 相减会出现「其中网络与排队 > 首 token 平均」的倒挂。
+               -- 因此拆解用的两个均值都只统计 headersMillis 非空的行。
+               AVG(CASE WHEN headersMillis IS NOT NULL THEN ttfbMillis END) AS avgTtfbWithHeadersMillis,
+               AVG(CASE WHEN headersMillis IS NOT NULL THEN headersMillis END) AS avgHeadersMillis,
                AVG(durationMillis) AS avgDurationMillis,
                COALESCE(SUM(retryCount), 0) AS retryCount,
                COALESCE(SUM(reasoningTokens), 0) AS reasoningTokens,
-               COALESCE(MAX(CASE WHEN kind = 'chat' THEN inputTokens ELSE 0 END), 0) AS maxContextTokens
+               COALESCE(MAX(CASE WHEN kind = 'chat' THEN inputTokens ELSE 0 END), 0) AS maxContextTokens,
+               -- 最近一次压缩的输入规模与缓存命中：压缩本身也要花钱，
+               -- 把它单独列出来，用户才能判断「这次压缩值不值」。
+               COALESCE(MAX(CASE WHEN kind = 'compaction' THEN inputTokens ELSE 0 END), 0) AS lastCompactionInputTokens,
+               COALESCE(MAX(CASE WHEN kind = 'compaction' THEN cachedInputTokens ELSE 0 END), 0) AS lastCompactionCachedTokens,
+               COALESCE(SUM(CASE WHEN kind = 'compaction' THEN outputTokens ELSE 0 END), 0) AS compactionOutputTokens
         FROM llm_call_records
         WHERE sessionId = :sessionId
         """
     )
     fun getSessionSummary(sessionId: String): Flow<SessionCallSummary>
+
+    /**
+     * 汇总本会话派生的所有子代理用量。
+     *
+     * 子代理会话与父会话是两条独立记录，token 也分别计费，只有跨会话求和
+     * 才是这次任务真实的总额。无子代理时 subagentCount 为 0。
+     */
+    @Query(
+        """
+        SELECT COUNT(DISTINCT s.id) AS subagentCount,
+               COALESCE(SUM(r.inputTokens), 0) AS promptTokens,
+               COALESCE(SUM(r.cachedInputTokens), 0) AS cachedTokens,
+               COALESCE(SUM(r.outputTokens), 0) AS outputTokens
+        FROM chat_sessions s
+        LEFT JOIN llm_call_records r ON r.sessionId = s.id
+        WHERE s.parentId = :parentSessionId
+        """
+    )
+    fun getSubagentSummary(parentSessionId: String): Flow<SubagentCallSummary>
+
+    /**
+     * 非增量未命中 token：缓存写入过、但后续调用没有读到缓存的部分。
+     *
+     * 含义：前缀缓存（prompt cache）本应命中却没有命中的输入量，通常由
+     * TTL 过期、前缀被改动（编辑了早期消息）、或换了模型导致缓存键失效。
+     * 这部分按全价计费，是最容易被忽视的浪费，所以单独暴露。
+     *
+     * 口径：只统计「有过一次成功读取缓存」之后的未命中，避免把
+     * 首次调用（本来就无缓存可读）算成浪费。
+     */
+    @Query(
+        """
+        SELECT COALESCE(SUM(r.inputTokens - r.cachedInputTokens), 0)
+        FROM llm_call_records r
+        WHERE r.sessionId = :sessionId
+          AND r.kind = 'chat'
+          AND r.cachedInputTokens = 0
+          AND r.inputTokens > 5000
+          AND EXISTS (
+              SELECT 1 FROM llm_call_records p
+              WHERE p.sessionId = r.sessionId
+                AND p.id < r.id
+                AND p.cachedInputTokens > 0
+          )
+        """
+    )
+    fun getNonIncrementalMissTokens(sessionId: String): Flow<Long>
 
     /** 会话内的 TTFT 样本数：用于区分「每次都慢」与「偶发一次慢」。 */
     @Query(

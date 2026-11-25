@@ -2240,6 +2240,11 @@
 <string name="context_panel_cache_read">Cache read</string>
     <string name="context_panel_section_session">Session</string>
     <string name="context_panel_section_auto_compact">Auto-compact</string>
+    <string name="context_panel_last_compaction">Last compaction (%1$d total)</string>
+    <string name="context_panel_compaction_total">Compaction output</string>
+    <string name="context_panel_subagent_count">Subagents (%1$d)</string>
+    <string name="context_panel_subagent_output">Subagent output</string>
+    <string name="context_panel_non_incremental_miss">Non-incremental miss</string>
     <string name="context_panel_rounds_steps">%1$d rounds · %2$d steps</string>
     <string name="context_panel_call_count">%1$d calls</string>
     <string name="context_panel_model_time">Model time</string>

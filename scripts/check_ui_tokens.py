@@ -21,15 +21,21 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "app/src/main/java"
 
-# 受规则约束的范围：只限「统计类浮层卡片」这一族。
+# 受规则约束的范围：全部 UI 组件文件。
 #
-# 不覆盖整个 component 目录：聊天面板、状态气泡、问询卡片等是各自独立的界面，
-# 它们本来就用 Feather 的 24×24 图标体系，纳入本规则只会误报。
-# 规则要拦住的是「同一张统计卡片里混多套尺寸」，不是强迫全应用换图标。
-SCOPE_FILES = {
-    "ContextUsagePanel.kt",
-    "MessageBubbles.kt",
-}
+# 早期版本只查两个文件，实际等于没有门禁——其余 36 个文件 100+ 处硬编码完全不拦。
+# 现在全量检查，存量违规用文件级 ui-tokens-exempt 标记显式豁免，
+# 豁免是「被记录的技术债」，不是「看不见的死角」。
+SCOPE_DIRS = [
+    SRC / "com/nox/core/ui",
+    SRC / "com/nox/feature/agent/presentation/component",
+    SRC / "com/nox/feature/settings/presentation/component",
+    SRC / "com/nox/feature/terminal/presentation/component",
+    SRC / "com/nox/feature/git/presentation/component",
+    SRC / "com/nox/feature/workspace/presentation/component",
+    SRC / "com/nox/feature/browser/presentation",
+    SRC / "com/nox/feature/backup/presentation",
+]
 
 EXEMPT_MARK = "ui-tokens-exempt"
 
@@ -43,6 +49,16 @@ ALLOWLIST = {
 
 FONT_PATTERN = re.compile(r"\b(fontSize|lineHeight)\s*=\s*[0-9]+(\.[0-9]+)?\.sp\b")
 FEATHER_PATTERN = re.compile(r"\bFeatherIcons\b")
+
+# 图标体系规则只对「统计卡片」生效：这类卡片内部的 16×16 图标要和分组标题同一套。
+# 其余界面（列表、终端、设置页）本来就用项目通用的 Feather 图标，
+# 对它们报错是假阳性，只会让人关掉门禁。
+ICON_SCOPE_FILES = {
+    "ContextUsagePanel.kt",
+    "MessageBubbles.kt",
+    "PanelSection.kt",
+    "PanelValueRow.kt",
+}
 TNUM_PATTERN = re.compile(r"fontFeatureSettings\s*=\s*\"tnum\"")
 
 # 数值必须通过 PanelValueRow 渲染：tnum 已在组件内部统一处理，
@@ -57,7 +73,9 @@ ICON_ALLOW_LINES = re.compile(
 
 
 def is_panel_scope(path: pathlib.Path) -> bool:
-    return path.name in SCOPE_FILES
+    if path.suffix != ".kt":
+        return False
+    return any(path.parent == d for d in SCOPE_DIRS)
 
 
 def main() -> int:
@@ -83,15 +101,16 @@ def main() -> int:
                 problems.append(
                     f"{rel}:{lineno} 硬编码字号，改用 PanelTokens\n    {line.strip()}"
                 )
-            if FEATHER_PATTERN.search(line) and not ICON_ALLOW_LINES.search(line):
-                # import 行单独判：只要文件里还有被允许的图标，导入就是必要的
-                if line.lstrip().startswith("import"):
-                    pass
-                else:
-                    problems.append(
-                        f"{rel}:{lineno} 使用了 FeatherIcons 图标，"
-                        f"统计卡片内的分组图标应使用 PanelIcons 的 16×16 体系\n    {line.strip()}"
-                    )
+            if (
+                path.name in ICON_SCOPE_FILES
+                and FEATHER_PATTERN.search(line)
+                and not ICON_ALLOW_LINES.search(line)
+                and not line.lstrip().startswith("import")
+            ):
+                problems.append(
+                    f"{rel}:{lineno} 使用了 FeatherIcons 图标，"
+                    f"统计卡片内的分组图标应使用 PanelIcons 的 16×16 体系\n    {line.strip()}"
+                )
 
         # 渲染统计数字却没走统一的行组件：tnum 与对齐都在组件里，绕过就失去保障
         if NUMERIC_HINT.search(text) and not VALUE_ROW_USAGE.search(text):

@@ -1054,6 +1054,14 @@ class AIAgentViewModel @Inject constructor(
             val stats = runCatching {
                 val summary = llmCallRecordDao.getSessionSummary(sid).first()
                 val ttfbSamples = llmCallRecordDao.getSessionTtfbSamples(sid).first()
+                // 子代理与缓存失效都要跨行/跨会话统计，与主汇总并行取，任一失败按 0 处理，
+                // 不让附属指标拖垮整块面板。
+                val subagent = runCatching {
+                    llmCallRecordDao.getSubagentSummary(sid).first()
+                }.getOrNull()
+                val missTokens = runCatching {
+                    llmCallRecordDao.getNonIncrementalMissTokens(sid).first()
+                }.getOrDefault(0L)
                 SessionStatsUi(
                     calls = summary.calls,
                     chatCalls = summary.chatCalls,
@@ -1065,12 +1073,21 @@ class AIAgentViewModel @Inject constructor(
                     errors = summary.errors,
                     avgTtfbMillis = summary.avgTtfbMillis,
                     avgHeadersMillis = summary.avgHeadersMillis,
+                    avgTtfbWithHeadersMillis = summary.avgTtfbWithHeadersMillis,
                     avgDurationMillis = summary.avgDurationMillis,
                     retryCount = summary.retryCount,
                     maxContextTokens = summary.maxContextTokens,
+                    lastCompactionInputTokens = summary.lastCompactionInputTokens,
+                    lastCompactionCachedTokens = summary.lastCompactionCachedTokens,
+                    compactionOutputTokens = summary.compactionOutputTokens,
                     ttfbSamples = ttfbSamples,
                     toolMillis = estimateToolMillis(points),
-                    reasoningTokens = summary.reasoningTokens
+                    reasoningTokens = summary.reasoningTokens,
+                    subagentCount = subagent?.subagentCount ?: 0,
+                    subagentPromptTokens = subagent?.promptTokens ?: 0L,
+                    subagentCachedTokens = subagent?.cachedTokens ?: 0L,
+                    subagentOutputTokens = subagent?.outputTokens ?: 0L,
+                    nonIncrementalMissTokens = missTokens
                 )
             }.getOrNull() ?: return@launch
             _sessionStats.value = _sessionStats.value + (sid to stats)

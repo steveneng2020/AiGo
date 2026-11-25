@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -15,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,6 +39,7 @@ import com.nox.R
 import com.nox.core.theme.Brand
 import com.nox.core.theme.Spacing
 import com.nox.core.theme.PanelTokens
+import com.nox.core.ui.PanelSection
 import com.nox.core.ui.PanelSectionHeader
 import com.nox.core.ui.PanelValueRow
 import compose.icons.feathericons.Activity
@@ -66,10 +69,28 @@ data class SessionStatsUi(
     val avgTtfbMillis: Double? = null,
     /** 响应头到达平均耗时（ms）：网络往返 + 服务端排队，不含模型生成。 */
     val avgHeadersMillis: Double? = null,
+    /** 与 [avgHeadersMillis] 同批样本的首 token 平均耗时；两者相减才是服务端耗时。 */
+    val avgTtfbWithHeadersMillis: Double? = null,
     val avgDurationMillis: Double? = null,
     val retryCount: Long = 0L,
     /** 本会话单次请求的最大输入 token，作为当前上下文占用的实测上界。 */
     val maxContextTokens: Long = 0L,
+    /** 最近一次压缩的输入 token 数；为 0 表示本会话还没压缩过。 */
+    val lastCompactionInputTokens: Long = 0L,
+    /** 最近一次压缩的缓存命中 token 数。 */
+    val lastCompactionCachedTokens: Long = 0L,
+    /** 所有压缩调用的输出 token 合计。 */
+    val compactionOutputTokens: Long = 0L,
+    /** 本会话派生的子代理数量。 */
+    val subagentCount: Int = 0,
+    /** 子代理累计输入 token。 */
+    val subagentPromptTokens: Long = 0L,
+    /** 子代理累计命中缓存 token。 */
+    val subagentCachedTokens: Long = 0L,
+    /** 子代理累计输出 token。 */
+    val subagentOutputTokens: Long = 0L,
+    /** 非增量未命中 token：写过缓存却没读到的输入量，按全价计费。 */
+    val nonIncrementalMissTokens: Long = 0L,
     /** TTFT 的有效样本数：用于区分「每次都慢」与「偶发一次慢」。 */
     val ttfbSamples: Int = 0,
     /**
@@ -129,6 +150,32 @@ internal fun formatExactTokenCount(tokens: Long): String =
  * 与 [formatTokenCount] 的区别：那个用于气泡下方窄条，只留一位省宽度；
  * 面板空间充足，两位小数更接近真值，也便于跨行对比。
  */
+/**
+ * 把「可用输入预算」还原成模型的标称上下文窗口，用于展示分母。
+ *
+ * 为什么展示标称值而不是可用预算：预算 = 标称 − 输出预留（1K~8K），
+ * 所以 1M 模型显示成 `991.81K`，用户会以为自己没买够或数据算错。
+ * 标称窗口是厂商给的整数（128K / 1M），一眼能对上模型规格；
+ * 进度条与阈值判断仍用真实预算，两者分工不同。
+ *
+ * 换算方式：预算必然落在某个标称档位减去预留后的区间内，取第一个包含它的档位。
+ */
+internal fun nominalContextWindow(budget: Int): Int {
+    if (budget <= 0) return 0
+    val candidates = intArrayOf(
+        8_192, 16_384, 32_768, 65_536,
+        128_000, 200_000, 256_000, 512_000,
+        1_000_000, 1_048_576, 2_000_000, 2_097_152
+    )
+    for (nominal in candidates) {
+        // 预留最多 1/10 且不超过 8192，据此反推该标称档位的可用下限。
+        val reserve = (nominal / 10).coerceIn(1_024, 8_192).coerceAtMost(nominal / 4)
+        if (budget >= nominal - reserve) return nominal
+    }
+    // 超出已知档位（自定义大窗口）：原样返回，不编一个不存在的标称值。
+    return budget
+}
+
 internal fun formatCompactTokenCount(tokens: Long): String = when {
     tokens >= 1_000_000_000L -> {
         val v = tokens / 1_000_000_000.0
@@ -269,12 +316,11 @@ fun ContextUsagePanel(
         Spacer(Modifier.height(Spacing.sm))
 
         // ── ② Token 用量：会话总量 + 上下文占用量 + 缓存四项 + 输出 ──
-        PanelSectionHeader(
+        PanelSection(
             icon = PanelIcons.TokenUsage,
             title = stringResource(R.string.context_panel_section_tokens),
             trailing = if (stats.totalTokens > 0) formatExactTokenCount(stats.totalTokens) + " tok" else null
-        )
-        PanelSectionDivider()
+        ) {
         // 上下文用量作为组内第一行：值与占比、预算同排，读者不用回头找。
         // 数值用带两位小数的 K/M 缩写，比 310.2k 更接近原值的精度。
         PanelValueRow(
@@ -283,7 +329,7 @@ fun ContextUsagePanel(
                 Locale.US,
                 "%s / %s · %.1f%%",
                 formatCompactTokenCount(contextInputTokens.toLong()),
-                formatCompactTokenCount(contextBudget.toLong()),
+                formatCompactTokenCount(nominalContextWindow(contextBudget).toLong()),
                 percent
             ),
             valueColor = if (overThreshold) MaterialTheme.colorScheme.error
@@ -302,11 +348,15 @@ fun ContextUsagePanel(
                 value = formatExactTokenCount(stats.uncachedInputTokens),
                 suffix = "tok"
             )
-            PanelValueRow(
-                label = stringResource(R.string.context_panel_cache_write),
-                value = formatExactTokenCount(stats.cacheCreationTokens),
-                suffix = "tok"
-            )
+            // 缓存写入为 0 时不显示：0 值是噪音，且会让「没发生写入」
+            // 看起来像是「写入了 0」，容易误读成异常。
+            if (stats.cacheCreationTokens > 0) {
+                PanelValueRow(
+                    label = stringResource(R.string.context_panel_cache_write),
+                    value = formatExactTokenCount(stats.cacheCreationTokens),
+                    suffix = "tok"
+                )
+            }
             PanelValueRow(
                 label = stringResource(R.string.context_panel_cache_read),
                 value = formatExactTokenCount(stats.cachedInputTokens),
@@ -334,11 +384,59 @@ fun ContextUsagePanel(
             },
             suffix = "tok"
         )
+        // 压缩记录：只有真的压缩过才出现。压缩本身要花一次完整请求的钱，
+        // 把规模与命中率摆出来，用户才能判断这次压缩是否划算。
+        if (stats.compactionCalls > 0) {
+            val hit = if (stats.lastCompactionInputTokens > 0) {
+                String.format(
+                    Locale.US,
+                    " · 命中 %.0f%%",
+                    stats.lastCompactionCachedTokens * 100.0 / stats.lastCompactionInputTokens
+                )
+            } else ""
+            PanelValueRow(
+                label = stringResource(R.string.context_panel_last_compaction, stats.compactionCalls),
+                value = formatExactTokenCount(stats.lastCompactionInputTokens) + " tok" + hit
+            )
+            if (stats.compactionCalls > 1) {
+                PanelValueRow(
+                    label = stringResource(R.string.context_panel_compaction_total),
+                    value = formatExactTokenCount(stats.compactionOutputTokens) + " tok"
+                )
+            }
+        }
+        // 子代理：独立会话独立计费，但花的是同一次任务的钱，必须并进来才看得全。
+        if (stats.subagentCount > 0) {
+            val hit = if (stats.subagentPromptTokens > 0) {
+                String.format(
+                    Locale.US,
+                    " · 命中 %.0f%%",
+                    stats.subagentCachedTokens * 100.0 / stats.subagentPromptTokens
+                )
+            } else ""
+            PanelValueRow(
+                label = stringResource(R.string.context_panel_subagent_count, stats.subagentCount),
+                value = formatExactTokenCount(stats.subagentPromptTokens) + " tok" + hit
+            )
+            PanelValueRow(
+                label = stringResource(R.string.context_panel_subagent_output),
+                value = formatExactTokenCount(stats.subagentOutputTokens),
+                suffix = "tok"
+            )
+        }
+        // 非增量未命中：写过缓存却掉回全价的输入量，是缓存策略失效的直接信号。
+        if (stats.nonIncrementalMissTokens > 5_000) {
+            PanelValueRow(
+                label = stringResource(R.string.context_panel_non_incremental_miss),
+                value = formatExactTokenCount(stats.nonIncrementalMissTokens),
+                suffix = "tok",
+                valueColor = MaterialTheme.colorScheme.error
+            )
+        }
+        }
 
         // ── ③ 会话统计：始终显示，数据为空时各行为 0，不整块藏起来 ──
-        Spacer(Modifier.height(14.dp))
-
-        PanelSectionHeader(
+        PanelSection(
             icon = PanelIcons.SessionStats,
             title = stringResource(R.string.context_panel_section_session),
             // 原来这里把「对话调用次数 / 总调用次数」当成「轮 / 步」显示，语义是错的：
@@ -346,9 +444,9 @@ fun ContextUsagePanel(
             // 真实可得的只有调用次数，改为如实展示「n 次调用」。
             trailing = if (stats.calls > 0) {
                 stringResource(R.string.context_panel_call_count, stats.calls)
-            } else null
-        )
-        PanelSectionDivider()
+            } else null,
+            topSpacing = PanelTokens.groupSpacing
+        ) {
         // 四项始终显示：无数据时给 0，不整行消失，避免空态跳版。
         PanelValueRow(
             stringResource(R.string.context_panel_model_time),
@@ -367,13 +465,16 @@ fun ContextUsagePanel(
         )
         // 首 token 耗时拆解：让用户看出长等到底在链路/排队还是服务端处理。
         // 只在有 headers 样本（新版本埋点后的调用）时显示，历史数据没这段。
-        stats.avgTtfbMillis?.let { ttfb ->
+        // 拆解只在「同一批样本」上做：avgTtfbWithHeadersMillis 与 avgHeadersMillis
+        // 都只统计有 headers 埋点的调用，相减才有意义。用全部调用的 avgTtfbMillis
+        // 相减会得到负数（历史调用没有 headers 数据）。
+        stats.avgTtfbWithHeadersMillis?.let { ttfbSameBatch ->
             stats.avgHeadersMillis?.let { headers ->
                 PanelValueRow(
                     label = stringResource(R.string.context_panel_ttfb_network),
                     value = formatPanelDuration(headers.toLong())
                 )
-                val serverMs = (ttfb - headers).coerceAtLeast(0.0)
+                val serverMs = (ttfbSameBatch - headers).coerceAtLeast(0.0)
                 PanelValueRow(
                     label = stringResource(R.string.context_panel_ttfb_server),
                     value = formatPanelDuration(serverMs.toLong())
@@ -394,18 +495,16 @@ fun ContextUsagePanel(
             )
         }
 
-        Spacer(Modifier.height(14.dp))
-
-        PanelSectionDivider()
+        }
 
         // ── 自动压缩：阈值可调 + 立即压缩（本应用独有）──
-        PanelSectionHeader(
+        PanelSection(
             icon = PanelIcons.Compact,
             title = stringResource(R.string.context_panel_section_auto_compact),
             trailing = "$thresholdPercent%",
-            trailingEmphasis = true
-        )
-        PanelSectionDivider()
+            trailingEmphasis = true,
+            topSpacing = PanelTokens.groupSpacing
+        ) {
         var sliderValue by remember(thresholdPercent) {
             mutableFloatStateOf(thresholdPercent.toFloat())
         }
@@ -416,7 +515,8 @@ fun ContextUsagePanel(
             valueRange = 50f..95f,
             steps = 8,
             enabled = !compacting,
-            modifier = Modifier.fillMaxWidth().padding(top = Spacing.xs)
+            // 分隔线下方已有 10dp 留白，滑块再叠一层 top padding 会显得空一大块。
+            modifier = Modifier.fillMaxWidth()
         )
         Row(modifier = Modifier.fillMaxWidth()) {
             Text(
@@ -438,22 +538,24 @@ fun ContextUsagePanel(
             modifier = Modifier.padding(top = Spacing.xs)
         )
         Spacer(Modifier.height(Spacing.md))
+        // 实心主色按钮，高度收到 30dp：比标准按钮矮一档，在信息面板里不至于
+        // 压过数据本身；圆角取半高形成胶囊，与卡片 18dp 圆角各自成立。
         Button(
             onClick = onCompact,
             enabled = canCompact,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(17.dp)
+            modifier = Modifier.fillMaxWidth().height(PanelTokens.actionButtonHeight),
+            shape = RoundedCornerShape(PanelTokens.actionButtonCorner),
+            contentPadding = PaddingValues(horizontal = PanelTokens.cardPaddingH, vertical = 0.dp)
         ) {
-            // 压缩按钮保持纯文字（不加图标）：面板里只有分组标题带图标，
-            // 按钮再加一个会削弱图标的「分组」语义。
             Text(
                 text = stringResource(
                     if (compacting) R.string.context_panel_compacting
                     else R.string.context_panel_compact_now_sc
                 ),
-                style = TextStyle(fontSize = PanelTokens.sectionTitleSize, lineHeight = PanelTokens.sectionTitleLine),
+                style = TextStyle(fontSize = PanelTokens.rowValueSize, lineHeight = PanelTokens.rowLine),
                 fontWeight = FontWeight.Medium
             )
+        }
         }
     }
 }
