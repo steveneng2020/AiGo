@@ -117,6 +117,7 @@ class StatefulAgentWorkflow @Inject constructor(
     private val messagePersistenceUseCase: MessagePersistenceUseCase,
     private val checkpointManager: CheckpointManager,
     private val llmCallRecordDao: LlmCallRecordDao,
+    private val toolExecutionRecordDao: com.nox.feature.agent.data.local.dao.ToolExecutionRecordDao,
     private val keyRotator: ProviderKeyRotator,
     private val agentNotificationCenter: AgentNotificationCenter,
     private val eventInjector: AgentEventInjector,
@@ -188,6 +189,14 @@ class StatefulAgentWorkflow @Inject constructor(
         val denyReason: String = "用户拒绝执行该工具",
         val errorCode: String = "USER_REJECTED"
     )
+
+    /**
+     * 「执行耗时」等于用户思考时间的工具：不计入工具耗时统计。
+     *
+     * 这类工具本身不干活，耗时完全取决于你多久回答。算进去会让
+     * 「工具调用用时」变成「你思考了多久」，与「机器花了多久」混淆。
+     */
+    private val INTERACTION_ONLY_TOOLS = setOf("askUserQuestion")
 
     private data class ToolRunResult(
         val raw: String,
@@ -1048,6 +1057,13 @@ class StatefulAgentWorkflow @Inject constructor(
         if (tool == null) {
             return ToolRunResult(ToolResult.Error("工具 $name 不存在", "TOOL_NOT_FOUND").toTransportString(), true)
         }
+        // 工具执行耗时必须在执行点实测：此前面板上的「工具调用用时」是靠
+        // 「相邻两次模型调用之间的空档」反推的，那段空档混着网络往返与用户授权等待，
+        // 不是工具真实执行耗时。用单调时钟避免系统时间跳变导致负值。
+        val startedAt = System.currentTimeMillis()
+        val startNanos = System.nanoTime()
+        var toolStatus = "success"
+        var toolError: String? = null
         return try {
             // 工具实现在此被调用；工作流本身在主线程收集，故统一切到 IO——避免远程模式下工具里的
             // 同步文件/网络 IO 阻塞主线程。依赖主线程的工具（浏览器）在自身实现内已切回 Main。
@@ -1057,12 +1073,51 @@ class StatefulAgentWorkflow @Inject constructor(
                 val images = if (result is ToolResult.Success) result.images else emptyList()
                 val transportResult = if (attachments.isNotEmpty()) stripAttachments(result) else result
                 val processed = toolOutputStore.process(name, toolCall.id, transportResult)
+                if (processed is ToolResult.Error) {
+                    toolStatus = "error"
+                    toolError = processed.message
+                }
                 ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, attachments, images)
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            toolStatus = "error"
+            toolError = e.message
             ToolRunResult(ToolResult.Error("工具执行失败: ${e.message}", "TOOL_EXECUTION_FAILED").toTransportString(), true)
+        } finally {
+            // 成功、失败、取消都要落一条记录：漏记会让「工具耗时」长期偏小，
+            // 而失败/取消恰恰是耗时大户（超时、用户中断）。
+            val elapsedMs = ((System.nanoTime() - startNanos) / 1_000_000L).coerceAtLeast(0L)
+            // 交互等待类工具不计入（askUserQuestion 的耗时几乎全是你回答的时间）。
+            // 不用 runCatching 静默吞：写入失败必须留痕。曾因迁移脚本列名写成
+            // snake_case（session_id）而实体是 camelCase（sessionId），插入全部失败、
+            // 异常被吞掉，面板上的工具用时永远是 0 且毫无报错，排查了很久才发现。
+            if (name in INTERACTION_ONLY_TOOLS) {
+                // 跳过埋点
+            } else try {
+                toolExecutionRecordDao.insert(
+                    com.nox.feature.agent.data.local.entity.ToolExecutionRecordEntity(
+                        sessionId = context.sessionId,
+                        messageId = null,
+                        toolCallId = toolCall.id,
+                        toolName = name,
+                        startedAt = startedAt,
+                        durationMillis = elapsedMs,
+                        status = toolStatus,
+                        errorMessage = toolError
+                    )
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // 埋点失败不能影响工具本身的执行结果，但要留下可检索的记录。
+                android.util.Log.w(
+                    "ToolExecutionRecord",
+                    "工具耗时埋点写入失败（tool=${name}, session=${context.sessionId}）: ${e.message}",
+                    e
+                )
+            }
         }
     }
 
@@ -1208,6 +1263,12 @@ class StatefulAgentWorkflow @Inject constructor(
         context: AgentContext,
         onEvent: suspend (AgentEvent) -> Unit
     ): ToolRunResult {
+        // 与 runToolSync 同一套埋点：流式工具（浏览器、长命令等）往往是耗时大户，
+        // 漏掉它们会让「工具调用用时」系统性偏小。
+        val startedAt = System.currentTimeMillis()
+        val startNanos = System.nanoTime()
+        var toolStatus = "success"
+        var toolError: String? = null
         return try {
             // 同 runToolSync：流式工具也可能在主线程收集上下文里被驱动，统一切 IO。
             withContext(Dispatchers.IO) {
@@ -1233,12 +1294,46 @@ class StatefulAgentWorkflow @Inject constructor(
                 val result = finalResult ?: ToolResult.Error("流式工具未返回结果", "MISSING_STREAM_RESULT")
                 val processed = toolOutputStore.process(toolCall.name, toolCall.id, result)
                 val images = if (result is ToolResult.Success) result.images else emptyList()
+                if (processed is ToolResult.Error) {
+                    toolStatus = "error"
+                    toolError = processed.message
+                }
                 ToolRunResult(processed.toTransportString(), processed is ToolResult.Error, images = images)
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            toolStatus = "error"
+            toolError = e.message
             ToolRunResult(ToolResult.Error("工具执行失败: ${e.message}", "TOOL_EXECUTION_FAILED").toTransportString(), true)
+        } finally {
+            val elapsedMs = ((System.nanoTime() - startNanos) / 1_000_000L).coerceAtLeast(0L)
+            if (toolCall.name in INTERACTION_ONLY_TOOLS) {
+                // 交互类工具：耗时等于用户思考时间，不记为工具执行耗时。
+            } else {
+                try {
+                    toolExecutionRecordDao.insert(
+                        com.nox.feature.agent.data.local.entity.ToolExecutionRecordEntity(
+                            sessionId = context.sessionId,
+                            messageId = null,
+                            toolCallId = toolCall.id,
+                            toolName = toolCall.name,
+                            startedAt = startedAt,
+                            durationMillis = elapsedMs,
+                            status = toolStatus,
+                            errorMessage = toolError
+                        )
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.w(
+                        "ToolExecutionRecord",
+                        "流式工具耗时埋点写入失败（tool=${toolCall.name}）: ${e.message}",
+                        e
+                    )
+                }
+            }
         }
     }
 

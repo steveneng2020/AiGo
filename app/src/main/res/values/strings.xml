@@ -2415,8 +2415,6 @@
     <string name="context_panel_cache_miss">未命中</string>
     <string name="context_panel_cache_write">缓存写入</string>
     <string name="context_panel_ttfb">首 token 平均</string>
-    <string name="context_panel_ttfb_network">· 其中网络与排队</string>
-    <string name="context_panel_ttfb_server">· 其中服务端处理</string>
     <string name="context_panel_avg_duration">平均耗时</string>
     <string name="context_panel_tps">输出速度</string>
     <string name="context_panel_total_calls">总调用</string>
@@ -2424,12 +2422,15 @@
     <string name="context_panel_compaction_calls">压缩调用</string>
     <string name="context_panel_errors">失败</string>
     <string name="context_panel_retries">重试</string>
+    <string name="context_panel_threshold_range">50%–95%</string>
     <string name="context_panel_threshold_desc">上下文占用达到该比例时自动压缩</string>
     <string name="context_panel_compact_now">立即压缩上下文</string>
     <string name="context_panel_compacting">正在压缩…</string>
     <string name="context_panel_no_data">暂无调用记录</string>
     <string name="chat_user_interjection_label">你在运行中补充的要求</string>
     <string name="chat_interjection_header">用户中途插话，具体内容如下：</string>
+    <!-- 插话气泡上方的来源说明：与通知条同一句文案，避免两处各写一份而更新时漏改。 -->
+    <string name="chat_bg_user_interjection">用户在工作期间插入了一条消息</string>
     <string name="chat_interjection_ack">已收到用户新要求，并优先执行。</string>
     <!-- 上下文用量入口按钮的提示文案（内容描述，供读屏） -->
     <!-- 上下文用量入口按钮的无障碍描述 -->
@@ -2446,14 +2447,18 @@
     <string name="context_panel_non_incremental_miss">非增量未命中</string>
     <string name="context_panel_rounds_steps">%1$d 轮 · %2$d 步</string>
     <string name="context_panel_call_count">%1$d 次调用</string>
+    <!-- 会话统计组右侧：轮=用户发起次数，步=轮内模型调用次数。与「次调用」区分，避免被误读成聊了 N 轮。 -->
+    <string name="context_panel_turns_steps">%1$d 轮 %2$d 步</string>
     <string name="context_panel_model_time">模型用时</string>
     <string name="context_panel_errors_retries">失败 / 重试</string>
+    <!-- 有中断时标签必须同步变三段：否则出现「2 个名称配 3 个数值」，用户不知道中间那个数是什么。 -->
+    <string name="context_panel_errors_cancelled_retries">失败 / 中断 / 重试</string>
     <string name="context_panel_compact_now_sc">压缩上下文</string>
     <string name="context_panel_expand_detail">展开详情</string>
     <string name="chat_turn_detail_toggle">本轮明细</string>
     <string name="chat_turn_detail_tool_time">工具调用用时</string>
     <string name="chat_turn_detail_ttfb">首 token 平均</string>
     <string name="chat_turn_detail_tps">输出速度</string>
-    <string name="chat_meta_ttfb_short">首 token %1$s秒</string>
+    <string name="chat_meta_ttfb_short">首 token %1$s</string>
     <string name="chat_meta_tps_short">%1$d tok/s</string>
 </resources>

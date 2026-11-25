@@ -220,6 +220,14 @@ internal fun ChatInputBar(
     /** 本次请求的输入 token 与预算，供上下文用量面板显示明细（与 [tokenProgress] 同源）。 */
     contextInputTokens: Int = 0,
     contextBudget: Int = 0,
+    /**
+     * 模型的**标称**上下文窗口（如 1M / 128K），仅用于面板展示分母。
+     *
+     * 必须直接传标称值，不能由 [contextBudget] 反推：预算 = 标称 − 输出预留，
+     * 而预留取决于模型配置的 outputTokens，反推不唯一。反推还容易写错方向
+     * （曾因循环从最小档位开始，1M 任务全被显示成 8K）。
+     */
+    contextWindow: Int = 0,
     /** 自动压缩阈值百分比，面板里可调。 */
     compactionThresholdPercent: Int = 85,
     onCompactionThresholdChange: (Int) -> Unit = {},
@@ -274,6 +282,7 @@ internal fun ChatInputBar(
                 stats = sessionStats ?: SessionStatsUi(),
                 contextInputTokens = contextInputTokens,
                 contextBudget = contextBudget,
+                contextWindow = contextWindow,
                 contextEstimated = tokenEstimated,
                 thresholdPercent = compactionThresholdPercent,
                 onThresholdChange = onCompactionThresholdChange,

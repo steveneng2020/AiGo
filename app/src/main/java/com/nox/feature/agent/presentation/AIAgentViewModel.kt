@@ -150,6 +150,7 @@ class AIAgentViewModel @Inject constructor(
     private val agentMessageDao: AgentMessageDao,
     private val chatSessionDao: ChatSessionDao,
     private val llmCallRecordDao: LlmCallRecordDao,
+    private val toolExecutionRecordDao: com.nox.feature.agent.data.local.dao.ToolExecutionRecordDao,
     private val modelCostCalculator: ModelCostCalculator,
     private val aiProviderRepository: AIProviderRepository,
     private val defaultModelSettingsRepository: DefaultModelSettingsRepository,
@@ -1042,6 +1043,18 @@ class AIAgentViewModel @Inject constructor(
     private val _sessionCallPoints = MutableStateFlow<Map<String, List<SessionCallPoint>>>(emptyMap())
     val sessionCallPoints: StateFlow<Map<String, List<SessionCallPoint>>> = _sessionCallPoints.asStateFlow()
 
+    /**
+     * 会话内的工具执行时间线，按 sessionId 缓存。
+     *
+     * 与 [sessionCallPoints] 并列：后者是模型调用时间线，本项是工具执行时间线。
+     * 轮末明细要把工具耗时归到具体一轮，而轮次边界来自消息时间戳，故这里存原始区间。
+     */
+    private val _sessionToolPoints =
+        MutableStateFlow<Map<String, List<com.nox.feature.agent.data.local.dao.ToolTimePoint>>>(emptyMap())
+    val sessionToolPoints:
+        StateFlow<Map<String, List<com.nox.feature.agent.data.local.dao.ToolTimePoint>>> =
+        _sessionToolPoints.asStateFlow()
+
     /** 刷新某个会话的用量明细；面板打开与每次调用结束都会调。 */
     fun refreshSessionStats(sid: String) {
         viewModelScope.launch {
@@ -1051,6 +1064,11 @@ class AIAgentViewModel @Inject constructor(
             if (points.isNotEmpty()) {
                 _sessionCallPoints.value = _sessionCallPoints.value + (sid to points)
             }
+            runCatching { toolExecutionRecordDao.getSessionToolTimeline(sid).first() }
+                .getOrNull()
+                ?.let { toolPoints ->
+                    _sessionToolPoints.value = _sessionToolPoints.value + (sid to toolPoints)
+                }
             val stats = runCatching {
                 val summary = llmCallRecordDao.getSessionSummary(sid).first()
                 val ttfbSamples = llmCallRecordDao.getSessionTtfbSamples(sid).first()
@@ -1071,17 +1089,27 @@ class AIAgentViewModel @Inject constructor(
                     cachedInputTokens = summary.cachedInputTokens,
                     cacheCreationTokens = summary.cacheCreationTokens,
                     errors = summary.errors,
+                    cancelledCalls = summary.cancelledCalls,
+                    // 轮数从消息表算（排除压缩锚点/摘要），calls 是模型调用次数（= 步数）。
+                    turns = runCatching { agentMessageDao.getUserTurnCount(sid) }.getOrDefault(0),
                     avgTtfbMillis = summary.avgTtfbMillis,
                     avgHeadersMillis = summary.avgHeadersMillis,
                     avgTtfbWithHeadersMillis = summary.avgTtfbWithHeadersMillis,
                     avgDurationMillis = summary.avgDurationMillis,
+                    totalDurationMillis = summary.totalDurationMillis,
                     retryCount = summary.retryCount,
                     maxContextTokens = summary.maxContextTokens,
                     lastCompactionInputTokens = summary.lastCompactionInputTokens,
                     lastCompactionCachedTokens = summary.lastCompactionCachedTokens,
                     compactionOutputTokens = summary.compactionOutputTokens,
+                    compactionInputTokens = summary.compactionInputTokens,
+                    decodeMillis = summary.decodeMillis,
+                    decodeTokens = summary.decodeTokens,
                     ttfbSamples = ttfbSamples,
-                    toolMillis = estimateToolMillis(points),
+                    // 工具耗时取实测埋点累加：旧实现用「相邻两次调用之间的空档」反推，
+                    // 那段空档混着网络往返与用户授权等待，会系统性高估工具耗时，
+                    // 且与面板（挂钟 − 模型用时）算法不同，同一任务出现两个数。
+                    toolMillis = toolExecutionRecordDao.getSessionToolMillisOnce(sid),
                     reasoningTokens = summary.reasoningTokens,
                     subagentCount = subagent?.subagentCount ?: 0,
                     subagentPromptTokens = subagent?.promptTokens ?: 0L,
@@ -1092,24 +1120,6 @@ class AIAgentViewModel @Inject constructor(
             }.getOrNull() ?: return@launch
             _sessionStats.value = _sessionStats.value + (sid to stats)
         }
-    }
-
-    /**
-     * 从调用时间线反推工具耗时：相邻两次调用之间的空档之和。
-     *
-     * 每次调用有自己的 createdAt（发出时刻）与 durationMillis（耗时），
-     * 则 上一次结束时刻 = createdAt + duration，下一次开始 = 下一次 createdAt，
-     * 中间的空档就是工具执行与等待的时间。只计入非负值，避免记录乱序时算出负数。
-     */
-    private fun estimateToolMillis(points: List<SessionCallPoint>): Long {
-        if (points.size < 2) return 0L
-        var total = 0L
-        for (i in 1 until points.size) {
-            val prevEnd = points[i - 1].createdAt + (points[i - 1].durationMillis ?: 0)
-            val gap = points[i].createdAt - prevEnd
-            if (gap > 0) total += gap
-        }
-        return total
     }
 
     private val _llmCallEvents = MutableSharedFlow<LlmCallEvent>(extraBufferCapacity = 16)

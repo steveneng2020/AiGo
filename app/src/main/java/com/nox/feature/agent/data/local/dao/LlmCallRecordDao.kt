@@ -102,6 +102,8 @@ data class SessionCallSummary(
     val cachedInputTokens: Long,
     val cacheCreationTokens: Long,
     val errors: Int,
+    /** 被用户中断的调用数（status='cancelled'）。此前它既不算成功也不算失败，面板完全看不见。 */
+    val cancelledCalls: Int = 0,
     val avgTtfbMillis: Double?,
     /**
      * 与 [avgHeadersMillis] **同批样本**的首 token 平均耗时（ms）。
@@ -113,6 +115,13 @@ data class SessionCallSummary(
     /** 响应头到达平均耗时（ms）：与 avgTtfbWithHeadersMillis 相减才是服务端耗时。 */
     val avgHeadersMillis: Double? = null,
     val avgDurationMillis: Double?,
+    /**
+     * 所有调用耗时之和（ms）。模型用时展示必须用它。
+     *
+     * 不能用 `avgDurationMillis × calls`：durationMillis 可空，AVG 跳过 NULL 行
+     * 而 COUNT(*) 不跳，相乘在存在 NULL 时会把总耗时算大。
+     */
+    val totalDurationMillis: Long = 0,
     val reasoningTokens: Long = 0,
     val retryCount: Long,
     val maxContextTokens: Long = 0,
@@ -121,7 +130,24 @@ data class SessionCallSummary(
     /** 最近一次压缩的缓存命中 token 数。 */
     val lastCompactionCachedTokens: Long = 0,
     /** 所有压缩调用的输出 token 合计。 */
-    val compactionOutputTokens: Long = 0
+    val compactionOutputTokens: Long = 0,
+    /**
+     * 纯生成耗时合计（ms）：逐行取 `durationMillis − ttfbMillis` 后求和。
+     *
+     * 必须逐行相减再累加，不能「AVG(duration) − AVG(ttfb)」：
+     * 两个均值各自跳过 NULL 行，样本集不同，相减结果偏大（速度被低估）。
+     */
+    val decodeMillis: Long = 0,
+    /** 与 [decodeMillis] 同批样本的输出 token 合计。 */
+    val decodeTokens: Long = 0,
+    /**
+     * 所有压缩调用的输入 token 合计。
+     *
+     * 「压缩产出合计」要把输入与输出相加：压缩的代价是**读入整段上下文再写摘要**，
+     * 只报输出会低估一个数量级（输入通常是输出的上百倍）。这也是「压缩值不值」
+     * 唯一能算清的口径。
+     */
+    val compactionInputTokens: Long = 0
 )
 
 /** 当前周期的整体汇总，供概览卡片使用。 */
@@ -325,22 +351,44 @@ interface LlmCallRecordDao {
                COALESCE(SUM(cachedInputTokens), 0) AS cachedInputTokens,
                COALESCE(SUM(cacheCreationTokens), 0) AS cacheCreationTokens,
                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
+               SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelledCalls,
                AVG(ttfbMillis) AS avgTtfbMillis,
-               -- 首 token 拆解必须落在同一批样本上：两个独立 AVG 各自跳过 NULL 行时，
+               -- 首 token 拆解必须落在**同一批样本**上：两个独立 AVG 各自跳过 NULL 行时，
                -- 历史数据（无 headers 埋点）会把 avgTtfb 拉到与 avgHeaders 不可比的量级，
                -- 相减会出现「其中网络与排队 > 首 token 平均」的倒挂。
-               -- 因此拆解用的两个均值都只统计 headersMillis 非空的行。
-               AVG(CASE WHEN headersMillis IS NOT NULL THEN ttfbMillis END) AS avgTtfbWithHeadersMillis,
-               AVG(CASE WHEN headersMillis IS NOT NULL THEN headersMillis END) AS avgHeadersMillis,
+               -- 条件必须**双重且对称**（两个字段都非空）：只判 headersMillis 非空时，
+               -- 若某行 headersMillis 有值但 ttfbMillis 为 NULL，第一个 AVG 跳过它、
+               -- 第二个不跳，样本集依然不一致。
+               AVG(CASE WHEN headersMillis IS NOT NULL AND ttfbMillis IS NOT NULL THEN ttfbMillis END) AS avgTtfbWithHeadersMillis,
+               AVG(CASE WHEN headersMillis IS NOT NULL AND ttfbMillis IS NOT NULL THEN headersMillis END) AS avgHeadersMillis,
                AVG(durationMillis) AS avgDurationMillis,
+               -- 「模型用时」用 SUM 而不是 AVG × COUNT：durationMillis 可空，
+               -- AVG 跳过 NULL 行、COUNT(*) 不跳，相乘会把总耗时算大。
+               COALESCE(SUM(durationMillis), 0) AS totalDurationMillis,
                COALESCE(SUM(retryCount), 0) AS retryCount,
                COALESCE(SUM(reasoningTokens), 0) AS reasoningTokens,
                COALESCE(MAX(CASE WHEN kind = 'chat' THEN inputTokens ELSE 0 END), 0) AS maxContextTokens,
                -- 最近一次压缩的输入规模与缓存命中：压缩本身也要花钱，
                -- 把它单独列出来，用户才能判断「这次压缩值不值」。
-               COALESCE(MAX(CASE WHEN kind = 'compaction' THEN inputTokens ELSE 0 END), 0) AS lastCompactionInputTokens,
-               COALESCE(MAX(CASE WHEN kind = 'compaction' THEN cachedInputTokens ELSE 0 END), 0) AS lastCompactionCachedTokens,
-               COALESCE(SUM(CASE WHEN kind = 'compaction' THEN outputTokens ELSE 0 END), 0) AS compactionOutputTokens
+               --
+               -- 必须用**同一行**的两个值：曾写成两个独立的 MAX(...)，
+               -- 而 MAX 取的是“最大值”不是“最近一次”，且两个 MAX 可能落在不同行，
+               -- 相除得到的命中率不对应任何一次真实压缩（实测出现过 21% 这种拼出来的数）。
+               -- 子查询按 id 降序取第一条 compaction 记录，两个字段必然同源。
+               COALESCE((SELECT inputTokens FROM llm_call_records
+                         WHERE sessionId = :sessionId AND kind = 'compaction'
+                         ORDER BY id DESC LIMIT 1), 0) AS lastCompactionInputTokens,
+               COALESCE((SELECT cachedInputTokens FROM llm_call_records
+                         WHERE sessionId = :sessionId AND kind = 'compaction'
+                         ORDER BY id DESC LIMIT 1), 0) AS lastCompactionCachedTokens,
+               COALESCE(SUM(CASE WHEN kind = 'compaction' THEN outputTokens ELSE 0 END), 0) AS compactionOutputTokens,
+               COALESCE(SUM(CASE WHEN kind = 'compaction' THEN inputTokens ELSE 0 END), 0) AS compactionInputTokens,
+               -- 生成耗时与生成 token 必须同批：两个条件完全一致（duration 与 ttfb 都非空），
+               -- 保证 TPS 分子分母来自同一批调用。
+               COALESCE(SUM(CASE WHEN durationMillis IS NOT NULL AND ttfbMillis IS NOT NULL
+                                 THEN (durationMillis - ttfbMillis) ELSE 0 END), 0) AS decodeMillis,
+               COALESCE(SUM(CASE WHEN durationMillis IS NOT NULL AND ttfbMillis IS NOT NULL
+                                 THEN outputTokens ELSE 0 END), 0) AS decodeTokens
         FROM llm_call_records
         WHERE sessionId = :sessionId
         """
@@ -348,48 +396,68 @@ interface LlmCallRecordDao {
     fun getSessionSummary(sessionId: String): Flow<SessionCallSummary>
 
     /**
-     * 汇总本会话派生的所有子代理用量。
+     * 汇总本会话派生的**所有层级**子代理用量。
      *
      * 子代理会话与父会话是两条独立记录，token 也分别计费，只有跨会话求和
      * 才是这次任务真实的总额。无子代理时 subagentCount 为 0。
+     *
+     * 用递归 CTE 而不是单层 `parentId = ?`：子代理自己还能再派生子代理，
+     * 单层查询会漏掉孙代理及其后代，总用量偏小（面板上表现为「总数少一截」）。
      */
     @Query(
         """
+        WITH RECURSIVE descendants(id) AS (
+            SELECT id FROM chat_sessions WHERE parentId = :parentSessionId
+            UNION
+            SELECT c.id FROM chat_sessions c
+            JOIN descendants d ON c.parentId = d.id
+        )
         SELECT COUNT(DISTINCT s.id) AS subagentCount,
                COALESCE(SUM(r.inputTokens), 0) AS promptTokens,
                COALESCE(SUM(r.cachedInputTokens), 0) AS cachedTokens,
                COALESCE(SUM(r.outputTokens), 0) AS outputTokens
         FROM chat_sessions s
+        JOIN descendants d ON d.id = s.id
         LEFT JOIN llm_call_records r ON r.sessionId = s.id
-        WHERE s.parentId = :parentSessionId
         """
     )
     fun getSubagentSummary(parentSessionId: String): Flow<SubagentCallSummary>
 
     /**
-     * 非增量未命中 token：缓存写入过、但后续调用没有读到缓存的部分。
+     * 非增量未命中 token：**紧邻的上一次调用命中过缓存、本次却完全未命中**的输入量。
      *
-     * 含义：前缀缓存（prompt cache）本应命中却没有命中的输入量，通常由
-     * TTL 过期、前缀被改动（编辑了早期消息）、或换了模型导致缓存键失效。
-     * 这部分按全价计费，是最容易被忽视的浪费，所以单独暴露。
+     * 含义：前缀缓存本应继续命中却突然失效，通常是 TTL 过期、前缀被改动（编辑了早期消息）、
+     * 或换了模型导致缓存键失效。这部分按全价计费，是最容易被忽视的浪费。
      *
-     * 口径：只统计「有过一次成功读取缓存」之后的未命中，避免把
-     * 首次调用（本来就无缓存可读）算成浪费。
+     * 口径（四处修正，前三次修得都不够准）：
+     * 1. 已限定 `cachedInputTokens = 0`，此时 `inputTokens - cachedInputTokens` 恒等于
+     *    `inputTokens`，原写法的减法是无意义的。
+     * 2. 不加 `inputTokens > 5000` 阈值：小额浪费也是浪费。
+     * 3. 内层子查询也限定 `kind='chat'`：否则「某次压缩命中过缓存」会成为其后所有
+     *    未命中调用的证据。
+     * 4. **只看紧邻的上一条，而不是历史上任意一条**：这是关键修正。原口径下，
+     *    一个会话最早期几百条「渠道根本不支持缓存」的调用，会在之后某次命中出现后
+     *    全部被追溯认定为「浪费」——实测 510 条、2.17 亿 token，占输入 11.7%，
+     *    而真相是那段时期缓存功能尚不可用，不存在「本应命中」。
+     *    只有「上一条命中 → 这一条未命中」才是真正的失效点。
      */
     @Query(
         """
-        SELECT COALESCE(SUM(r.inputTokens - r.cachedInputTokens), 0)
+        SELECT COALESCE(SUM(r.inputTokens), 0)
         FROM llm_call_records r
+        JOIN llm_call_records p
+          ON p.sessionId = r.sessionId
+         AND p.kind = 'chat'
+         AND p.id = (
+             SELECT MAX(x.id) FROM llm_call_records x
+             WHERE x.sessionId = r.sessionId
+               AND x.kind = 'chat'
+               AND x.id < r.id
+         )
         WHERE r.sessionId = :sessionId
           AND r.kind = 'chat'
           AND r.cachedInputTokens = 0
-          AND r.inputTokens > 5000
-          AND EXISTS (
-              SELECT 1 FROM llm_call_records p
-              WHERE p.sessionId = r.sessionId
-                AND p.id < r.id
-                AND p.cachedInputTokens > 0
-          )
+          AND p.cachedInputTokens > 0
         """
     )
     fun getNonIncrementalMissTokens(sessionId: String): Flow<Long>

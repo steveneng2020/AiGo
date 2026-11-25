@@ -2216,8 +2216,6 @@
     <string name="context_panel_cache_miss">Cache miss</string>
     <string name="context_panel_cache_write">Cache write</string>
     <string name="context_panel_ttfb">Time to first token</string>
-    <string name="context_panel_ttfb_network">· network + queue</string>
-    <string name="context_panel_ttfb_server">· server processing</string>
     <string name="context_panel_avg_duration">Average duration</string>
     <string name="context_panel_tps">Output speed</string>
     <string name="context_panel_total_calls">Total calls</string>
@@ -2231,6 +2229,7 @@
     <string name="context_panel_no_data">No calls recorded yet</string>
     <string name="chat_user_interjection_label">Your request while the run was active</string>
     <string name="chat_interjection_header">You interjected mid-run. Your message:</string>
+    <string name="chat_bg_user_interjection">You inserted a message while the agent was working</string>
     <string name="chat_interjection_ack">New request received and prioritized.</string>
     <!-- Context usage button semantics (screen reader) -->
     <!-- Context usage button semantics -->
@@ -2247,8 +2246,10 @@
     <string name="context_panel_non_incremental_miss">Non-incremental miss</string>
     <string name="context_panel_rounds_steps">%1$d rounds · %2$d steps</string>
     <string name="context_panel_call_count">%1$d calls</string>
+    <string name="context_panel_turns_steps">%1$d turns · %2$d steps</string>
     <string name="context_panel_model_time">Model time</string>
     <string name="context_panel_errors_retries">Errors / retries</string>
+    <string name="context_panel_errors_cancelled_retries">Errors / cancelled / retries</string>
     <string name="context_panel_compact_now_sc">Compact context</string>
     <string name="context_panel_expand_detail">View details</string>
     <string name="chat_turn_detail_toggle">Turn details</string>

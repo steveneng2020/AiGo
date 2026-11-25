@@ -959,11 +959,19 @@ fun AIChatPanel(
     val taskDurations = remember(messages, isBusy) {
         computeTaskDurations(messages, lastTurnFinished = !isBusy)
     }
-    val turnUsages = remember(messages, isBusy, sessionCallPoints) {
+    // 工具执行时间线（实测埋点）：按轮时间区间切分，替代此前的「挂钟 − 模型用时」估算。
+    val sessionToolPointsBySession by viewModel.sessionToolPoints.collectAsStateWithLifecycle()
+    val toolPoints = remember(sessionToolPointsBySession, currentSessionId) {
+        sessionToolPointsBySession[currentSessionId].orEmpty()
+    }
+    val turnUsages = remember(messages, isBusy, sessionCallPoints, toolPoints) {
         computeTurnUsage(
             messages,
             lastTurnFinished = !isBusy,
-            callPoints = sessionCallPoints
+            callPoints = sessionCallPoints,
+            toolMillisInRange = { start, end ->
+                toolPoints.filter { it.startedAt in start..end }.sumOf { it.durationMillis }
+            }
         )
     }
     val reasoningDurations = viewModel.reasoningDurations
@@ -2133,9 +2141,23 @@ fun AIChatPanel(
                         settingsViewModel?.refreshProviderDashboard(it, context = context, force = true)
                     }
                 },
-                tokenEstimated = contextUsages[currentSessionId]?.estimated ?: (sessionLastInputTokens <= 0 && currentSessionId != null),
-                contextInputTokens = contextUsages[currentSessionId]?.inputTokens ?: 0,
-                contextBudget = contextUsages[currentSessionId]?.inputBudget ?: 0,
+                // 上下文用量优先取运行时事件（最新一轮刚回来的准确值）；没有事件时
+                // （冷启动、切回历史会话）回退到数据库里的会话统计，否则面板会显示 0/0。
+                tokenEstimated = contextUsages[currentSessionId]?.estimated
+                    ?: (sessionLastInputTokens <= 0 && currentSessionId != null),
+                // 必须是「当前」上下文，不能用 maxContextTokens（那是本会话历史最大值）：
+                // 用历史最大值会让面板永远停在「已达过的最高点」，与输入栏圆环的当前占用
+                // 对不上（实测圆环 42%、面板 103%），用户根本不知道哪个才代表现在。
+                contextInputTokens = contextUsages[currentSessionId]?.inputTokens
+                    ?: sessionLastInputTokens,
+                contextBudget = contextUsages[currentSessionId]?.inputBudget
+                    ?: activeModelMetadata?.let {
+                        com.nox.feature.settings.domain.model.ModelContextPolicy.effectiveInputBudget(it)
+                    }
+                    ?: 0,
+                // 标称窗口直接从模型元数据取，不反推：反推不唯一且倒错过。
+                // 元数据缺失时给 0，面板会回退到真实预算作分母。
+                contextWindow = activeModelMetadata?.contextTokens?.takeIf { it > 0 } ?: 0,
                 compactionThresholdPercent = compactionThresholdPercent,
                 onCompactionThresholdChange = { settingsViewModel?.setCompactionThresholdPercent(it) },
                 sessionStats = sessionStats[currentSessionId],
@@ -2146,12 +2168,17 @@ fun AIChatPanel(
                     else Color(contextArcColorArgb),
                 onSetContextArcColor = { color -> viewModel.setContextArcColor(color.toArgb()) },
                 tokenProgress = run {
-                    val contextLimit = activeModelMetadata?.let {
-                        com.nox.feature.settings.domain.model.ModelContextPolicy.effectiveInputBudget(it)
-                    } ?: 0
+                    // 圆环必须与面板用同一个分母（标称窗口），否则同一份数据会出现两个读数：
+                    // 圆环按真实预算（991.8K）算出「90% 满」，面板按标称窗口（1M）显示「103%」，
+                    // 用户不知道该信哪个。
+                    val displayWindow = activeModelMetadata?.contextTokens?.takeIf { it > 0 }
+                        ?: activeModelMetadata?.let {
+                            com.nox.feature.settings.domain.model.ModelContextPolicy.effectiveInputBudget(it)
+                        } ?: 0
                     val usage = contextUsages[currentSessionId]?.takeIf { sessionLastInputTokens > 0 || isBusy }
-                    if (contextLimit > 0) {
-                        (usage?.inputTokens ?: sessionLastInputTokens).toFloat() / contextLimit
+                    if (displayWindow > 0) {
+                        ((usage?.inputTokens ?: sessionLastInputTokens).toFloat() / displayWindow)
+                            .coerceIn(0f, 1f)
                     } else 0f
                 },
                 isScrolling = listState.isScrollInProgress,

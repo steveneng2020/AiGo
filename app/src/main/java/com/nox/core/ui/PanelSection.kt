@@ -22,7 +22,11 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import com.nox.core.theme.PanelTokens
 
 /**
@@ -146,27 +150,63 @@ fun PanelSectionDivider() {
 }
 
 /**
- * 键值行：标签靠左、数值靠右，数值用等宽数字与 0.82 透明度。
+ * 键值行：标签靠左，`数值 + 单位` 作为一个整体贴行尾，单位右边缘即列右边缘。
  *
- * 数值单独成 Text 并右对齐，而不是拼成一个字符串：只有分开才能让多行的小数点
- * 纵向对齐（等宽数字 + 右对齐），拼字符串会因标签长短不同而参差不齐。
+ * 曾经的写法是 5 个平级子项（标签/间隔/数值/间隔/单位）配 `SpaceBetween`，
+ * 自由空间被平均分到**每一对相邻子项**之间，于是数字与单位之间凭空多出一段
+ * 随数字长度变化的空白——`38` 与 `tok/s` 被拉开几十 dp，每行右边缘也各不相同。
+ * 视觉上就是「数字在中间飘、单位孤零零贴右」，完全不是右对齐。
+ *
+ * 正确做法只有一条：把数值与单位合并成**同一个可绘制单元**再整体靠右。
+ * 这里用 [AnnotatedString] 分段（数值浓、单位淡）而不是两个 Text，正是为了让
+ * 「数值+单位」构成一个不可拆分的排版单元：段间距由文字排版决定，永远不会被
+ * 父布局的自由空间撑开。
  */
 @Composable
 fun PanelValueRow(
     label: String,
     value: String,
     suffix: String? = null,
+    /**
+     * 单位之后的补充注记（如 `· 命中 96%`）。
+     *
+     * 必须单独传，不能拼进 [value]：拼进 value 会让这行与其它行构成
+     * 完全不同的排版单元，注记长度不受控，右边缘必然与「纯数值行」对不齐。
+     */
+    note: String? = null,
     emphasize: Boolean = false,
     valueColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface.copy(
         alpha = PanelTokens.rowValueAlpha
     )
 ) {
+    val suffixColor = MaterialTheme.colorScheme.onSurfaceVariant
+    // 数值与单位合成一个字符串单元：中间只留一个空格，宽度固定不随布局变化。
+    val valueText = buildAnnotatedString {
+        withStyle(
+            SpanStyle(
+                color = valueColor,
+                fontWeight = if (emphasize) PanelTokens.sectionTitleWeight
+                else androidx.compose.ui.text.font.FontWeight.Normal
+            )
+        ) {
+            append(value)
+        }
+        if (suffix != null) {
+            withStyle(SpanStyle(color = suffixColor)) {
+                append(" ")
+                append(suffix)
+            }
+        }
+        if (!note.isNullOrBlank()) {
+            withStyle(SpanStyle(color = suffixColor)) {
+                append(" ")
+                append(note)
+            }
+        }
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        // SpaceBetween 是数值靠右的关键：只靠标签的 weight 无法把数值推到行尾
-        // （weight(fill=false) 只让标签按内容收缩，剩余空间仍留在行末之前）。
-        horizontalArrangement = Arrangement.SpaceBetween
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
@@ -177,46 +217,20 @@ fun PanelValueRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false)
+            // weight 吃掉全部剩余空间，把数值列顶到行尾：
+            // 只有两段（标签 / 数值组）时，多宽的屏都不会在数值内部产生间隙。
+            modifier = Modifier.weight(1f)
         )
         Spacer(Modifier.width(PanelTokens.rowGap))
-        if (suffix != null) {
-            // 单位贴在数值左侧、同号但更淡：数值与单位属于同一信息，不该被大间距拆开。
-            Text(
-                text = value,
-                style = TextStyle(
-                    fontSize = PanelTokens.rowValueSize,
-                    lineHeight = PanelTokens.rowLine,
-                    fontFeatureSettings = PanelTokens.rowValueFeature,
-                    fontWeight = if (emphasize) PanelTokens.sectionTitleWeight
-                    else androidx.compose.ui.text.font.FontWeight.Normal
-                ),
-                color = valueColor,
-                maxLines = 1
-            )
-            Spacer(Modifier.width(3.dp))
-            Text(
-                text = suffix,
-                style = TextStyle(
-                    fontSize = PanelTokens.rowValueSize,
-                    lineHeight = PanelTokens.rowLine
-                ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-        } else {
-            Text(
-                text = value,
-                style = TextStyle(
-                    fontSize = PanelTokens.rowValueSize,
-                    lineHeight = PanelTokens.rowLine,
-                    fontFeatureSettings = PanelTokens.rowValueFeature,
-                    fontWeight = if (emphasize) PanelTokens.sectionTitleWeight
-                    else androidx.compose.ui.text.font.FontWeight.Normal
-                ),
-                color = valueColor,
-                maxLines = 1
-            )
-        }
+        Text(
+            text = valueText,
+            style = TextStyle(
+                fontSize = PanelTokens.rowValueSize,
+                lineHeight = PanelTokens.rowLine,
+                fontFeatureSettings = PanelTokens.rowValueFeature
+            ),
+            textAlign = TextAlign.End,
+            maxLines = 1
+        )
     }
 }

@@ -118,7 +118,15 @@ internal data class TurnUsage(
     /** 首 token 平均（ms）：本轮有 TTFT 样本的调用求均值。 */
     val avgTtfbMillis: Double? = null,
     /** 本轮所有调用的 TTFT 之和（ms）：算输出速度时要从总耗时里扣掉。 */
-    val totalTtfbMillis: Long = 0L
+    val totalTtfbMillis: Long = 0L,
+    /**
+     * 本轮工具执行耗时合计（ms），来自工具执行埋点的实测值。
+     *
+     * 不用「挂钟 − 模型用时」：那个差值把用户思考、切走 App、后台挂起的时间
+     * 全算进了工具耗时，会明显虚高。也不用「相邻调用空档」：空档混着网络往返
+     * 与授权等待。只有工具自身执行起止的差值才是真实耗时。
+     */
+    val toolMillis: Long = 0L
 ) {
     /** 输出速度（tok/s）：本轮输出 token / 模型总用时（步骤与耗时都有效时给值）。 */
     val outputTps: Double?
@@ -150,15 +158,32 @@ internal fun aggregateTurnCallPoints(
     val avgTtfb = if (ttfbSamples.isEmpty()) null else ttfbSamples.average()
     // TTFT 总和：算输出速度时要从模型耗时里扣掉，否则等待时间被当成生成时间。
     val totalTtfb = ttfbSamples.sumOf { it.toLong() }
-    return TurnCallAggregate(window.size, modelMillis, avgTtfb, totalTtfb)
+    return TurnCallAggregate(
+        steps = window.size,
+        modelMillis = modelMillis,
+        avgTtfbMillis = avgTtfb,
+        totalTtfbMillis = totalTtfb,
+        inputTokens = window.sumOf { it.inputTokens.toLong() },
+        outputTokens = window.sumOf { it.outputTokens.toLong() },
+        cachedInputTokens = window.sumOf { it.cachedInputTokens.toLong() }
+    )
 }
 
-/** [aggregateTurnCallPoints] 的聚合结果；用具名字段而不是 Triple，避免四个同型数值搞混。 */
+/**
+ * [aggregateTurnCallPoints] 的聚合结果；用具名字段而不是 Triple，避免同型数值搞混。
+ *
+ * token 三项与 [steps] 同源（都来自 llm_call_records 的同一时间窗）：
+ * 此前 inputTokens 取自消息表、steps 取自调用记录表，两套数据源拼在一张卡里，
+ * 会出现「单步平均输入超过会话最大单次输入」这种数学上不可能的组合。
+ */
 internal data class TurnCallAggregate(
     val steps: Int,
     val modelMillis: Long,
     val avgTtfbMillis: Double?,
-    val totalTtfbMillis: Long
+    val totalTtfbMillis: Long,
+    val inputTokens: Long = 0L,
+    val outputTokens: Long = 0L,
+    val cachedInputTokens: Long = 0L
 )
 
 /**
@@ -225,7 +250,12 @@ internal fun computeTaskDurations(
 internal fun computeTurnUsage(
     messages: List<AgentUIMessage>,
     lastTurnFinished: Boolean,
-    callPoints: List<SessionCallPoint> = emptyList()
+    callPoints: List<SessionCallPoint> = emptyList(),
+    /**
+     * 本轮时间区间内的工具执行实测耗时（ms）。由调用方按会话查埋点表后按轮切分传入。
+     * 不传时（如预览/测试）为 0，面板该行不显示，不会退化成「挂钟 − 模型用时」的估算值。
+     */
+    toolMillisInRange: (startMillis: Long, endMillis: Long) -> Long = { _, _ -> 0L }
 ): Map<String, TurnUsage> = splitTurns(messages, lastTurnFinished).associate { turn ->
     val agg = aggregateTurnCallPoints(
         callPoints,
@@ -233,13 +263,20 @@ internal fun computeTurnUsage(
         turn.endMessage.timestamp
     )
     turn.endMessage.id to TurnUsage(
-        inputTokens = turn.assistantMessages.sumOf { it.inputTokens },
-        outputTokens = turn.assistantMessages.sumOf { it.outputTokens },
-        cachedInputTokens = turn.assistantMessages.sumOf { it.cachedInputTokens },
+        // 与 steps / modelMillis 同源（llm_call_records 同一时间窗），
+        // 不再用消息表的 sumOf：两套数据源拼一起会得出「单步输入超过会话上限」的矛盾值。
+        // 窗口内没有调用记录时（历史数据、无记录会话）退回消息表，至少不留空。
+        inputTokens = if (agg.steps > 0) agg.inputTokens.toInt()
+        else turn.assistantMessages.sumOf { it.inputTokens },
+        outputTokens = if (agg.steps > 0) agg.outputTokens.toInt()
+        else turn.assistantMessages.sumOf { it.outputTokens },
+        cachedInputTokens = if (agg.steps > 0) agg.cachedInputTokens.toInt()
+        else turn.assistantMessages.sumOf { it.cachedInputTokens },
         steps = agg.steps,
         modelMillis = agg.modelMillis,
         avgTtfbMillis = agg.avgTtfbMillis,
-        totalTtfbMillis = agg.totalTtfbMillis
+        totalTtfbMillis = agg.totalTtfbMillis,
+        toolMillis = toolMillisInRange(turn.startMillis, turn.endMessage.timestamp)
     )
 }
 
@@ -263,8 +300,10 @@ internal fun formatTaskDuration(millis: Long): String {
  */
 internal fun formatCacheHitRate(inputTokens: Int, cachedInputTokens: Int): String? {
     if (inputTokens <= 0 || cachedInputTokens <= 0) return null
-    val rate = (cachedInputTokens * 100.0 / inputTokens).coerceAtMost(100.0)
-    return "${rate.roundToInt()}%"
+    // 与统计面板共用同一套取整规则（见 ContextUsagePanel.hitPercent）：
+    // 99.79% 这类「四舍五入会进位到 100」的值降级为一位小数，其余取整。
+    // 两处若各写一套，同一份数据在气泡与面板里会显示成两个数。
+    return hitPercent(cachedInputTokens.toLong(), inputTokens.toLong())
 }
 
 @Composable
@@ -420,11 +459,23 @@ internal fun AgentMessageItem(
                             }
                         } else if (isUser) {
                             // 用户消息：右对齐气泡，外观由「通用设置 → 聊天气泡」所选样式决定。
-                            UserMessageBubble(
-                                text = message.content,
-                                maxWidth = maxUserBubbleWidth,
-                                interjection = message.isUserInterjection
-                            )
+                            Column(horizontalAlignment = Alignment.End) {
+                                if (message.isUserInterjection) {
+                                    // 「用户在工作期间插入了一条消息」原本是通知条文案，
+                                    // 移到这里：先说明这条是怎么来的，再读内容，顺序更自然。
+                                    Text(
+                                        text = stringResource(R.string.chat_bg_user_interjection),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(bottom = Spacing.xs)
+                                    )
+                                }
+                                UserMessageBubble(
+                                    text = message.content,
+                                    maxWidth = maxUserBubbleWidth,
+                                    interjection = message.isUserInterjection
+                                )
+                            }
                         } else {
                             // 助手正文：不套容器，直接铺在页面底色上（文档流）。分块之间只留一个段落间距，
                             // 整条消息看起来仍是连续的一段正文。
@@ -669,7 +720,8 @@ private fun TurnDetailCard(
     usage: TurnUsage,
     wallClockMs: Long?
 ) {
-    val toolMillis = wallClockMs?.takeIf { it > usage.modelMillis }?.minus(usage.modelMillis)
+    // 用埋点实测值：此前是「挂钟 − 模型用时」，把用户思考与后台挂起也算成工具耗时。
+    val toolMillis = usage.toolMillis.takeIf { it > 0 }
     PanelSection(
         icon = PanelIcons.TokenUsage,
         title = stringResource(R.string.context_panel_section_tokens)
@@ -730,7 +782,7 @@ private fun TurnDetailCard(
         usage.outputTps?.let { tps ->
             PanelValueRow(
                 label = stringResource(R.string.chat_turn_detail_tps),
-                value = String.format(Locale.US, "%.0f", tps),
+                value = formatTps(tps),
                 suffix = "tok/s"
             )
         }
@@ -835,6 +887,10 @@ private fun BackgroundNotificationBar(message: AgentUIMessage) {
             }
         }
     }
+
+    // 用户插话这条通知不渲染：提示语已移到插话气泡上方（见 UserMessageBubble 调用处），
+    // 通知条再画一次就是同一句话出现两遍。
+    if (isUserMessage) return
 
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)) {
         ChatHairline()

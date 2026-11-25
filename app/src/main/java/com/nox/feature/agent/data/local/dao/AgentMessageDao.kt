@@ -285,6 +285,19 @@ interface AgentMessageDao {
     )
     fun getSessionMessageCountsFlow(): Flow<List<SessionMessageCount>>
 
+    /**
+     * 会话的「轮数」：用户真正发起的对话次数。
+     *
+     * 排除压缩锚点与摘要（它们也是 USER 角色，但属于内部产物），
+     * 否则每压缩一次就会多算一轮。
+     */
+    @Query(
+        "SELECT COUNT(*) FROM agent_messages " +
+            "WHERE sessionId = :sessionId AND role = 'USER' " +
+            "AND isCompactionMarker = 0 AND isContextSummary = 0"
+    )
+    suspend fun getUserTurnCount(sessionId: String): Int
+
     /** 指定会话中时间戳不早于 [timestamp] 的消息条数（含并列时间戳），供定位时确定所需分页上限。 */
     @Query("SELECT COUNT(*) FROM agent_messages WHERE sessionId = :sessionId AND timestamp >= :timestamp")
     suspend fun countMessagesFromTimestamp(sessionId: String, timestamp: Long): Int

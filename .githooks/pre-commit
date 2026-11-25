@@ -20,6 +20,10 @@ bold()  { printf '\033[1m%s\033[0m\n' "$1"; }
 
 bold "▸ pre-commit 快检"
 
+# 工作区根目录：多项检查（截图归档、临时文件、出包命名）都以它为基准，
+# 提到最前面定义，避免后面新增的检查项拿到空值而静默跳过。
+WS_ROOT="${AIGO_WS_ROOT:-$HOME/workspace}"
+
 # ---------- 1. UI 设计系统 ----------
 if [ -f scripts/check_ui_tokens.py ]; then
   if python3 scripts/check_ui_tokens.py >/tmp/precommit_ui.log 2>&1; then
@@ -28,6 +32,49 @@ if [ -f scripts/check_ui_tokens.py ]; then
     red "  ✘ UI 设计系统"
     sed 's/^/    /' /tmp/precommit_ui.log
     fail=1
+  fi
+fi
+
+# ---------- 1a. 更新日记日期 ----------
+# 踩过的坑：代码已改到 11-26、发版也在 11-26，但 CHANGELOG 里仍写着 11-25。
+# 关于页读的是内置 CHANGELOG，用户看到过期日期会以为自己装的是旧版。
+# 判定：最新版本日期不得晚于今天、不得早于最近一次提交（详见脚本注释）。
+if [ -f scripts/check_changelog_date.py ]; then
+  if python3 scripts/check_changelog_date.py >/tmp/precommit_changelog.log 2>&1; then
+    green "  ✔ 更新日记日期"
+  else
+    red "  ✘ 更新日记日期与代码不一致："
+    sed 's/^/    /' /tmp/precommit_changelog.log
+    fail=1
+  fi
+fi
+
+# ---------- 1b. UI 改动的量化验收 ----------
+# 踩过的坑（本项就是因为这个才加的）：改了面板布局，靠目测整屏截图判「通过」，
+# 实际数值列右边缘相差 107px——数字在中间飘、单位孤零零贴右。
+# 目测对几 dp 级的错位是无效的，必须用像素测量。
+# 规则：本次提交涉及面板/布局类文件时，验收截图目录里必须有对齐检测通过的截图。
+PANEL_CHANGED=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
+  | grep -E 'core/ui/(PanelSection|AnchorPopup)\.kt$|core/theme/PanelTokens\.kt$|component/(ContextUsagePanel|MessageBubbles)\.kt$' \
+  || true)
+if [ -n "$PANEL_CHANGED" ]; then
+  SHOT_DIR="${AIGO_SHOT_DIR:-$WS_ROOT/验收截图}"
+  newest_shot=$(find "$SHOT_DIR" -type f -name '*.png' -newer "$(git rev-parse --show-toplevel)/$PANEL_CHANGED" 2>/dev/null \
+    | sort | tail -1)
+  if [ -z "$newest_shot" ]; then
+    red "  ✘ 改了面板/布局但没找到新的验收截图"
+    echo "    改动: $(printf '%s ' $PANEL_CHANGED)"
+    echo "    期望: $SHOT_DIR 下有比源码更新的 .png"
+    echo "    原因: UI 改动必须真机截图，且用 scripts/verify_panel_alignment.py 量过"
+    fail=1
+  elif [ -f scripts/verify_panel_alignment.py ]; then
+    if python3 scripts/verify_panel_alignment.py "$newest_shot" >/tmp/precommit_align.log 2>&1; then
+      green "  ✔ 面板数值列右对齐（量化检测）"
+    else
+      red "  ✘ 面板数值列右边缘不齐（量化检测未过）："
+      tail -20 /tmp/precommit_align.log | sed 's/^/    /'
+      fail=1
+    fi
   fi
 fi
 
@@ -86,16 +133,13 @@ fi
 # ---------- 5. 工作目录污染 ----------
 # 踩过的坑：为了把 APK 传给设备，直接丢在共享根目录，事后忘了清理。
 # 根目录是用户肉眼浏览的地方，乱放文件会立刻变成一团乱麻。
-WS_ROOT="${AIGO_WS_ROOT:-$HOME/workspace}"
-if [ -d "$WS_ROOT" ]; then
-  stray=$(find "$WS_ROOT" -maxdepth 1 -type f \( -name '*.apk' -o -name '*.png' -o -name '*.jpg' -o -name '*.html' -o -name '*.log' \) 2>/dev/null | head -10)
-  if [ -n "$stray" ]; then
-    red "  ✘ 工作区根目录有临时文件（应放 build-output / 验收截图 等专用目录）："
-    printf '%s\n' "$stray" | sed 's|.*/|    |'
-    fail=1
-  else
-    green "  ✔ 工作区根目录干净"
-  fi
+stray=$(find "$WS_ROOT" -maxdepth 1 -type f \( -name '*.apk' -o -name '*.png' -o -name '*.jpg' -o -name '*.html' -o -name '*.log' \) 2>/dev/null | head -10)
+if [ -n "$stray" ]; then
+  red "  ✘ 工作区根目录有临时文件（应放 build-output / 验收截图 等专用目录）："
+  printf '%s\n' "$stray" | sed 's|.*/|    |'
+  fail=1
+else
+  green "  ✔ 工作区根目录干净"
 fi
 
 # ---------- 6. 出包文件名规则 ----------
@@ -114,6 +158,53 @@ if [ -d "$OUT_DIR" ]; then
     fail=1
   else
     green "  ✔ 出包文件名"
+  fi
+fi
+
+# ---------- 6a. APK 是否比源码新 ----------
+# 踩过的坑：出包命令启动后继续改源码，构建用的还是旧代码，
+# 结果归档并装上设备的包不含最后那批改动，验收时看到的全是旧行为。
+# 判据：build-output 最新包的 mtime 必须晚于所有 src 文件的 mtime。
+if [ -d "$OUT_DIR" ]; then
+  newest_apk=$(ls -t "$OUT_DIR"/*.apk 2>/dev/null | head -1)
+  if [ -n "$newest_apk" ]; then
+    apk_mtime=$(stat -c %Y "$newest_apk" 2>/dev/null || echo 0)
+    newest_src=$(find app/src -type f \( -name '*.kt' -o -name '*.xml' \) -printf '%T@\n' 2>/dev/null \
+      | sort -n | tail -1 | cut -d. -f1)
+    newest_src=${newest_src:-0}
+    if [ "$newest_src" -gt "$apk_mtime" ]; then
+      red "  ✘ 源码比最新 APK 更晚：这个包不含最后的改动，必须重新出包"
+      echo "    APK:  $(basename "$newest_apk")"
+      echo "    源码: $(date -d "@$newest_src" '+%H:%M:%S' 2>/dev/null)"
+      echo "    APK:  $(date -d "@$apk_mtime" '+%H:%M:%S' 2>/dev/null)"
+      fail=1
+    else
+      green "  ✔ APK 包含最新源码"
+    fi
+  fi
+fi
+
+# ---------- 6b. 出包是否已归档 ----------
+# 「构建成功」不等于「交付完成」：APK 落在构建目录里，用户拿不到，
+# 而提交记录看起来一切正常。这里要求 build-output 里的最新包
+# 不落后于源码改动，逼出「构建完就归档」这一步。
+if [ -d "$OUT_DIR" ]; then
+  newest_apk=$(ls -t "$OUT_DIR"/*.apk 2>/dev/null | head -1)
+  if [ -n "$newest_apk" ]; then
+    apk_mtime=$(stat -c %Y "$newest_apk" 2>/dev/null || echo 0)
+    # 只看 UI 与业务源码的最后改动时间，忽略文档
+    src_mtime=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
+      | grep -E '^app/src/.*\.(kt|xml)$' \
+      | while read -r f; do [ -f "$f" ] && stat -c %Y "$f"; done \
+      | sort -n | tail -1)
+    src_mtime=${src_mtime:-0}
+    if [ "$src_mtime" -gt "$apk_mtime" ]; then
+      red "  ✘ 源码已改但 build-output 里的包更旧（构建完要归档并规范命名）"
+      echo "    最新包: $(basename "$newest_apk")"
+      fail=1
+    else
+      green "  ✔ 出包已归档"
+    fi
   fi
 fi
 

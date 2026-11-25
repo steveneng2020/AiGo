@@ -11,6 +11,7 @@ import com.nox.feature.agent.data.local.dao.RootGrantDao
 import com.nox.feature.agent.data.local.dao.ChatSessionDao
 import com.nox.feature.agent.data.local.dao.CheckpointDao
 import com.nox.feature.agent.data.local.dao.LlmCallRecordDao
+import com.nox.feature.agent.data.local.dao.ToolExecutionRecordDao
 import com.nox.feature.agent.data.local.dao.TodoItemDao
 import com.nox.feature.backup.data.local.dao.BackupTargetDao
 import com.nox.feature.settings.data.local.dao.AIProviderDao
@@ -161,6 +162,12 @@ object AgentModule {
     @Singleton
     fun provideLlmCallRecordDao(database: AgentDatabase): LlmCallRecordDao {
         return database.llmCallRecordDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideToolExecutionRecordDao(database: AgentDatabase): ToolExecutionRecordDao {
+        return database.toolExecutionRecordDao()
     }
 
     @Provides
@@ -451,6 +458,7 @@ object AgentModule {
         messagePersistenceUseCase: MessagePersistenceUseCase,
         checkpointManager: CheckpointManager,
         llmCallRecordDao: LlmCallRecordDao,
+        toolExecutionRecordDao: ToolExecutionRecordDao,
         keyRotator: ProviderKeyRotator,
         agentNotificationCenter: AgentNotificationCenter,
         eventInjector: AgentEventInjector,
@@ -478,6 +486,7 @@ object AgentModule {
             messagePersistenceUseCase,
             checkpointManager,
             llmCallRecordDao,
+            toolExecutionRecordDao,
             keyRotator,
             agentNotificationCenter,
             eventInjector,

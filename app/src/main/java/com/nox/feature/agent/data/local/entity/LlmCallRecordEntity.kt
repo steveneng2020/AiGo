@@ -63,7 +63,16 @@ data class LlmCallRecordEntity(
     val errorMessage: String? = null,
     /** 模型结束原因：end_turn / tool_use / max_tokens / stop / length。 */
     val stopReason: String? = null,
-    /** 本次交互底层发生网络重试的次数（0 表示首试成功或非重试类失败）。 */
+    /**
+     * 本次交互的重试序号**最大值**（不是重试次数）。
+     *
+     * 写入处是 `retryAttempts = maxOf(retryAttempts, chunk.attempt)`，
+     * 因此 3 次重试得到的是「最后一次的序号」而非「3」。
+     * 换 Key 重发（KeySwitched 分支）不计入本字段，故真实重发次数会被低估。
+     *
+     * 面板上「失败 / 重试」的第二个数是本字段在会话内的累加，
+     * 语义是「各次调用的最大重试序号之和」，不等于总重试次数。
+     */
     val retryCount: Int = 0,
     /** 请求发出时间（epoch 毫秒）。 */
     val createdAt: Long
