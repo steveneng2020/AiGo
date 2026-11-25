@@ -5,7 +5,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -32,6 +34,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.nox.core.theme.Spacing
 import com.nox.feature.settings.data.repository.ChatBubbleStyle
+import androidx.compose.ui.res.stringResource
+import com.nox.R
 
 /**
  * 用户消息气泡：按当前所选样式绘制外观。
@@ -45,7 +49,9 @@ internal fun UserMessageBubble(
     maxWidth: Dp,
     modifier: Modifier = Modifier,
     /** 加粗显示：用户运行中插话的原文用它强调，让用户一眼确认内容被完整看到。 */
-    emphasized: Boolean = false
+    emphasized: Boolean = false,
+    /** 用户插话：气泡首行加「用户中途插话，具体内容如下：」标识，与普通对话区分。 */
+    interjection: Boolean = false
 ) {
     val style = LocalChatBubbleStyle.current
     val bubbleColor = chatUserBubbleColor()
@@ -61,20 +67,31 @@ internal fun UserMessageBubble(
     )
 
     val content: @Composable () -> Unit = {
-        SelectionContainer {
-            CompositionLocalProvider(
-                LocalTextSelectionColors provides TextSelectionColors(
-                    handleColor = MaterialTheme.colorScheme.primary,
-                    backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
-                )
-            ) {
+        Column(modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)) {
+            if (interjection) {
+                // 标识行用主色 + 小字号：一眼能看出这条不是普通提问，但不抢正文的注意力。
                 Text(
-                    text = text,
-                    color = textColor,
-                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
-                    fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal,
-                    modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)
+                    text = stringResource(R.string.chat_interjection_header),
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold
                 )
+                Spacer(Modifier.height(Spacing.xs))
+            }
+            SelectionContainer {
+                CompositionLocalProvider(
+                    LocalTextSelectionColors provides TextSelectionColors(
+                        handleColor = MaterialTheme.colorScheme.primary,
+                        backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
+                    )
+                ) {
+                    Text(
+                        text = text,
+                        color = textColor,
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                        fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
             }
         }
     }

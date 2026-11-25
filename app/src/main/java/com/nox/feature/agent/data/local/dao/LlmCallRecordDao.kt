@@ -48,6 +48,16 @@ data class ModelCallStats(
     val retryCount: Long = 0
 )
 
+/** 单次调用的轻量时间线记录：轮末统计行按轮时间窗聚合用，避免把整条记录（含提示词级字段）拉进内存。 */
+data class SessionCallPoint(
+    val createdAt: Long,
+    val inputTokens: Int,
+    val outputTokens: Int,
+    val cachedInputTokens: Int,
+    val ttfbMillis: Int?,
+    val durationMillis: Int?
+)
+
 /**
  * 按「渠道 + 模型」聚合的用量，专供周期总费用估算。
  * 单价由渠道（自定义元数据以「提供商ID:模型名」为键）与模型共同决定，
@@ -306,6 +316,28 @@ interface LlmCallRecordDao {
         """
     )
     fun getSessionTtfbSamples(sessionId: String): Flow<Int>
+
+    /**
+     * 会话内每次对话调用的时间线（按时间升序）。
+     *
+     * 供轮末统计行的「本轮明细」使用：消息表只存 token，首字延迟与耗时只在
+     * llm_call_records 里有，UI 拿到按时间排序的调用点后用轮的时间窗（用户发送 → 轮末收工）
+     * 切片聚合，比按消息 id 关联更稳——一次调用可能对应多条消息，也可能没有对应消息。
+     */
+    @Query(
+        """
+        SELECT createdAt AS createdAt,
+               inputTokens AS inputTokens,
+               outputTokens AS outputTokens,
+               cachedInputTokens AS cachedInputTokens,
+               ttfbMillis AS ttfbMillis,
+               durationMillis AS durationMillis
+        FROM llm_call_records
+        WHERE sessionId = :sessionId AND kind = 'chat' AND status = 'success'
+        ORDER BY createdAt ASC
+        """
+    )
+    fun getSessionCallPoints(sessionId: String): Flow<List<SessionCallPoint>>
 
     /** 当前周期调用总数，供分页显示总页数。 */
     @Query(

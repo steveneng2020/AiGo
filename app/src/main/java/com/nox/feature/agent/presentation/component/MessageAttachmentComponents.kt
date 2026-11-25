@@ -88,10 +88,11 @@ internal fun MessageAttachmentList(
     ) {
         attachments.forEach { attachment ->
             when {
+                // 图片无论是否 compact 都用 4:3 画廊（含保存/分享）；compact 只影响视频、HTML 与非图片文件降级为行。
+                attachment.isImage -> LargeImageAttachment(attachment)
                 compact -> MessageAttachmentRow(attachment = attachment, onClick = onClick)
                 attachment.isVideo -> VideoClip(attachment)
                 attachment.isHtml -> HtmlClip(attachment)
-                attachment.isImage -> LargeImageAttachment(attachment)
                 else -> MessageAttachmentRow(attachment = attachment, onClick = onClick)
             }
         }

@@ -101,7 +101,8 @@ class MessagePersistenceUseCase @Inject constructor(
         outputTokens: Int = 0,
         cachedInputTokens: Int = 0,
         isCompacted: Boolean = false,
-        isContextExcluded: Boolean = false
+        isContextExcluded: Boolean = false,
+        isUserInterjection: Boolean = false
     ) {
         agentMessageDao.insert(
             AgentMessageEntity(
@@ -123,7 +124,8 @@ class MessagePersistenceUseCase @Inject constructor(
                 outputTokens = outputTokens,
                 cachedInputTokens = cachedInputTokens,
                 isCompacted = isCompacted,
-                isContextExcluded = isContextExcluded
+                isContextExcluded = isContextExcluded,
+                isUserInterjection = isUserInterjection
             )
         )
     }

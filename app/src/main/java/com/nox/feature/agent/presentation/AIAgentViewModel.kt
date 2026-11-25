@@ -22,6 +22,7 @@ import com.nox.feature.agent.domain.checkpoint.CheckpointManager
 import com.nox.feature.agent.data.local.dao.CheckpointDao
 import com.nox.feature.agent.data.local.dao.ChatSessionDao
 import com.nox.feature.agent.data.local.dao.LlmCallRecordDao
+import com.nox.feature.agent.data.local.dao.SessionCallPoint
 import com.nox.feature.agent.data.local.dao.TodoItemDao
 import com.nox.feature.agent.domain.model.TodoItem
 import com.nox.feature.agent.data.local.entity.AgentMessageEntity
@@ -1034,9 +1035,20 @@ class AIAgentViewModel @Inject constructor(
     private val _sessionStats = MutableStateFlow<Map<String, SessionStatsUi>>(emptyMap())
     val sessionStats: StateFlow<Map<String, SessionStatsUi>> = _sessionStats.asStateFlow()
 
+    /**
+     * 会话内的调用时间线，按 sessionId 缓存。轮末统计行展开明细时按轮时间窗切片，
+     * 与 [refreshSessionStats] 同源于 llm_call_records，随每次调用结束一起刷新。
+     */
+    private val _sessionCallPoints = MutableStateFlow<Map<String, List<SessionCallPoint>>>(emptyMap())
+    val sessionCallPoints: StateFlow<Map<String, List<SessionCallPoint>>> = _sessionCallPoints.asStateFlow()
+
     /** 刷新某个会话的用量明细；面板打开与每次调用结束都会调。 */
     fun refreshSessionStats(sid: String) {
         viewModelScope.launch {
+            runCatching {
+                _sessionCallPoints.value = _sessionCallPoints.value +
+                    (sid to llmCallRecordDao.getSessionCallPoints(sid).first())
+            }
             val stats = runCatching {
                 val summary = llmCallRecordDao.getSessionSummary(sid).first()
                 val ttfbSamples = llmCallRecordDao.getSessionTtfbSamples(sid).first()
@@ -1764,7 +1776,10 @@ class AIAgentViewModel @Inject constructor(
             request = AgentNotificationFormatter.buildMessage(items),
             projectRoot = _currentWorkspace.value,
             targetSessionId = sessionId,
-            notificationSeqs = items.map { it.seq }
+            notificationSeqs = items.map { it.seq },
+            // 用户插话在 interjectQueuedRequest 里已即时落库成气泡，这里若再 persist 会多出一条重复消息；
+            // 后台任务 / 子代理等系统通知仍走正常落库，因为它们本身没有提前落过。
+            persistUserMessage = items.none { it.kind == AgentNotificationKind.USER_MESSAGE }
         )
     }
 
@@ -1866,6 +1881,24 @@ class AIAgentViewModel @Inject constructor(
         val queue = _queuedRequests.value[sid] ?: return
         val req = queue.firstOrNull { it.id == id } ?: return
         _queuedRequests.value = _queuedRequests.value + (sid to queue.filterNot { it.id == id })
+        // 立刻把用户原话落库成一条 user 消息：本轮还在跑，通知要等下一批工具结果才搭车送达，
+        // 只靠通知的话用户说完这句后界面上长时间什么都没有，无法确认自己插的话是否被听见。
+        // 落库后由消息流渲染成正常用户气泡（含附件）；flushPendingNotifications 侧对用户插话
+        // 关闭 persistUserMessage，避免同一个状态再落一遍造成重复气泡。
+        viewModelScope.launch {
+            runCatching {
+                messagePersistenceUseCase.persist(
+                    sessionId = sid,
+                    role = MessageRole.USER,
+                    content = req.request,
+                    attachments = req.inputAttachments,
+                    isUserInterjection = true
+                )
+                sessionUseCase.touch(sid, messagePersistenceUseCase.nextTimestamp())
+            }.onFailure {
+                FileLogger.w(TAG, "interject persist failed: ${it.message}")
+            }
+        }
         deliverSystemEvent(
             sid,
             PendingNotification(
@@ -2220,6 +2253,8 @@ class AIAgentViewModel @Inject constructor(
                         )
                         if (event.inputTokens > 0 || event.outputTokens > 0) {
                             _llmCallEvents.tryEmit(LlmCallEvent(sessionId, event.inputTokens, event.outputTokens, event.cachedInputTokens))
+                            // 每次调用结束刷一次会话统计与调用时间线，面板与轮末明细都读这两份缓存。
+                            refreshSessionStats(sessionId)
                             // 同步写库：工具循环下一轮 CallLlm 前会重读 lastInputTokens 判断压缩，
                             // 异步写库可能读到压缩前的旧大值导致重复触发压缩。
                             runCatching {
@@ -2232,6 +2267,7 @@ class AIAgentViewModel @Inject constructor(
                             // 上游没给 token 时也透出一次 0 事件，驱动面板用兜底路径刷新，
                             // 否则最近 input/output 一直停在上一轮真实值，上游切换无感。
                             _llmCallEvents.tryEmit(LlmCallEvent(sessionId, 0, 0, 0))
+                            refreshSessionStats(sessionId)
                         }
                         event.persisted?.complete(Unit)
                     }

@@ -59,15 +59,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nox.R
 import com.nox.core.theme.Brand
+import com.nox.core.theme.Radius
 import com.nox.core.theme.Spacing
 import com.nox.core.theme.semanticColors
 import com.nox.core.ui.ChevronRotationStyle
 import com.nox.core.ui.ContentWidth
 import com.nox.core.ui.ExpandableChevronIcon
+import com.nox.feature.agent.data.local.dao.SessionCallPoint
 import com.nox.feature.agent.presentation.AgentUIMessage
 import com.nox.feature.agent.presentation.hasVisibleContent
 import com.nox.feature.agent.presentation.MessageRole
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.Activity
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
@@ -80,6 +83,7 @@ import compose.icons.feathericons.RotateCcw
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import java.util.Locale
 
 /** 工具卡片入场时长（ms）与上浮起点：略微下移再淡入到位，只走 draw 层不影响布局。 */
 private const val MESSAGE_ENTRY_ANIM_MS = 260
@@ -99,8 +103,41 @@ private data class AgentTurn(
 internal data class TurnUsage(
     val inputTokens: Int = 0,
     val outputTokens: Int = 0,
-    val cachedInputTokens: Int = 0
-)
+    val cachedInputTokens: Int = 0,
+    /** 本轮步数（轮内 LLM 调用次数）；0 表示没有调用记录可对齐。 */
+    val steps: Int = 0,
+    /** 模型用时（ms）：本轮所有调用 duration 求和。 */
+    val modelMillis: Long = 0,
+    /** 首 token 平均（ms）：本轮有 TTFT 样本的调用求均值。 */
+    val avgTtfbMillis: Double? = null
+) {
+    /** 输出速度（tok/s）：本轮输出 token / 模型总用时（步骤与耗时都有效时给值）。 */
+    val outputTps: Double?
+        get() {
+            if (outputTokens <= 0 || modelMillis <= 0) return null
+            return outputTokens / (modelMillis / 1000.0)
+        }
+}
+
+/**
+ * 将轮次的调用记录切片聚合为 [TurnUsage] 的明细部分。
+ *
+ * 按「轮起点 → 轮末落库时刻」的时间窗取调用点：llm_call_records 的 createdAt 是请求发出时刻，
+ * 落在该窗口内的一定属于本轮（上一轮已在用户消息落库前收工，下一轮尚未开始）。
+ * 比按消息 id 关联可靠：一次调用可能对应多条消息，也可能因流式取消不落消息。
+ */
+internal fun aggregateTurnCallPoints(
+    points: List<SessionCallPoint>,
+    startMillis: Long,
+    endMillis: Long
+): Triple<Int, Long, Double?> {
+    val window = points.filter { it.createdAt in startMillis..endMillis }
+    if (window.isEmpty()) return Triple(0, 0L, null)
+    val modelMillis = window.sumOf { (it.durationMillis ?: 0).toLong() }
+    val ttfbSamples = window.mapNotNull { it.ttfbMillis }.filter { it > 0 }
+    val avgTtfb = if (ttfbSamples.isEmpty()) null else ttfbSamples.average()
+    return Triple(window.size, modelMillis, avgTtfb)
+}
 
 /**
  * 把消息按「用户消息 → 下一个用户消息之前」切成轮。
@@ -165,12 +202,21 @@ internal fun computeTaskDurations(
  */
 internal fun computeTurnUsage(
     messages: List<AgentUIMessage>,
-    lastTurnFinished: Boolean
+    lastTurnFinished: Boolean,
+    callPoints: List<SessionCallPoint> = emptyList()
 ): Map<String, TurnUsage> = splitTurns(messages, lastTurnFinished).associate { turn ->
+    val (steps, modelMillis, avgTtfb) = aggregateTurnCallPoints(
+        callPoints,
+        turn.startMillis,
+        turn.endMessage.timestamp
+    )
     turn.endMessage.id to TurnUsage(
         inputTokens = turn.assistantMessages.sumOf { it.inputTokens },
         outputTokens = turn.assistantMessages.sumOf { it.outputTokens },
-        cachedInputTokens = turn.assistantMessages.sumOf { it.cachedInputTokens }
+        cachedInputTokens = turn.assistantMessages.sumOf { it.cachedInputTokens },
+        steps = steps,
+        modelMillis = modelMillis,
+        avgTtfbMillis = avgTtfb
     )
 }
 
@@ -353,7 +399,8 @@ internal fun AgentMessageItem(
                             // 用户消息：右对齐气泡，外观由「通用设置 → 聊天气泡」所选样式决定。
                             UserMessageBubble(
                                 text = message.content,
-                                maxWidth = maxUserBubbleWidth
+                                maxWidth = maxUserBubbleWidth,
+                                interjection = message.isUserInterjection
                             )
                         } else {
                             // 助手正文：不套容器，直接铺在页面底色上（文档流）。分块之间只留一个段落间距，
@@ -382,6 +429,16 @@ internal fun AgentMessageItem(
                         compact = isUser
                     )
                 }
+                // 插话的确认文案统一排在最后：带附件时在文件/图片下方，不带的就在气泡下方。
+                if (isUser && message.isUserInterjection) {
+                    Text(
+                        text = stringResource(R.string.chat_interjection_ack),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = Spacing.xs)
+                    )
+                }
                 // 气泡下方的元信息行（工具消息不显示）：用户消息每条都常驻「时间 + 复制/回退/更多」，
                 // 助手消息只挂整段会话最新的一条，避免每条回复下面都吊一排按钮把聊天记录割碎。
                 // 排列固定为「统计（用量/缓存/耗时）→ 复制 → 更多选项」：信息在前，操作入口收在行尾。
@@ -400,6 +457,11 @@ internal fun AgentMessageItem(
                 }
                 val durationText = taskDurationMs?.let { formatTaskDuration(it) }
                 val hasMeta = isUser || tokenStats != null || cacheHitRate != null || durationText != null
+                // 本轮明细可展开：只在有轮末统计（token 或耗时）的助手消息上生效，
+                // 且需要调用记录对齐到数据（steps > 0），否则展开出来只能是一排空值。
+                val hasTurnDetail = !isUser && turnUsage != null &&
+                    (tokenStats != null || durationText != null) && turnUsage.steps > 0
+                var detailExpanded by rememberSaveable(message.id) { mutableStateOf(false) }
                 val actionsVisible = isUser || showActions
                 if ((hasContent || hasAttachments) && message.role != MessageRole.TOOL && isChunkFooter &&
                     (actionsVisible || hasMeta)
@@ -444,7 +506,37 @@ internal fun AgentMessageItem(
                         }
                         if (tokenStats != null) {
                             if (emitted) Spacer(Modifier.width(Spacing.sm))
-                            ChatMetaText(text = tokenStats)
+                            // 统计区整块可点：就在原来这行上点开，不另起一行。
+                            // 点完在下方一起展开明细，箭头朝下/朝上提示状态。
+                            Row(
+                                modifier = if (hasTurnDetail) {
+                                    Modifier
+                                        .clip(RoundedCornerShape(Radius.xs))
+                                        .clickable(
+                                            onClickLabel = stringResource(
+                                                if (detailExpanded) R.string.common_collapse_action
+                                                else R.string.context_panel_expand_detail
+                                            )
+                                        ) { detailExpanded = !detailExpanded }
+                                } else {
+                                    Modifier
+                                },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                ChatMetaText(text = tokenStats)
+                                if (hasTurnDetail) {
+                                    Spacer(Modifier.width(2.dp))
+                                    ExpandableChevronIcon(
+                                        expanded = detailExpanded,
+                                        contentDescription = stringResource(
+                                            if (detailExpanded) R.string.common_collapse_action
+                                            else R.string.context_panel_expand_detail
+                                        ),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        size = 12.dp
+                                    )
+                                }
+                            }
                             emitted = true
                         }
                         if (cacheHitRate != null) {
@@ -489,6 +581,13 @@ internal fun AgentMessageItem(
                             )
                         }
                     }
+                    // 本轮明细：展开后接在统计行下方，与上面那行用量同一数据源、同一处入口。
+                    if (hasTurnDetail && detailExpanded && turnUsage != null) {
+                        TurnDetailCard(
+                            usage = turnUsage,
+                            wallClockMs = taskDurationMs
+                        )
+                    }
                     // 复制成功 1.5s 后恢复图标
                     if (copied) {
                         LaunchedEffect(copied) {
@@ -499,6 +598,106 @@ internal fun AgentMessageItem(
                 }
             }
         }
+    }
+}
+
+/**
+ * 本轮明细卡：由上层统计行点击展开后显示，自身不再管展开态。
+ *
+ * 四行键值对（模型用时 / 工具调用用时 / 首 token 平均 / 输出速度），
+ * 字段名与面板口径保持一致。
+ *
+ * 数据口径：步数、模型用时与 TTFT 来自 llm_call_records 按轮时间窗聚合（见
+ * [aggregateTurnCallPoints]）；工具用时 = 本轮挂钟耗时 − 模型用时，即工具执行与等待的净时间。
+ */
+@Composable
+private fun TurnDetailCard(
+    usage: TurnUsage,
+    wallClockMs: Long?
+) {
+    val toolMillis = wallClockMs?.takeIf { it > usage.modelMillis }?.minus(usage.modelMillis)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = Spacing.xs)
+            .clip(RoundedCornerShape(ChatStyle.panelCorner))
+            .background(chatMutedSurfaceColor())
+            .padding(horizontal = Spacing.sm, vertical = Spacing.sm)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                FeatherIcons.Activity,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(13.dp)
+            )
+            Spacer(Modifier.width(Spacing.xs))
+            Text(
+                text = stringResource(R.string.context_panel_section_session),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                // steps 是本轮的 LLM 调用次数（工具循环每转一次就多一次），不是工具步数也不是轮次。
+                text = stringResource(R.string.context_panel_call_count, usage.steps),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.height(Spacing.xs))
+        if (usage.modelMillis > 0) {
+            TurnDetailRow(
+                label = stringResource(R.string.context_panel_model_time),
+                value = formatPanelDuration(usage.modelMillis)
+            )
+        }
+        // 工具用时只在挂钟耗时大于模型用时（确实跑过工具/等待）时才显示：直接相减可能出现
+        // 负数（调用记录未及时落库）或 0，展示出来只让人困惑。
+        if (toolMillis != null && toolMillis > 0) {
+            TurnDetailRow(
+                label = stringResource(R.string.chat_turn_detail_tool_time),
+                value = formatPanelDuration(toolMillis)
+            )
+        }
+        usage.avgTtfbMillis?.let { ttfb ->
+            TurnDetailRow(
+                label = stringResource(R.string.chat_turn_detail_ttfb),
+                value = formatPanelDuration(ttfb.toLong())
+            )
+        }
+        val tps = usage.outputTps
+        if (tps != null) {
+            TurnDetailRow(
+                label = stringResource(R.string.chat_turn_detail_tps),
+                value = String.format(Locale.US, "%.0f tok/s", tps)
+            )
+        }
+    }
+}
+
+@Composable
+private fun TurnDetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
@@ -586,23 +785,7 @@ private fun BackgroundNotificationBar(message: AgentUIMessage) {
         statuses.any { it == "message" } -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.semanticColors.success
     }
-    // 用户插话：summary 是固定文案（「用户在工作期间插入了一条消息」），
-    // 真正的要求在 <message> 里。只显示 summary 会让用户看不到自己说过什么，
-    // 也可能让 AI 的理解与用户原意产生偏差而无人察觉，所以把原文一并取出展示。
-    val userMessages = Regex("<message>(.*?)</message>", RegexOption.DOT_MATCHES_ALL)
-        .findAll(content)
-        .map { it.groupValues.getOrNull(1)?.trim().orEmpty() }
-        .filter { it.isNotEmpty() }
-        .toList()
     val isUserMessage = content.contains("<user-message>")
-    // 插话图片：通知文本里以 <images><image mime=".." data=".."/></images> 形式携带，
-    // 与 Formatter 输出保持一致。解析成 (mime, base64) 对，供下方缩略图渲染。
-    val userImages = Regex("""<image\s+mime="([^"]*)"\s+data="([^"]*)"/>""")
-        .findAll(content)
-        .mapNotNull { it.groupValues.getOrNull(1)?.takeIf { m -> m.isNotBlank() }
-            ?.let { m -> it.groupValues.getOrNull(2)?.takeIf { d -> d.isNotBlank() }?.let { d -> m to d } } }
-        .toList()
-
     val label = when {
         summaries.size <= 1 -> summaries.firstOrNull() ?: stringResource(R.string.chat_bg_command_done)
         else -> {
@@ -646,62 +829,8 @@ private fun BackgroundNotificationBar(message: AgentUIMessage) {
                 overflow = TextOverflow.Ellipsis
             )
         }
-        // 用户插话的原文用真正的用户气泡渲染，而不是自造一块样式：
-        // 这样它和平时发的消息长得一模一样，用户一眼确认「我插的话被完整看到了」，
-        // 也不必另学一套视觉规则。气泡外观由 LocalChatBubbleStyle 决定，
-        // 跟随设置里的「聊天气泡」（经典白描边 / 柔和投影 / 清新绿 / 漫画方格 等 8 种）。
-        if (userMessages.isNotEmpty()) {
-            userMessages.forEachIndexed { index, text ->
-                Spacer(Modifier.height(Spacing.xs))
-                UserMessageBubble(
-                    text = if (userMessages.size > 1) "${index + 1}. $text" else text,
-                    maxWidth = LocalConfiguration.current.screenWidthDp.dp * 0.78f,
-                    emphasized = true,
-                    modifier = Modifier.align(Alignment.End)
-                )
-            }
-            // 插话若带了附件，在气泡下方照常展示：用户插入消息时同时附带的文件
-            // 不能因为走的是通知条路径就被吞掉。
-            if (message.attachments.isNotEmpty()) {
-                Spacer(Modifier.height(Spacing.xs))
-                MessageAttachmentList(
-                    attachments = message.attachments,
-                    compact = true
-                )
-            }
-            // 图片（base64 形式，随通知一起传来）同样在气泡下方展示，
-            // 让用户确认插话带了什么图，不必再回翻自己刚才那条消息。
-            if (userImages.isNotEmpty()) {
-                userImages.forEach { (mime, data) ->
-                    Spacer(Modifier.height(Spacing.xs))
-                    val bitmap = remember(mime, data) {
-                        runCatching {
-                            android.util.Base64.decode(data, android.util.Base64.DEFAULT)
-                        }.getOrNull()?.let { bytes ->
-                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                        }
-                    }
-                    // foundation.Image 只接受 ImageBitmap，Android 的 Bitmap 需转换一次。
-                    val imageBitmap = remember(bitmap) { bitmap?.asImageBitmap() }
-                    if (imageBitmap != null) {
-                        Row(
-                            modifier = Modifier
-                                .align(Alignment.End)
-                                .padding(end = Spacing.md)
-                        ) {
-                            ComposeImage(
-                                bitmap = imageBitmap,
-                                contentDescription = mime,
-                                modifier = Modifier
-                                    .widthIn(max = 240.dp)
-                                    .heightIn(max = 240.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        // 用户插话的原文、附件与图片已经在 interjectQueuedRequest 里即时落库，
+        // 由用户气泡完整显示。通知条只保留状态行，避免文字与附件重复出现两次。
     }
 }
 

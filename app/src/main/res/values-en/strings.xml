@@ -2227,9 +2227,24 @@
     <string name="context_panel_compacting">Compacting…</string>
     <string name="context_panel_no_data">No calls recorded yet</string>
     <string name="chat_user_interjection_label">Your request while the run was active</string>
+    <string name="chat_interjection_header">You interjected mid-run. Your message:</string>
+    <string name="chat_interjection_ack">New request received and prioritized.</string>
     <!-- Context usage button semantics (screen reader) -->
     <!-- Context usage button semantics -->
     <string name="context_btn_normal">Context %1$d%% used, tap to view usage</string>
     <string name="context_btn_warn">Context reached %1$d%%, tap to compact now</string>
     <string name="context_panel_close">Close</string>
+<string name="context_panel_cache_read">Cache read</string>
+    <string name="context_panel_section_session">Session</string>
+    <string name="context_panel_section_auto_compact">Auto-compact</string>
+    <string name="context_panel_rounds_steps">%1$d rounds · %2$d steps</string>
+    <string name="context_panel_call_count">%1$d calls</string>
+    <string name="context_panel_model_time">Model time</string>
+    <string name="context_panel_errors_retries">Errors / retries</string>
+    <string name="context_panel_compact_now_sc">Compact context</string>
+    <string name="context_panel_expand_detail">View details</string>
+    <string name="chat_turn_detail_toggle">Turn details</string>
+    <string name="chat_turn_detail_tool_time">Tool time</string>
+    <string name="chat_turn_detail_ttfb">Time to first token</string>
+    <string name="chat_turn_detail_tps">Output speed</string>
 </resources>

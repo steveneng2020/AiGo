@@ -54,7 +54,10 @@ data class AgentMessageEntity(
     val cachedInputTokens: Int = 0,
     @ColumnInfo(defaultValue = "0")
     val isContextExcluded: Boolean = false,
-    val compactedBySummaryId: String? = null
+    val compactedBySummaryId: String? = null,
+    /** 用户插话（AI 运行中补充的要求）：气泡内需标识与普通对话区分，默认 false。 */
+    @ColumnInfo(defaultValue = "0")
+    val isUserInterjection: Boolean = false
 ) {
     fun toUIMessage(): AgentUIMessage {
         val roleEnum = MessageRole.valueOf(role)
@@ -75,7 +78,8 @@ data class AgentMessageEntity(
                 content.startsWith(BACKGROUND_NOTIFICATION_PREFIX),
             inputTokens = inputTokens,
             outputTokens = outputTokens,
-            cachedInputTokens = cachedInputTokens
+            cachedInputTokens = cachedInputTokens,
+            isUserInterjection = isUserInterjection
         )
     }
 

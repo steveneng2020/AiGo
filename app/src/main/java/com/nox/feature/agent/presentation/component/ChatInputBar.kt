@@ -722,16 +722,16 @@ internal fun ChatInputBar(
                                 enabled = !isBusy
                             )
                         }
+                        // 上下文用量入口：紧跟推理档位文字，与左侧图标同间距。
+                        // 放在加权区内，靠左贴住档位；右侧 + 与发送键保持原有位置。
+                        Spacer(Modifier.width(Spacing.xs))
+                        ContextUsageIconButton(
+                            progress = tokenProgress,
+                            thresholdPercent = compactionThresholdPercent,
+                            enabled = true,
+                            onClick = { showContextUsagePanel = true }
+                        )
                     }
-                    // 上下文用量入口：紧贴推理档位文字，间距与档位和左边图标一致。
-                    // 放在加权区内部，+ 左侧自然留出大段空白，减少误触。
-                    Spacer(Modifier.width(Spacing.xs))
-                    ContextUsageIconButton(
-                        progress = tokenProgress,
-                        thresholdPercent = compactionThresholdPercent,
-                        enabled = true,
-                        onClick = { showContextUsagePanel = true }
-                    )
                     // 运行中也允许添加附件：sendMessage 会把附件随队列消息一起提交（
                     // enqueueAgentRequest 已接收 inputImages / inputAttachments），
                     // 禁用只是拦住了入口，反而让「插队/排队补资料」变得不可用。

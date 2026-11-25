@@ -744,6 +744,11 @@ fun AIChatPanel(
     val sessionLastInputTokens = currentSession?.lastInputTokens ?: 0
     val contextUsages by viewModel.contextUsages.collectAsStateWithLifecycle()
     val sessionStats by viewModel.sessionStats.collectAsStateWithLifecycle()
+    val sessionCallPointsMap by viewModel.sessionCallPoints.collectAsStateWithLifecycle()
+    // 当前会话的调用时间线：轮末明细按轮时间窗切片用，换会话自动跟着切。
+    val sessionCallPoints = remember(sessionCallPointsMap, currentSessionId) {
+        sessionCallPointsMap[currentSessionId].orEmpty()
+    }
     val compactionThresholdPercent = settingsViewModel?.compactionThresholdPercent
         ?.collectAsStateWithLifecycle()?.value ?: 85
     val messagesReady = messagesState.loaded && messagesState.sessionId == currentSessionId
@@ -921,8 +926,12 @@ fun AIChatPanel(
     val taskDurations = remember(messages, isBusy) {
         computeTaskDurations(messages, lastTurnFinished = !isBusy)
     }
-    val turnUsages = remember(messages, isBusy) {
-        computeTurnUsage(messages, lastTurnFinished = !isBusy)
+    val turnUsages = remember(messages, isBusy, sessionCallPoints) {
+        computeTurnUsage(
+            messages,
+            lastTurnFinished = !isBusy,
+            callPoints = sessionCallPoints
+        )
     }
     val reasoningDurations = viewModel.reasoningDurations
     // 方案 A：每轮正常收尾的最终回复（包括历史所有轮次的回复）均挂操作行（复制/更多），
