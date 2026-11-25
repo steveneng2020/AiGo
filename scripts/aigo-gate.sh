@@ -56,6 +56,23 @@ else
   printf '%s\n' "$secret_hits" | sed 's/^/        /'
 fi
 
+# ---------- 1b. UI 设计系统 ----------
+# 背景：界面「简陋、拼凑感」的根因不是审美，而是同一屏里混了多套尺寸——
+#   12sp 与 15sp 并排、0.5dp 与 1dp 分隔线共存、24×24 与 16×16 图标混用。
+#   这类问题在代码审查里看不出来，只有真机才显得「不对」，所以交给机器拦。
+# 规则：统计卡片类文件禁止硬编码字号，禁止混用图标体系，数值必须走统一行组件。
+# 存量文件可用 `ui-tokens-exempt: <原因>` 临时豁免，新文件不应添加。
+step "1b/8 UI 设计系统"
+if [ -f scripts/check_ui_tokens.py ]; then
+  if python3 scripts/check_ui_tokens.py >/tmp/gate_ui.log 2>&1; then
+    ok "$(tail -1 /tmp/gate_ui.log)"
+  else
+    bad "UI 设计系统检查失败："; sed 's/^/        /' /tmp/gate_ui.log | head -20
+  fi
+else
+  ok "无 UI 检查脚本，跳过"
+fi
+
 # ---------- 2. 迁移对账 ----------
 step "2/8 数据库迁移对账"
 if [ -f scripts/check_migrations.py ]; then
