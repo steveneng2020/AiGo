@@ -2423,6 +2423,16 @@ class AIAgentViewModel @Inject constructor(
                         setRetryState(sessionId, null)
                         setKeySwitchState(sessionId, null)
                         setCompacting(sessionId, false)
+                        // 整轮结束时无条件补刷一次会话统计。
+                        // 调用记录由 workflow 在 finally 里异步落库，与 LlmCallFinished
+                        // 不是同一个协程：那边收到事件时 insert 可能还没执行完，
+                        // 退避 720ms 也等不到（insert 前还要算 reasoning plan）。
+                        // 只在 LlmCallFinished 补查的话，错过那次窗口就再没有机会，
+                        // 表现为气泡统计行右半边（首 token / 输出速度）一直空着，
+                        // 展开明细或切走再回来才出现。
+                        // 这里不带 expectedCalls：不重试、不等待，直接读当前库，
+                        // 因为走到 Completed 时该写的都已经写完了。
+                        refreshSessionStats(sessionId)
                         // 子代理会话完成时通知父会话（异步回调）
                         if (isSub) {
                             sessionUseCase.getSessionById(sessionId)?.parentId?.let { parentId ->
