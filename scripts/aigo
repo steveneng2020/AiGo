@@ -103,6 +103,8 @@ cmd_push() {
   git push origin HEAD $git_args || die "推送失败"
   # 推完立刻同步归档副本：手机 Git 面板看的是 $SRC，不同步就看不到新提交。
   cmd_sync_archive || echo "（归档副本同步失败，可稍后手动 aigo sync-archive）"
+  # 顺带把 CLAUDE.md 与技能拷到 docs/，让规则变更也随推送落到宿主可见处。
+  cmd_sync_rules
   # 闭环：确认触发 + 等结果（带 --wait 时）。
   # shellcheck disable=SC2086
   cmd_verify_push $wait_opt
@@ -415,6 +417,16 @@ cmd_where() {
   echo "主副本（持久化，日常开发与编译）:"; echo "  $MAIN"
 }
 
+# 把 AI 协作规则（CLAUDE.md + 5 个技能）拷到宿主可见的 docs 下。
+# 这些文件平时住在容器内（$MAIN 与 ~/.nox/skills），手机上文件管理器看不到，
+# 换设备或交接时容易丢。docs 下这份是只读副本，单向覆盖、不参与开发。
+cmd_sync_rules() {
+  script="$MAIN/scripts/sync-rules-doc.sh"
+  if [ -f "$script" ]; then
+    sh "$script" || echo "（规则同步失败，不影响推送结果）"
+  fi
+}
+
 case "${1:-}" in
   build)  shift; cmd_build "$@" ;;
   apk)    shift; cmd_apk "$@" ;;
@@ -427,6 +439,7 @@ case "${1:-}" in
   push)   shift; cmd_push "$@" ;;
   sync-fuse) cmd_sync_fuse ;;
   sync-archive) cmd_sync_archive ;;
+  sync-rules) cmd_sync_rules ;;
   clean-shots) cmd_clean_shots ;;
   verify-push) shift; cmd_verify_push "$@" ;;
   where)  cmd_where ;;
