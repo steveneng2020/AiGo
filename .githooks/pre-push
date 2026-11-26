@@ -6,10 +6,19 @@
 #   刚刚的提交本身还没推，一拦就永远提交不上去；而 push 又必须先有提交。
 #   2026-11-26 就因为这个死锁，一次正常的提交被反复拦下。
 #
-# 这里做三件事：
+# 这里做四件事：
 #   1. 分支是否落后远端（落后时推送会被拒或产生非快进合并）
 #   2. 待推送提交里有没有夹带敏感文件
 #   3. 待推送提交的更新日记日期是否仍然正确
+#   4. 单元测试（本仓库有 1300+ 个，CI 会跑；本地不跑就等于把测试当摆设）
+#
+# 第 4 项为什么必须在 push 前：
+#   2026-11-26 发 v1.0.4 时，把命中率从整数百分比改成两位小数，
+#   只改了实现没改断言，本地只跑了冒烟编译就推了。
+#   CI 的 Verify 阶段 1379 个测试里 5 个失败，三个 APK 全建好了却卡在
+#   测试这关，Release job 被跳过，既没 tag 也没 Release。
+#   CLAUDE.md:544 本来就写着「git push 前必跑单元测试」，
+#   但靠人记容易漏，所以改成钩子硬拦。
 #
 # 注意：pre-push 的 stdin 会给出 refs，但不依赖它，直接比对 origin/<branch>。
 
@@ -63,6 +72,30 @@ if [ -f scripts/check_changelog_date.py ]; then
     else
         red "  ✘ 更新日记日期与代码不一致："
         sed 's/^/      /' /tmp/prepush_changelog.log
+        fail=1
+    fi
+fi
+
+# ---------- 4. 单元测试 ----------
+# 只在本次推送确实改动了 Kotlin 源码 / 测试时才跑：纯文档、纯资源、
+# CI 配置这类改动跑 1300+ 个测试纯属浪费时间（冷态 9 分钟）。
+#
+# 环境变量：
+#   AIGO_SKIP_TESTS=1  跳过（事后必须补跑 aigo test）
+touched_kt=$(git diff --name-only "${range}" 2>/dev/null \
+    | grep -E '^(app|terminal-[a-z]+)/src/.*\.kt$' || true)
+if [ -n "${AIGO_SKIP_TESTS:-}" ]; then
+    yellow "  · 已设 AIGO_SKIP_TESTS，跳过单测（事后必须补跑 aigo test）"
+elif [ -z "${touched_kt}" ]; then
+    green "  ✔ 未改 Kotlin，无需跑单测"
+else
+    echo "  跑单元测试（改了 $(printf '%s\n' "${touched_kt}" | wc -l) 个 .kt 文件，冷态最多数分钟）..."
+    if sh gradlew :app:testUniversalDebugUnitTest >/tmp/prepush_test.log 2>&1; then
+        green "  ✔ 单元测试通过"
+    else
+        red "  ✘ 单元测试未过："
+        grep -E 'FAILED|tests completed' /tmp/prepush_test.log | head -15 | sed 's/^/      /'
+        echo "      完整日志: /tmp/prepush_test.log"
         fail=1
     fi
 fi

@@ -2452,7 +2452,7 @@
     <string name="context_panel_errors_retries">失败 / 重试</string>
     <!-- 有中断时标签必须同步变三段：否则出现「2 个名称配 3 个数值」，用户不知道中间那个数是什么。 -->
     <string name="context_panel_errors_cancelled_retries">失败 / 中断 / 重试</string>
-    <string name="context_panel_compact_now_sc">压缩上下文</string>
+    <string name="context_panel_compact_now_sc">手动压缩上下文</string>
     <string name="context_panel_expand_detail">展开详情</string>
     <string name="chat_turn_detail_toggle">本轮明细</string>
     <string name="chat_turn_detail_tool_time">工具调用用时</string>

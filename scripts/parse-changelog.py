@@ -34,6 +34,9 @@ VERSION_HEADING = re.compile(r"^##\s+(v[\d.]+(?:-[\w.]+)?)\s*[—–-]\s*(\d{4}-
 SECTION_HEADING = re.compile(r"^###\s+(.+?)\s*$")
 # 条目形如：「- **标题**：说明」或「- **标题**: 说明」
 ITEM = re.compile(r"^-\s+\*\*(.+?)\*\*[：:]\s*(.+)$")
+# 子条目：缩进的「  - 说明」，是上一条 item 的补充段落。
+# 典型用法是把判据、实现要点这类细节挂在主条目下面，避免主条目过长。
+SUBITEM = re.compile(r"^\s{2,}-\s+(.+)$")
 
 
 def parse(md: str):
@@ -83,10 +86,21 @@ def parse(md: str):
             cur["items"].append({"title": mi.group(1), "detail": mi.group(2)})
             continue
 
+        # 子条目并入上一条 item 的 detail。
+        # 不加这段判断时，子条目会被当成版本概述继续拼进 summary，
+        # 结果是「一句话概括」里混进了实现细节，而 App 内只显示 summary
+        # 与各条 title，用户看到的概述是一段读不通的长文本。
+        ms = SUBITEM.match(line)
+        if ms and cur["items"]:
+            cur["items"][-1]["detail"] += "\n" + ms.group(1).strip()
+            continue
+
         if line.strip() and not line.startswith("#"):
             if not cur["summary"]:
                 cur["summary"] = line.strip()
-            else:
+            elif not cur["items"]:
+                # 概述只取版本标题下的第一段；一旦开始出现条目，
+                # 后续任何裸文本都不再算概述。
                 cur["summary"] += " " + line.strip()
 
     return {"version": 1, "entries": entries}

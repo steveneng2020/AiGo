@@ -760,15 +760,22 @@ if [ -d "$OUT_DIR2" ]; then
     echo "        处理：确认正式包已归档后 rm 掉这些 debug 包"
   fi
 
-  # 已发布版本必须有对应的 release 包
+  # 已发布版本必须有对应的 release 包。
+  # 版本列表从 git tag 动态取，不再硬编码——原先写死 1.0.0~1.0.3，
+  # 每发一版都要回来改脚本，漏改就等于这条检查对新版本静默失效。
+  published_versions=$(git tag -l 'v[0-9]*' 2>/dev/null \
+    | sed 's/^v//' \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -rV || true)
+  [ -n "$published_versions" ] || published_versions="1.0.0 1.0.1 1.0.2 1.0.3"
   missing_release=""
-  for v in 1.0.0 1.0.1 1.0.2 1.0.3; do
+  for v in $published_versions; do
     if ls "$OUT_DIR2"/AiGo-*-"$v"-release-*.apk >/dev/null 2>&1; then :; else
       missing_release="$missing_release $v"
     fi
   done
   if [ -z "$missing_release" ]; then
-    ok "v1.0.0~v1.0.3 均已有 release 包"
+    ok "已发布版本（$(printf '%s' "$published_versions" | tr '\n' ' ')）均有 release 包"
   else
     bad "以下版本缺少 release 包：$missing_release"
     echo "        处理：从对应 GitHub Release 下载 AiGo-arm64-<版本>-<日期>.apk，"

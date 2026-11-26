@@ -2249,7 +2249,7 @@
     <string name="context_panel_model_time">Model time</string>
     <string name="context_panel_errors_retries">Errors / retries</string>
     <string name="context_panel_errors_cancelled_retries">Errors / cancelled / retries</string>
-    <string name="context_panel_compact_now_sc">Compact context</string>
+    <string name="context_panel_compact_now_sc">Compact now manually</string>
     <string name="context_panel_expand_detail">View details</string>
     <string name="chat_turn_detail_toggle">Turn details</string>
     <string name="chat_turn_detail_tool_time">Tool time</string>

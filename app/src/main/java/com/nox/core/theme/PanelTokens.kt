@@ -28,10 +28,20 @@ object PanelTokens {
      * 上下各留出一点呼吸空间，多出的高度从压缩区里去省（见 [sliderHeight]）。
      */
     val cardPaddingH = 16.dp
-    /** 卡片顶部内边距：比常规多 4dp，给顶部大数字留出呼吸。 */
-    val cardPaddingTop = 20.dp
-    /** 卡片底部内边距：与顶部相仿，避免底部按钮贴边。 */
-    val cardPaddingBottom = 18.dp
+    /**
+     * 卡片顶部内边距。
+     *
+     * 顶部大数字与首行明细离卡片上边缘太近，遮住了上方内容的三成，看着像被截断；
+     * 拉开后首行不再贴着边。
+     */
+    val cardPaddingTop = 40.dp
+    /**
+     * 卡片底部内边距。
+     *
+     * 与顶部取齐：顶部 20→40、底部 18→40，合计使卡片总高增加 42dp。
+     * 首行与尾行各自离边缘 40dp，上下对称，尾部按钮不再顶到底边。
+     */
+    val cardPaddingBottom = 40.dp
     /** 卡片宽度区间：窄屏不挤，宽屏也不铺满整行。 */
     val cardMinWidth = 256.dp
     val cardMaxWidth = 328.dp
