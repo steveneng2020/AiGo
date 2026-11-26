@@ -75,10 +75,10 @@ SKIP_PREFIXES = (
     "更省电", "关于页", "数字格式", "明细卡上下",
 )
 
-# 「同步上游」也是跳过的：那是上游 Nox/AiCode 的功能，不是本项目做的。
-# README 这段要回答的是「AiGo 相对上游新增了什么」，把上游功能算进来
-# 会让读者误以为是本项目的成果。
-SKIP_ALWAYS = ("同步上游",)
+# 「同步上游」不占重点项目名额：它的内容来自上游 Nox/AiCode，不是本项目做的。
+# 但完全丢掉也不对——用户升级后确实会多出这些功能，不提等于瞒着。
+# 折中：永远排在每版最后，且不计入 MAX_ITEMS_PER_VERSION 的额度。
+UPSTREAM_MARKER = "同步上游"
 
 
 def load_entries():
@@ -117,11 +117,13 @@ def render(entries) -> str:
         # 挑重点：只留本项目做的新功能，修复/微调/上游同步都不进 README。
         # 这些在 CHANGELOG 里都有，README 是概览。
         picked = []
+        upstream_item = None
         for it in items:
             title = it.get("title", "").strip()
             if not title:
                 continue
-            if title.startswith(SKIP_ALWAYS):
+            if title.startswith(UPSTREAM_MARKER):
+                upstream_item = it
                 continue
             if title.startswith(SKIP_PREFIXES):
                 continue
@@ -163,6 +165,12 @@ def render(entries) -> str:
             title = it.get("title", "").strip()
             detail = shorten(it.get("detail", ""))
             # 与 CHANGELOG 同样的行内格式：粗体短语 + 说明
+            lines.append(f"- **{title}** — {detail}" if detail else f"- **{title}**")
+
+        # 上游功能固定排在最后，不计入上面 3 条的名额
+        if upstream_item is not None:
+            title = upstream_item.get("title", "").strip()
+            detail = shorten(upstream_item.get("detail", ""))
             lines.append(f"- **{title}** — {detail}" if detail else f"- **{title}**")
 
     # 「更早的版本」按实际没列出来的算，不要假设「前 N 个都列了」——
