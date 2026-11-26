@@ -16,7 +16,8 @@ class PanelValueFormatTest {
     @Test
     fun `命中率四舍五入不得变成 100`() {
         // 99.79% 曾经被 roundToInt 成 100%，让用户以为全部命中、零成本。
-        assertEquals("99%", hitPercent(cached = 5_687_552, total = 5_699_639))
+        // 现在保留两位小数，显示真实的 99.79%，既不失真也不会进位成满分。
+        assertEquals("99.79%", hitPercent(cached = 5_687_552, total = 5_699_639))
     }
 
     @Test
@@ -25,8 +26,10 @@ class PanelValueFormatTest {
     }
 
     @Test
-    fun `命中率为零时显示 0`() {
-        assertEquals("0%", hitPercent(cached = 0, total = 1_000))
+    fun `命中率为零时显示两位零`() {
+        // 与其余命中率同一精度：面板里所有百分比都是两位小数，
+        // 只有零值退回「0%」会让人以为是没数据而不是没命中。
+        assertEquals("0.00%", hitPercent(cached = 0, total = 1_000))
     }
 
     @Test
@@ -35,10 +38,10 @@ class PanelValueFormatTest {
     }
 
     @Test
-    fun `命中率向下取整而不是四舍五入`() {
-        // 72.25% 应为 72%，66.9% 应为 66%。
-        assertEquals("72%", hitPercent(cached = 7225, total = 10_000))
-        assertEquals("66%", hitPercent(cached = 669, total = 1_000))
+    fun `命中率保留两位小数而不是取整`() {
+        // 保留两位小数：72.25% / 66.90%，不再截成整数百分比。
+        assertEquals("72.25%", hitPercent(cached = 7225, total = 10_000))
+        assertEquals("66.90%", hitPercent(cached = 669, total = 1_000))
     }
 
     // ── 紧凑计数：整数不补零 ──────────────────────────────────────────────

@@ -6,19 +6,24 @@ import org.junit.Test
 
 /**
  * 单条消息的缓存命中率展示（[formatCacheHitRate]）。
+ *
+ * 该函数在 1.0.4 起与面板共用 [hitPercent]，统一显示两位小数，
+ * 因此这里的期望值也必须是两位小数——一位整数的期望值会让
+ * 同一份数据在气泡里显示成 80%，在面板里显示成 80.00%，属于回归。
  */
 class CacheHitRateTest {
 
     @Test
     fun ratio_of_cached_over_total_input() {
-        assertEquals("80%", formatCacheHitRate(inputTokens = 1_000, cachedInputTokens = 800))
-        assertEquals("50%", formatCacheHitRate(inputTokens = 2_000, cachedInputTokens = 1_000))
+        assertEquals("80.00%", formatCacheHitRate(inputTokens = 1_000, cachedInputTokens = 800))
+        assertEquals("50.00%", formatCacheHitRate(inputTokens = 2_000, cachedInputTokens = 1_000))
     }
 
     @Test
-    fun rounds_to_whole_percent() {
-        assertEquals("67%", formatCacheHitRate(inputTokens = 3, cachedInputTokens = 2))
-        assertEquals("33%", formatCacheHitRate(inputTokens = 3, cachedInputTokens = 1))
+    fun keeps_two_decimals() {
+        // 2/3 = 66.666…% → 66.67%；1/3 = 33.333…% → 33.33%
+        assertEquals("66.67%", formatCacheHitRate(inputTokens = 3, cachedInputTokens = 2))
+        assertEquals("33.33%", formatCacheHitRate(inputTokens = 3, cachedInputTokens = 1))
     }
 
     @Test

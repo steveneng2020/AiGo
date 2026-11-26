@@ -202,9 +202,10 @@ if [ -d "$OUT_DIR" ]; then
   newest_apk=$(ls -t "$OUT_DIR"/*.apk 2>/dev/null | head -1)
   if [ -n "$newest_apk" ]; then
     apk_mtime=$(stat -c %Y "$newest_apk" 2>/dev/null || echo 0)
-    # 只看 UI 与业务源码的最后改动时间，忽略文档
+    # 只看会打进 APK 的源码：必须排除 app/src/test 与 app/src/androidTest，
+    # 测试代码不进包，要求「改了测试就必须重新出包」只会逼人绕过门禁。
     src_mtime=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
-      | grep -E '^app/src/.*\.(kt|xml)$' \
+      | grep -E '^app/src/(main|debug|release|profile)/.*\.(kt|xml)$' \
       | while read -r f; do [ -f "$f" ] && stat -c %Y "$f"; done \
       | sort -n | tail -1)
     src_mtime=${src_mtime:-0}
