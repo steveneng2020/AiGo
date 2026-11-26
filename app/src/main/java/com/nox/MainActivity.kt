@@ -427,6 +427,21 @@ fun AppNavigation(
     val fileTreePluginEntries = remember(pluginSlotEntries) {
         pluginSlotEntries.filter { it.slot == com.nox.feature.plugin.domain.PluginUiSlots.FILES_TREE_MENU }
     }
+    // 插件样式令牌：把全部启用插件声明的令牌按字段合并，各插件可以各管一块。
+    // 同名字段取排在前面的插件，顺序由插件 id 排序保证稳定。
+    val pluginStyleTokens = remember(installedPluginsForSlots) {
+        com.nox.feature.plugin.domain.mergeStyleTokens(
+            installedPluginsForSlots
+                .filter { it.isActive }
+                .mapNotNull { it.manifest?.styleTokens }
+        )
+    }
+    val pluginChatInputStyle = remember(pluginStyleTokens) {
+        com.nox.feature.plugin.dsl.chatInputStyleOf(pluginStyleTokens)
+    }
+    val pluginUiStyle = remember(pluginStyleTokens) {
+        com.nox.feature.plugin.dsl.pluginUiStyleOf(pluginStyleTokens)
+    }
 
     // 打开的插件页：动作型入口直接执行，页面型入口挂全屏 WebView。
     var activePluginEntryPage by remember {
@@ -885,6 +900,9 @@ fun AppNavigation(
                             }
                         )
                     }
+                    // 插件整屏接管：叠在聊天内容之上、抽屉之下，抽屉仍能滑出盖住它。
+                    // 没有插件声明接管时它不画任何东西。
+                    com.nox.feature.plugin.dsl.PluginScreenOverlay(target = com.nox.feature.plugin.domain.PluginScreenTargets.CHAT)
                 }
             }
             composable(
@@ -1110,7 +1128,11 @@ fun AppNavigation(
 
     CompositionLocalProvider(
         LocalOnboardingTargetRegistry provides onboardingRegistry,
-        LocalImageViewer provides drawerImageViewerState
+        LocalImageViewer provides drawerImageViewerState,
+        // 插件样式令牌在这里统一下发：大屏常驻侧栏与抽屉两套布局都能收到，
+        // 不需要在每个屏幕/侧栏入口各披一层。
+        com.nox.feature.plugin.dsl.LocalChatInputStyle provides pluginChatInputStyle,
+        com.nox.feature.plugin.dsl.LocalPluginUiStyle provides pluginUiStyle
     ) {
     Box(modifier = Modifier.fillMaxSize()) {
     // 文件树里点开的图片走这个查看器；聊天面板自带一个，两层互不影响。

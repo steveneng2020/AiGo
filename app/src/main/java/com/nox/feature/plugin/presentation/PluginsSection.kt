@@ -991,6 +991,13 @@ internal fun pluginContentItems(content: PluginContent, languageTag: String): Li
     content.uiEntries.forEach { entry ->
         items += PluginContentItem(FeatherIcons.Settings, entry.title.resolve(languageTag), entry.slot.orEmpty())
     }
+    content.screens.forEach { entry ->
+        items += PluginContentItem(
+            FeatherIcons.Monitor,
+            entry.title.resolve(languageTag),
+            "整屏接管 · ${entry.target}"
+        )
+    }
     content.tools.forEach { entry ->
         items += PluginContentItem(
             FeatherIcons.Zap,

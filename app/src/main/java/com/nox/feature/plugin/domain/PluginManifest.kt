@@ -257,6 +257,112 @@ data class PluginBackupRef(val purpose: String)
  */
 data class PluginModelAccessRef(val purpose: String)
 
+/**
+ * 插件可整屏接管的宿主界面。
+ *
+ * 与 [PluginUiSlots] 的区别：槽位是在宿主布局里插一个条目，这里是把整个屏幕交给插件渲染。
+ * 新增目标属于宿主插件 API 变更，插件不能自定义。
+ */
+object PluginScreenTargets {
+    const val CHAT = "chat"
+    const val SETTINGS = "settings"
+    const val DRAWER = "drawer"
+
+    val ALL = setOf(CHAT, SETTINGS, DRAWER)
+}
+
+/**
+ * `contributes.screens[]` 声明的一条整屏接管。
+ *
+ * [file] 是包内静态 DSL 文件；[handler] 是 runtime 里返回 DSL 的 handler，二者只能出现一个。
+ */
+data class PluginScreenRef(
+    val id: String,
+    val title: LocalizedText,
+    val target: String,
+    val icon: String = "grid",
+    val file: String? = null,
+    val handler: String? = null
+)
+
+/**
+ * `contributes.styleTokens` —— 插件对宿主**既有**界面组件的样式覆盖。
+ *
+ * 与 `screens` 的区别：`screens` 是插件自己画一整屏，这里是不动功能、只改外观。
+ * 当前只开放聊天输入框；未声明的字段一直沿用宿主默认值。
+ */
+data class PluginStyleTokens(
+    /** 输入框圆角，单位 dp，0–48。 */
+    val chatInputRadius: Float? = null,
+    /** 输入框外阴影高度，单位 dp，0–40；0 为无阴影。 */
+    val chatInputShadow: Float? = null,
+    /** 输入框最小高度，单位 dp，0–160。 */
+    val chatInputMinHeight: Float? = null,
+    /** 输入框底色：语义令牌名（如 `surface`）或 `#RRGGBB`。 */
+    val chatInputColor: String? = null,
+
+    /** 用户气泡圆角，单位 dp，0–32。 */
+    val bubbleRadius: Float? = null,
+    /** 用户气泡底色。 */
+    val bubbleUserColor: String? = null,
+    /** 用户气泡文字颜色。 */
+    val bubbleUserTextColor: String? = null,
+
+    /** 顶栏底色；不写则不铺底色，跟随页面背景。 */
+    val topBarColor: String? = null,
+    /** 顶栏标题颜色。 */
+    val topBarTextColor: String? = null,
+
+    /** 侧栏底色。 */
+    val drawerColor: String? = null,
+    /** 侧栏条目文字颜色。 */
+    val drawerTextColor: String? = null,
+
+    /** 消息正文（助手侧）文字颜色，影响 Markdown 段落正文。 */
+    val messageTextColor: String? = null,
+
+    /** 通用图标色；仅影响原本用中性色的图标（顶栏、侧栏、输入栏），不影响选中态强调色。 */
+    val iconColor: String? = null
+) {
+    val isEmpty: Boolean
+        get() = listOf(
+            chatInputRadius, chatInputShadow, chatInputMinHeight, chatInputColor,
+            bubbleRadius, bubbleUserColor, bubbleUserTextColor,
+            topBarColor, topBarTextColor, drawerColor, drawerTextColor, messageTextColor,
+            iconColor
+        ).all { it == null }
+}
+
+/**
+ * 合并多个插件的样式令牌：每个字段取第一个声明它的插件，后面的只补前面没写的字段。
+ *
+ * 不做整组覆盖，是为了让「输入框插件」「气泡插件」能各管一块同时生效；
+ * 全组覆盖会变成“谁排在前面谁说了算”，另一个插件的声明直接失效，对使用者来说看不出原因。
+ *
+ * 顺序由调用方保证（宿主按插件 id 排序传入），同一组插件每次合并结果一致。
+ */
+fun mergeStyleTokens(tokens: List<PluginStyleTokens>): PluginStyleTokens? {
+    if (tokens.isEmpty()) return null
+    fun <T> pick(selector: (PluginStyleTokens) -> T?): T? =
+        tokens.firstNotNullOfOrNull { selector(it) }
+    val merged = PluginStyleTokens(
+        chatInputRadius = pick { it.chatInputRadius },
+        chatInputShadow = pick { it.chatInputShadow },
+        chatInputMinHeight = pick { it.chatInputMinHeight },
+        chatInputColor = pick { it.chatInputColor },
+        bubbleRadius = pick { it.bubbleRadius },
+        bubbleUserColor = pick { it.bubbleUserColor },
+        bubbleUserTextColor = pick { it.bubbleUserTextColor },
+        topBarColor = pick { it.topBarColor },
+        topBarTextColor = pick { it.topBarTextColor },
+        drawerColor = pick { it.drawerColor },
+        drawerTextColor = pick { it.drawerTextColor },
+        messageTextColor = pick { it.messageTextColor },
+        iconColor = pick { it.iconColor }
+    )
+    return if (merged.isEmpty) null else merged
+}
+
 /** `contributes.overlay.surfaces[]` 声明的宿主托管浮层；页面由宿主 WebView 加载。 */
 data class PluginOverlaySurfaceRef(
     val id: String,
@@ -303,6 +409,8 @@ data class PluginManifest(
     val agents: List<PluginContributionRef>,
     val workspaceTools: List<PluginWorkspaceToolRef> = emptyList(),
     val uiEntries: List<PluginUiEntryRef> = emptyList(),
+    val screens: List<PluginScreenRef> = emptyList(),
+    val styleTokens: PluginStyleTokens? = null,
     val runtime: PluginRuntimeRef? = null,
     val tools: List<PluginToolRef> = emptyList(),
     val hooks: List<PluginHookRef> = emptyList(),
@@ -318,7 +426,8 @@ data class PluginManifest(
 ) {
     /** 清单声明的贡献总数。 */
     val contributionCount: Int
-        get() = skills.size + agents.size + workspaceTools.size + uiEntries.size +
+        get() = skills.size + agents.size + workspaceTools.size + uiEntries.size + screens.size +
+            (if (styleTokens != null) 1 else 0) +
             tools.size + hooks.size + mcp.size + providers.size + (if (shizuku != null) 1 else 0) +
             (if (overlay != null) 1 + overlay.surfaces.size else 0) + (if (backup != null) 1 else 0) +
             (if (modelAccess != null) 1 else 0) + (if (configPage != null) 1 else 0)

@@ -2096,6 +2096,11 @@ fun SettingsScreen(
     }
     }
 
+    // 插件整屏接管：叠在设置页之上，插件槽位页若也打开了仍然盖在它上面。
+    com.nox.feature.plugin.dsl.PluginScreenOverlay(
+        target = com.nox.feature.plugin.domain.PluginScreenTargets.SETTINGS
+    )
+
     // 插件槽位页：覆盖整个设置页，关闭后回到原位置。
     activePluginPage?.let { page ->
         com.nox.feature.plugin.presentation.PluginPageHost(

@@ -187,12 +187,32 @@ data class PluginOverlayDefinition(
     val surfaces: List<PluginOverlaySurface>
 )
 
+/**
+ * 已校验存在性的整屏接管声明。
+ *
+ * [file] 指向包内静态 DSL 文档，[handler] 指向 runtime 里返回 DSL 的函数，两者恰好一个非空。
+ */
+data class PluginScreen(
+    val pluginId: String,
+    val localId: String,
+    val title: LocalizedText,
+    val target: String,
+    val icon: String,
+    val installDir: File,
+    val pluginVersion: String,
+    val file: File? = null,
+    val handler: String? = null
+) {
+    val key: String get() = pluginContributionName(pluginId, localId)
+}
+
 data class PluginContent(
     val icon: PluginIcon? = null,
     val skills: List<PluginSkill> = emptyList(),
     val agents: List<PluginAgent> = emptyList(),
     val workspaceTools: List<PluginWorkspaceTool> = emptyList(),
     val uiEntries: List<PluginUiEntry> = emptyList(),
+    val screens: List<PluginScreen> = emptyList(),
     val runtime: PluginRuntime? = null,
     val tools: List<PluginTool> = emptyList(),
     val hooks: List<PluginHook> = emptyList(),
@@ -220,6 +240,7 @@ object PluginContentLoader {
     const val MAX_RUNTIME_BYTES = 512 * 1024
     const val MAX_MCP_BYTES = 256 * 1024
     const val MAX_ICON_BYTES = 256 * 1024
+    const val MAX_SCREEN_BYTES = 512 * 1024
 
     private val WHITESPACE = Regex("\\s+")
 
@@ -233,6 +254,9 @@ object PluginContentLoader {
         }
         val uiEntries = manifest.uiEntries.mapNotNull {
             loadUiEntry(dir, manifest.id, manifest.version.toString(), it, errors)
+        }
+        val screens = manifest.screens.mapNotNull {
+            loadScreen(dir, manifest.id, manifest.version.toString(), it, errors)
         }
         val runtime = manifest.runtime?.let { loadRuntime(dir, manifest.id, it, errors) }
         if ((manifest.tools.isNotEmpty() || manifest.hooks.isNotEmpty()) && runtime == null) {
@@ -295,6 +319,7 @@ object PluginContentLoader {
                     agents = agents,
                     workspaceTools = workspaceTools,
                     uiEntries = uiEntries,
+                    screens = screens,
                     runtime = runtime,
                     tools = tools,
                     hooks = hooks,
@@ -513,6 +538,41 @@ object PluginContentLoader {
     }
 
     /** 槽位页 HTML 只校验存在性与大小，不解析内容；页面由宿主 WebView 加载。 */
+    /** 整屏接管的静态 DSL 文件只校验存在性与大小，解析留给渲染时做（需要带上限与安全校验）。 */
+    private fun loadScreen(
+        dir: File,
+        pluginId: String,
+        pluginVersion: String,
+        ref: PluginScreenRef,
+        errors: MutableList<PluginError>
+    ): PluginScreen? {
+        var file: File? = null
+        if (ref.file != null) {
+            val candidate = File(dir, ref.file)
+            val inside = candidate.canonicalFile.toPath().startsWith(dir.canonicalFile.toPath())
+            if (!inside || !candidate.isFile) {
+                errors += PluginError(PluginErrorCode.CONTENT_INVALID, "screens.${ref.id}.file")
+                return null
+            }
+            if (candidate.length() > MAX_SCREEN_BYTES) {
+                errors += PluginError(PluginErrorCode.CONTENT_INVALID, "screens.${ref.id}.file")
+                return null
+            }
+            file = candidate
+        }
+        return PluginScreen(
+            pluginId = pluginId,
+            localId = ref.id,
+            title = ref.title,
+            target = ref.target,
+            icon = ref.icon,
+            installDir = dir,
+            pluginVersion = pluginVersion,
+            file = file,
+            handler = ref.handler
+        )
+    }
+
     private fun loadUiEntry(
         dir: File,
         pluginId: String,

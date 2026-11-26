@@ -50,7 +50,8 @@ internal fun UserMessageBubble(
     val textColor = chatUserBubbleTextColor()
 
     val shape = RoundedCornerShape(
-        when (style) {
+        // 插件令牌优先；未声明时按气泡样式取宿主圆角
+        com.nox.feature.plugin.dsl.LocalPluginUiStyle.current.bubbleRadius?.dp ?: when (style) {
             ChatBubbleStyle.SQUARE -> 2.dp
             ChatBubbleStyle.MINIMAL, ChatBubbleStyle.GREEN -> 16.dp
             else -> ChatStyle.bubbleCorner

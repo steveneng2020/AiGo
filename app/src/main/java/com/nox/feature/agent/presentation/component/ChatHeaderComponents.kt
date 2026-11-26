@@ -66,6 +66,8 @@ import compose.icons.feathericons.Edit3
 import compose.icons.feathericons.Terminal
 import kotlinx.coroutines.delay
 import java.util.Locale
+import com.nox.feature.plugin.dsl.pluginIconTint
+import com.nox.feature.plugin.dsl.resolve
 
 @Composable
 internal fun ChatHeader(
@@ -93,7 +95,9 @@ internal fun ChatHeader(
     onRenameSession: (() -> Unit)? = null
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.background
+        // 顶栏底色：插件令牌优先，未声明时跟随页面背景
+        color = com.nox.feature.plugin.dsl.LocalPluginUiStyle.current.topBarColor
+            .resolve(MaterialTheme.colorScheme.background)
     ) {
         Column(
             modifier = Modifier
@@ -117,7 +121,7 @@ internal fun ChatHeader(
                         Icon(
                             FeatherIcons.Menu,
                             contentDescription = stringResource(R.string.chat_open_sidebar),
-                            tint = MaterialTheme.colorScheme.onSurface,
+                            tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -139,7 +143,8 @@ internal fun ChatHeader(
                             fontWeight = FontWeight.SemiBold,
                             letterSpacing = (-0.1).sp
                         ),
-                        color = MaterialTheme.colorScheme.onBackground,
+                        color = com.nox.feature.plugin.dsl.LocalPluginUiStyle.current.topBarTextColor
+                            .resolve(MaterialTheme.colorScheme.onBackground),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = if (onRenameSession != null) {
@@ -190,7 +195,7 @@ internal fun ChatHeader(
                     Icon(
                         FeatherIcons.Edit3,
                         contentDescription = stringResource(R.string.chat_new_session),
-                        tint = MaterialTheme.colorScheme.onSurface,
+                        tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                         modifier = Modifier.size(19.dp)
                     )
                 }
@@ -266,7 +271,7 @@ private fun OverlayMenuButton(
                 FeatherIcons.MoreVertical,
                 contentDescription = stringResource(R.string.chat_more_actions),
                 // 与左侧汉堡键同色：顶栏三个入口放在同一条视觉线上
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                 modifier = Modifier.size(20.dp)
             )
         }
