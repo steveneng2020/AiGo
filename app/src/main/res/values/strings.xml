@@ -2411,7 +2411,7 @@
     <string name="context_panel_input">输入</string>
     <string name="context_panel_output">输出</string>
     <string name="context_panel_output_with_reasoning">%1$s（其中推理 %2$s）</string>
-    <string name="context_panel_cache_hit">缓存命中</string>
+    <string name="context_panel_cache_hit">缓存命中（累计）</string>
     <string name="context_panel_cache_miss">未命中</string>
     <string name="context_panel_cache_write">缓存写入</string>
     <string name="context_panel_ttfb">首 token 平均</string>
@@ -2439,8 +2439,8 @@
 <string name="context_panel_cache_read">缓存读取</string>
     <string name="context_panel_section_session">会话统计</string>
     <string name="context_panel_section_auto_compact">自动压缩</string>
-    <string name="context_panel_last_compaction">上次压缩（共 %1$d 次）</string>
-    <string name="context_panel_compaction_total">压缩产出合计</string>
+    <string name="context_panel_last_compaction">上次压缩（单次）</string>
+    <string name="context_panel_compaction_total">压缩产出合计（共 %1$d 次）</string>
     <string name="context_panel_subagent_count">子代理（%1$d 个）</string>
     <string name="context_panel_subagent_output">子代理输出</string>
     <string name="context_panel_non_incremental_miss">非增量未命中</string>

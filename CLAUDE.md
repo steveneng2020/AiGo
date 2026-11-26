@@ -170,6 +170,56 @@ aigo gate --fast   # 跳过单元测试（只改 UI/资源、或赶时间时用�
   门禁 `pre-commit` 的「APK 包含最新源码」一项会自动拦。
 - 归档到 `build-output` 后，装机前再核对一次 `versionCode` 与时间戳。
 
+### 8a-2. 绝不并行跑两个 Gradle 构建
+
+> 2026-11-26 的教训：为赶进度同时起了两个构建（一个编译验证、一个出包），
+> 两个进程互相 `--stop` 打断 daemon，连续失败 5 次以上。典型报错：
+>
+> - `kspUniversalDebugKotlin` 报 `generated/ksp/universalDebug/java/dagger`
+> - `mergeExtDexArmsoloDebug` 报 `failed to make parent directories`
+> - Kotlin daemon 持锁导致 `Unable to delete directory .../kotlin-classes`
+> - `mergeArmsoloDebugResources` 报 `NoSuchFileException`
+>
+> 更糟的是还会连带杀掉对方 daemon（`Gradle build daemon has been stopped:
+> stop command received`），两个构建一起废掉。
+
+**铁律**：
+
+- 启动构建前先查：`ps -ef | grep "[j]ava.*gradle"`。**有输出就等它结束。**
+- **不要用 `pgrep -f "GradleWrapperMain"` 判断**：它会匹配到自己的轮询 shell
+  （命令行里含这个字符串），导致误判「有构建在跑」并空等。方括号 `[j]ava`
+  的写法能让 grep 排除自身。
+- 构建状态损坏时不要反复重试，直接清干净重建：
+  `sh gradlew --stop` → `rm -rf app/build build` → 单构建全量重建。
+  注意删了 `app/build` 后**不能**只跑 `packageArmsoloDebug`（会缺 dex）。
+
+### 8a-3. 判断版本历史前必须先 fetch tag
+
+> 2026-11-26 的教训：用户问「v1.0.3 发过 Release 吗」，只查了本地 tag 就断言
+> 「从未发布过」，实际早已发布。根因是本地 tag 列表是旧的，没先 `git fetch --tags`。
+> 用户拿截图指出后才纠正。
+
+**铁律**：任何「某版本是否存在/是否发布」的判断，先执行
+
+```bash
+git fetch --tags origin
+```
+
+再查。只信本地 ref 会得出错误结论，而且这类错误会直接误导后续决策
+（比如据此决定跳过某个版本号）。
+
+### 8a-4. 看构建日志必须找 `What went wrong`
+
+> 2026-11-26 的教训：构建失败后用 `tail -6` 看日志，只看到
+> `BUILD FAILED` 和几句 Gradle 版本警告，误以为「没报错」，
+> 白跑了两轮。实际错误在 `What went wrong` 段，被 `tail` 截掉了。
+
+**铁律**：
+
+- 判断构建成败看日志里的 `What went wrong` 段，或者 `grep -E "BUILD |What went wrong"`。
+- 不要用 `tail -N`（N 太小）下结论。
+- 日志统一写到 `/tmp/vcN.log` 之类固定路径，便于失败后复查。
+
 ### 8b. 门禁必须真的会拦，不是写在文档里
 
 > 2026-11-25 的教训：`aigo-gate.sh` 写了八步检查，但 `commit-msg` 钩子没有执行位、
@@ -198,6 +248,47 @@ aigo gate --fast   # 跳过单元测试（只改 UI/资源、或赶时间时用�
   只验证通过等于没验证——检查逻辑写错时会永远显示 PASS。
 - 存量违规用文件级 `ui-tokens-exempt: <原因>` 显式豁免，豁免是记录下来的技术债；
   不允许为了「让门禁变绿」把规则改宽或删掉检查项。
+
+### 8b-2. 钩子丢失执行位 = 门禁静默失效
+
+> 2026-11-26 的教训：刚给 `pre-push` 加了「改 .kt 就跑单测」的检查，
+> 推送时 git 只打印一行提示就照常放行：
+>
+> ```
+> hint: The '.githooks/pre-push' hook was ignored because it's not set as executable.
+> ```
+>
+> 检查根本没跑，改动推上去了。索引里记的是 100755、磁盘上却是 600——
+> 检出时权限位没保住。这是同一类问题第二次出现（`pre-commit` 也丢过一次）。
+
+**铁律**：
+
+- 钩子必须有执行位：`chmod 755 .githooks/*`。
+- `pre-commit` 第 8 项会自检三个钩子的执行位，缺失即拦；新增钩子时记得
+  把它加进自检列表，并确认索引里是 `100755`（`git ls-files -s .githooks/`）。
+- 看到 `hook was ignored` 这类 hint 一律当错误处理，不要忽略——
+  **门禁不跑比没有门禁更危险**，因为人会以为检查过了。
+
+### 8b-3. 改了行为必须同步改测试断言
+
+> 2026-11-26 的教训：把缓存命中率从整数百分比改成两位小数（`78.69%`），
+> 只改了实现没改单测断言。CI 的 `verify` 阶段 1379 个测试里 5 个失败：
+>
+> ```
+> CacheHitRateTest > rounds_to_whole_percent FAILED
+> PanelValueFormatTest > 命中率向下取整而不是四舍五入 FAILED
+> 1379 tests completed, 5 failed
+> ```
+>
+> 三个 Release APK 全都构建成功，却卡在测试这一关，Release job 被跳过，
+> tag 和 Release 都没创建。
+
+**铁律**：
+
+- 改任何「用户可见的数值/格式/文案」后，`rg` 一遍对应测试文件，同步更新断言。
+- 测试是**规格**，不是障碍：断言反映旧行为时改断言，不要删测试。
+- 推送前本地跑一次 `aigo test`（`pre-push` 也会跑，但别依赖它兜底）。
+- 判断「改的是否只有文案」不够——命中率、耗时、小数位这类都算行为变化。
 
 ### 8c. 长时间构建必须派子代理盯守并即时汇报
 
@@ -524,6 +615,19 @@ rm -rf app/build/generated app/build/kspCaches app/build/kotlin
 ### 8. 一次只改一个变量，否则无法归因
 
 多个修复一起上，成功了不知道哪个起作用，失败了也不知道哪个有害。分享问题之所以拖了 5 轮，很大原因是每轮同时改 2~3 处（MIME + ClipData + flags），结果永远无法判断哪处有效。
+
+### 9. 自己的轮询命令会污染进程判断
+
+> 2026-11-26 的教训：用 `pgrep -f "GradleWrapperMain"` 判断构建是否在跑，
+> 结果匹配到了自己写的等待循环（它的命令行里含这个字符串），
+> 误判「构建已跑 20 分钟还没结束」，白等了 20 分钟。
+
+**做法**：
+
+- 判断进程用 `ps -ef | grep "[j]ava.*gradle"`，方括号让 grep 排除自身。
+- 任何 `pgrep -f <字符串>` / `ps | grep <字符串>` 都可能匹配到发起查询的那个 shell，
+  尤其是字符串出现在自己的命令行里时。
+- 更可靠的是查具体指标：产物文件 mtime 是否在变、`/proc/<pid>/stat` 的 utime 是否增长。
 
 ## 基本约定
 

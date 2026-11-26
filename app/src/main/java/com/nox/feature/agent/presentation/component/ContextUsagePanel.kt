@@ -479,8 +479,12 @@ fun ContextUsagePanel(
             val hit = if (stats.lastCompactionInputTokens > 0) {
                 "· 命中 ${hitPercent(stats.lastCompactionCachedTokens, stats.lastCompactionInputTokens)}"
             } else ""
+            // 这一行是「最近一次」压缩，不是累计，label 必须写「单次」。
+            // 原先写作「上次压缩（共 N 次）」，把总次数挂在单次值旁边，
+            // 与上面「缓存命中（累计）」混在一起时，两个命中率（单次 0.23%
+            // 与累计 99.93%）看着像自相矛盾，实际是统计范围不同。
             PanelValueRow(
-                label = stringResource(R.string.context_panel_last_compaction, stats.compactionCalls),
+                label = stringResource(R.string.context_panel_last_compaction),
                 value = formatExactTokenCount(stats.lastCompactionInputTokens),
                 suffix = "tok",
                 note = hit
@@ -488,8 +492,11 @@ fun ContextUsagePanel(
             if (stats.compactionCalls > 1) {
                 // 合计 = 输入 + 输出：压缩要读入整段上下文再写摘要，
                 // 只报输出会把真实代价低估一个数量级（输入通常是输出的上百倍）。
+                // 总次数挂在这一行：它本身就是各次压缩的合计，语义对得上。
                 PanelValueRow(
-                    label = stringResource(R.string.context_panel_compaction_total),
+                    label = stringResource(
+                        R.string.context_panel_compaction_total, stats.compactionCalls
+                    ),
                     value = formatExactTokenCount(
                         stats.compactionInputTokens + stats.compactionOutputTokens
                     ),

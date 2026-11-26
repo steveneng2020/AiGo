@@ -2212,7 +2212,7 @@
     <string name="context_panel_input">Input</string>
     <string name="context_panel_output">Output</string>
     <string name="context_panel_output_with_reasoning">%1$s (reasoning %2$s)</string>
-    <string name="context_panel_cache_hit">Cache hit</string>
+    <string name="context_panel_cache_hit">Cache hit (total)</string>
     <string name="context_panel_cache_miss">Cache miss</string>
     <string name="context_panel_cache_write">Cache write</string>
     <string name="context_panel_ttfb">Time to first token</string>
@@ -2238,8 +2238,8 @@
 <string name="context_panel_cache_read">Cache read</string>
     <string name="context_panel_section_session">Session</string>
     <string name="context_panel_section_auto_compact">Auto-compact</string>
-    <string name="context_panel_last_compaction">Last compaction (%1$d total)</string>
-    <string name="context_panel_compaction_total">Compaction output</string>
+    <string name="context_panel_last_compaction">Last compaction (single)</string>
+    <string name="context_panel_compaction_total">Compaction output (%1$d total)</string>
     <string name="context_panel_subagent_count">Subagents (%1$d)</string>
     <string name="context_panel_subagent_output">Subagent output</string>
     <string name="context_panel_non_incremental_miss">Non-incremental miss</string>

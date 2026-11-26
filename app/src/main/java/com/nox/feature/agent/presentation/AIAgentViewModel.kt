@@ -1056,11 +1056,36 @@ class AIAgentViewModel @Inject constructor(
         _sessionToolPoints.asStateFlow()
 
     /** 刷新某个会话的用量明细；面板打开与每次调用结束都会调。 */
-    fun refreshSessionStats(sid: String) {
+    fun refreshSessionStats(sid: String, expectedCalls: Int = 0) {
         viewModelScope.launch {
-            val points = runCatching {
+            // 调用记录由 workflow 在 finally 里异步落库，与这里不是同一个协程，先后顺序无保证。
+            // 查早了会读到「本轮记录还没写进去」的快照，表现为气泡统计行里：
+            //   ↑↓ token 走消息表兜底照样显示，
+            //   但首 token / 输出速度只认调用记录，于是右边两项过一会儿才冒出来。
+            //
+            // 只在「本次确实刚发生过一次成功调用」时才补查一次（expectedCalls = 1）。
+            // 失败/取消的调用不会写进 getSessionCallPoints（它带 status='success' 过滤），
+            // 没记录时补查也是白等，所以不重试。
+            // 判据是「这次查到的最后一条，比上次看到的更新」，而不是「一条都没有」：
+            // 历史会话本来就有记录，points 非空但本轮那条还没落库，
+            // 只看 isEmpty 的话永远不会补查，表现就是本轮统计行右边两项一直不出来。
+            val seenLatest = _sessionCallPoints.value[sid]?.lastOrNull()?.createdAt ?: 0L
+            var points = runCatching {
                 llmCallRecordDao.getSessionCallPoints(sid).first()
             }.getOrDefault(emptyList())
+            if (expectedCalls > 0) {
+                // 退避重试而不是只查一次：写库发生在 workflow 的 finally，
+                // 那一段还要先算 reasoning plan 再 insert，慢的时候远超单次 120ms。
+                // 三次累计最多等 120+240+360 = 720ms，足以覆盖正常写入；
+                // 真查不到（调用失败/被取消，不进 status='success'）就停，不无限等。
+                for (delayMs in CALL_POINT_RETRY_DELAYS_MS) {
+                    if ((points.lastOrNull()?.createdAt ?: 0L) > seenLatest) break
+                    kotlinx.coroutines.delay(delayMs)
+                    points = runCatching {
+                        llmCallRecordDao.getSessionCallPoints(sid).first()
+                    }.getOrDefault(emptyList())
+                }
+            }
             if (points.isNotEmpty()) {
                 _sessionCallPoints.value = _sessionCallPoints.value + (sid to points)
             }
@@ -1372,6 +1397,15 @@ class AIAgentViewModel @Inject constructor(
 
         /** 子代理卡片状态保留条数：只服务当前展示，超出按开始时间淘汰最早的一批。 */
         const val MAX_SUBAGENT_CARDS = 50
+        /**
+         * 调用记录落库与统计刷新之间的竞态等待：查不到本轮记录时按这些间隔依次重查。
+         *
+         * 为什么不止一次：写库在 workflow 的 finally 里，insert 之前还要算 reasoning plan、
+         * 拼整行实体，出现一次 120ms 内写不完很常见。三次退避累计最多 720ms，
+         * 足够覆盖正常写入；仍查不到说明这次调用没进 status='success'（失败/取消），
+         * 继续等也没意义，循环自然结束。
+         */
+        private val CALL_POINT_RETRY_DELAYS_MS = longArrayOf(120L, 240L, 360L)
         /** wakeLock 超时保险：构建、装依赖类工具动辄十几分钟，给足 60 分钟；任务正常结束会主动释放。 */
         const val KEEPALIVE_TIMEOUT_MS = 60 * 60 * 1000L
 
@@ -2304,7 +2338,9 @@ class AIAgentViewModel @Inject constructor(
                         if (event.inputTokens > 0 || event.outputTokens > 0) {
                             _llmCallEvents.tryEmit(LlmCallEvent(sessionId, event.inputTokens, event.outputTokens, event.cachedInputTokens))
                             // 每次调用结束刷一次会话统计与调用时间线，面板与轮末明细都读这两份缓存。
-                            refreshSessionStats(sessionId)
+                            // expectedCalls = 1：这次事件本身就代表刚发生一次调用，
+                            // 库里理应有对应记录；查不到就是落库还没完成，需要等一下重查。
+                            refreshSessionStats(sessionId, expectedCalls = 1)
                             // 同步写库：工具循环下一轮 CallLlm 前会重读 lastInputTokens 判断压缩，
                             // 异步写库可能读到压缩前的旧大值导致重复触发压缩。
                             runCatching {
@@ -2317,7 +2353,7 @@ class AIAgentViewModel @Inject constructor(
                             // 上游没给 token 时也透出一次 0 事件，驱动面板用兜底路径刷新，
                             // 否则最近 input/output 一直停在上一轮真实值，上游切换无感。
                             _llmCallEvents.tryEmit(LlmCallEvent(sessionId, 0, 0, 0))
-                            refreshSessionStats(sessionId)
+                            refreshSessionStats(sessionId, expectedCalls = 1)
                         }
                         event.persisted?.complete(Unit)
                     }
@@ -3139,6 +3175,13 @@ class AIAgentViewModel @Inject constructor(
         // 本二改版固定以完整权限运行：切到任何会话时把其模式拉回 AUTO（不再提供模式切换按钮）。
         ensureAutoMode(id)
         cleanupStalePendingTools(id)
+        // 进会话时把调用时间线读进来。
+        //
+        // sessionCallPoints 是纯内存缓存（Map<sessionId, List<SessionCallPoint>>），
+        // 进程重启后为空，而气泡里的「首 token 平均 / 输出速度」只认这份数据
+        // （↑↓ token 能退回消息表兜底，这两项没有对应字段）。结果是冷启动打开历史会话时，
+        // 统计行只剩左半边，右边两项一直不出现，直到又发一条消息才补上。
+        refreshSessionStats(id)
     }
 
     /**

@@ -681,6 +681,18 @@ else
 fi
 
 # ---------- 4. 冒烟编译 ----------
+step "3b/8 README 与 CHANGELOG 同步"
+if [ -f scripts/gen-readme-highlights.py ] && [ -f README.md ]; then
+  if python3 scripts/gen-readme-highlights.py --check >/tmp/gate_readme.log 2>&1; then
+    ok "README「新增与改进」与 CHANGELOG 一致"
+  else
+    bad "README「新增与改进」已落后："
+    sed 's/^/        /' /tmp/gate_readme.log
+  fi
+else
+  ok "无生成脚本，跳过"
+fi
+
 step "4/8 冒烟编译"
 if sh gradlew :app:compileUniversalDebugKotlin --offline >/tmp/gate_build.log 2>&1; then
   ok "$(grep -oE 'BUILD SUCCESSFUL in [0-9a-z ]+' /tmp/gate_build.log | tail -1)"

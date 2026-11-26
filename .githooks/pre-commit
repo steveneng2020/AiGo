@@ -49,6 +49,19 @@ if [ -f scripts/check_changelog_date.py ]; then
   fi
 fi
 
+# ---------- 1a-2. README 的「新增与改进」是否跟上了 CHANGELOG ----------
+# README 那段是给新访客看的「这个项目做了什么」，从 CHANGELOG 自动生成。
+# 手写维护必然落后（2026-11-26 发现只列了 5 条，而实际有 23 条重点）。
+if [ -f scripts/gen-readme-highlights.py ] && [ -f README.md ]; then
+  if python3 scripts/gen-readme-highlights.py --check >/tmp/precommit_readme.log 2>&1; then
+    green "  ✔ README 新增与改进已同步"
+  else
+    red "  ✘ README 的「新增与改进」落后于 CHANGELOG："
+    sed 's/^/      /' /tmp/precommit_readme.log
+    fail=1
+  fi
+fi
+
 # ---------- 1b. UI 改动的量化验收 ----------
 # 踩过的坑（本项就是因为这个才加的）：改了面板布局，靠目测整屏截图判「通过」，
 # 实际数值列右边缘相差 107px——数字在中间飘、单位孤零零贴右。
