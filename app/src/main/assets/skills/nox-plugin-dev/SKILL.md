@@ -78,7 +78,7 @@ my-plugin-1.0.0.zip
 
 ---
 
-## 三、contributes 的 13 种类型
+## 三、contributes 的 15 种类型
 
 ```json
 "contributes": {
@@ -86,6 +86,8 @@ my-plugin-1.0.0.zip
   "agents":         [],
   "workspaceTools": [],
   "uiEntries":      [],
+  "screens":        [],
+  "styleTokens":    null,
   "tools":          [],
   "hooks":          [],
   "mcp":            [],
@@ -179,7 +181,194 @@ my-plugin-1.0.0.zip
 - 条目里出现未知字段会报 `UNSUPPORTED_FIELD`，同样导致清单无效
 - 动作型入口执行前若 `confirm: true`，宿主先弹确认框
 
-### 5. runtime —— 独立进程
+### 5. screens —— 整屏接管（JSON DSL）
+
+把宿主的一整个屏幕交给插件渲染。与 `uiEntries` 的区别：槽位是在宿主布局里插一个条目，
+`screens` 是整屏替换。
+
+```json
+"screens": [
+  {
+    "id": "custom-chat",
+    "title": { "zh-CN": "自定义聊天页" },
+    "target": "chat",
+    "icon": "grid",
+    "file": "ui/chat.json"
+  }
+]
+```
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `id` | 是 | 插件内唯一局部 ID |
+| `title` | 是 | 本地化标题 |
+| `target` | 是 | 只能是 `chat` / `settings` / `drawer` 三者之一 |
+| `icon` | 否 | Feather 图标名，缺省 `grid` |
+| `file` | 二选一 | 包内静态 DSL 文件，必须以 `.json` 结尾，上限 512KB |
+| `handler` | 二选一 | runtime 里返回 DSL 的函数名，需要同时声明 `runtime` |
+
+硬性约束：
+
+- `file` 与 `handler` 必须 **恰好有一个**，两个都写或都不写都判无效
+- 同一插件对同一 `target` 只能声明一条，否则清单无效
+- 最多 2 条
+- 声明 `handler` 却没写 `runtime` → 清单无效
+
+启用后，对应屏幕会被插件界面覆盖，顶部常驻一条「「插件名」接管中 · 刷新 · 恢复默认」提示条，
+使用者可随时退回宿主默认界面。
+
+#### DSL 文档格式
+
+```json
+{
+  "v": 1,
+  "state": { "count": 0 },
+  "root": {
+    "type": "column",
+    "style": { "gap": 12, "padding": 16 },
+    "children": [
+      { "type": "text", "text": "你好", "style": { "fontSize": 20, "weight": 600 } },
+      { "type": "button", "text": "点我", "action": { "type": "event", "name": "tap" } }
+    ]
+  }
+}
+```
+
+- `v` 是 DSL 版本，当前只接受 `1`；对不上整份文档拒绝渲染
+- `state` 是插件自己的初始状态，每次交互都会原样回传，省得插件自己记会话状态
+- `root` 是根节点
+
+**支持的节点**（`type`，出现表外类型整份文档判废）：
+
+| 分类 | 节点 |
+|---|---|
+| 布局 | `column` `row` `box` `card` `scroll` `spacer` `divider` |
+| 内容 | `text` `icon` `image` `badge` `progress` |
+| 交互 | `button` `iconButton` `switch` `slider` `textField` |
+
+节点通用字段：`id`、`style`、`children`、`action`。
+类型专属字段：`text`、`icon`、`src`（图片地址）、`placeholder`、`value`、`checked`、`progress`、`min` / `max`、`size`、`width` / `height`。
+
+**`style` 可用字段**：
+
+```json
+"style": {
+  "background": "cardSurface",
+  "foreground": "#FF3482FF",
+  "border": "subtleBorder",
+  "radius": 16,
+  "padding": 16,
+  "gap": 12,
+  "fontSize": 15,
+  "weight": 600,
+  "align": "center",
+  "fillWidth": true
+}
+```
+
+- 颜色写语义令牌名（`primary` `surface` `onSurface` `cardSurface` `pageBackground` `mutedSurface` `subtleText` `subtleBorder` `success` `warning` `info` `error` 等）
+  就自动跟随宿主亮/暗主题；也可写 `#RRGGBB` / `#AARRGGBB` 固定色
+- `padding` 支持单个数字、`[垂直, 水平]`、`[上, 右, 下, 左]`
+- `weight` 取 400 / 500 / 600 / 700
+
+**`action` 三种**：
+
+```json
+{ "type": "event", "name": "submit" }
+{ "type": "close" }
+{ "type": "openUrl", "url": "https://example.com" }
+```
+
+- `event` 把交互回传给插件 `handler`，由插件返回新文档实现刷新（唯一能改界面的途径）
+- `close` 等于使用者点「恢复默认」
+- `openUrl` 仅接受 `https://`
+- 除这三种以外一律不认，DSL 无法触发任意宿主能力
+
+#### 动态界面的往返
+
+写了 `handler` 的屏幕，宿主在打开时调一次，参数是 `{ target, screen }`，
+插件需要返回一份完整 DSL 文档（`{"v":1,"root":{...}}`，或包一层 `{"document": ...}`）。
+
+每次交互宿主再调同一个 handler，参数是：
+
+```json
+{
+  "target": "chat",
+  "screen": "custom-chat",
+  "action": "event",
+  "event": "submit",
+  "nodeId": "name-field",
+  "value": "当前输入值",
+  "state": { "count": 0 }
+}
+```
+
+返回值同样是完整 DSL 文档——宿主不维护插件的业务状态，每次都由插件重新给出整份界面。
+想报错就返回 `{"error": "原因"}`，宿主会把原因显示在接管界面上。
+
+最小 handler：
+
+```js
+'ui.dashboard': async (args) => ({
+  v: 1,
+  state: { clicks: args.state?.clicks || 0 },
+  root: {
+    type: 'column',
+    style: { gap: 12, padding: 16 },
+    children: [
+      { type: 'text', text: `已点击 ${args.state?.clicks || 0} 次`, style: { fontSize: 18 } },
+      { type: 'button', text: '点一下', action: { type: 'event', name: 'tap' } },
+    ],
+  },
+})
+```
+
+> 注意：`event` 到达时 `args.event === 'tap'`，插件根据它决定把 `clicks` 加一。
+
+#### 限制
+
+- 节点最多 600 个，嵌套最深 24 层，单个文本最长 4000 字
+- 图片 `src` 只接受 `https://`，单张上限 4MB
+- 文档超过 512KB 直接拒绝
+
+### 6. styleTokens —— 改宿主既有组件的样式
+
+`screens` 是插件自己画一整屏，`styleTokens` 相反：**不动功能，只改外观**。
+当前开放的是聊天输入框。
+
+```json
+"styleTokens": {
+  "chatInputRadius": 26,
+  "chatInputShadow": 26,
+  "chatInputMinHeight": 58,
+  "chatInputColor": "cardSurface"
+}
+```
+
+| 字段 | 范围 | 说明 |
+|---|---|---|
+| `chatInputRadius` | 0–48 | 输入框圆角（dp），宿主默认 20 |
+| `chatInputShadow` | 0–40 | 外阴影高度（dp），宿主默认 18；写 0 去掉阴影 |
+| `chatInputMinHeight` | 0–160 | 最小高度（dp），不写则不限制 |
+| `chatInputColor` | 语义令牌或 `#RRGGBB` | 输入框底色，宿主默认 `surface` |
+| `bubbleRadius` | 0–32 | 用户气泡圆角（dp），宿主默认 10 |
+| `bubbleUserColor` | 同上 | 用户气泡底色 |
+| `bubbleUserTextColor` | 同上 | 用户气泡文字色 |
+| `topBarColor` | 同上 | 聊天顶栏底色 |
+| `topBarTextColor` | 同上 | 顶栏标题色 |
+| `drawerColor` | 同上 | 会话侧栏底色 |
+| `drawerTextColor` | 同上 | 侧栏条目文字色 |
+| `messageTextColor` | 同上 | 消息正文（Markdown 段落）文字色 |
+| `iconColor` | 同上 | 通用图标色；只影响原本用中性色的图标，不动选中态强调色 |
+
+- 全部字段可选，只写想改的，其余继续用宿主值
+- 不声明 `runtime` 也能用
+- **多个插件同时声明时按字段合并**：每个字段取第一个声明它的插件（按插件 id 排序），
+  所以「输入框插件」和「气泡插件」可以各管一块、同时生效；同名字段才会覆盖
+- 写了越界值或非法颜色 → 清单无效（不会静默回退默认值）
+- `iconColor` 不覆盖按钮选中态、错误色等强调图标，避免把状态语义改乱
+
+### 7. runtime —— 独立进程
 
 ```json
 "runtime": {
@@ -204,7 +393,7 @@ my-plugin-1.0.0.zip
 
 不管设不设 `resident`，runtime 都要自己保证进程不因异常退出，写法见「四、runtime 的 JSON-RPC 协议 → 进程必须自己保证不退出」。
 
-### 6. hooks —— 生命周期与拦截
+### 8. hooks —— 生命周期与拦截
 
 ```json
 { "id": "h1", "event": "agent.tool.before", "mode": "transform", "handler": "hooks.before" }
@@ -278,7 +467,7 @@ sendEvent('chat.permission.requested', {
 
 `plugin.event` 是插件主动推送的通道，不受 hook 事件表限制，事件名自定义。
 
-### 7. mcp —— 提供 MCP 服务器
+### 9. mcp —— 提供 MCP 服务器
 
 ```json
 "mcp": [ { "id": "fs", "file": "mcp/fs.json" } ]
@@ -286,7 +475,7 @@ sendEvent('chat.permission.requested', {
 
 装好后服务器名带 `plugin__` 前缀，由插件启停控制，不会写进用户的 mcp.json。
 
-### 8. providers —— 注册 AI 供应商
+### 10. providers —— 注册 AI 供应商
 
 ```json
 "providers": [
@@ -306,7 +495,7 @@ sendEvent('chat.permission.requested', {
 
 注册后出现在「设置 → AI 供应商」列表，带「插件」标签；宿主侧 `id` 是 `plugin:<插件ID>:<供应商ID>`。
 
-### 9. shizuku / overlay / backup / modelAccess
+### 11. shizuku / overlay / backup / modelAccess
 
 这四个都只接受 `purpose` 字段（说明用途，会显示给用户）：
 
@@ -343,7 +532,7 @@ sendEvent('chat.permission.requested', {
 
 `modelAccess` 声明后才能用 runtime 的 `host.model.*` 创建模型句柄、发起流式调用、读图片。
 
-### 10. configPage —— 插件配置页
+### 12. configPage —— 插件配置页
 
 ```json
 "configPage": "pages/config.html"
@@ -361,7 +550,7 @@ await aicode.fs.write('data://config.json', JSON.stringify(cfg));
 
 `data://` 目录在卸载插件时自动清除，不进宿主备份。需要跨设备同步或进备份的数据，用 `contributes.backup` 配合 `backup.export.before` hook 自己处理。
 
-### 11. 页面里的 UI 组件库
+### 13. 页面里的 UI 组件库
 
 引了 `/__aicode/aicode-ui-vue.js` 后，`app.use(AicodeUI)` 即可用宿主组件，它们自动跟随宿主主题（暗色/亮色、字号缩放），比自己写样式更省事。
 

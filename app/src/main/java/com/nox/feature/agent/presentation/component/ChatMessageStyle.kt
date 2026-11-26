@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import com.nox.feature.plugin.dsl.resolve
 import com.nox.R
 import com.nox.core.theme.Spacing
 import com.nox.feature.settings.data.repository.ChatBubbleStyle
@@ -91,15 +92,19 @@ internal object ChatStyle {
 /** 当前生效的聊天气泡样式；由设置页写入，CompositionLocal 供消息区读取。 */
 val LocalChatBubbleStyle = staticCompositionLocalOf { ChatBubbleStyle.CLASSIC }
 
-/** 用户消息底色：按当前气泡样式取色，未选样或主题不明时回退 QQ 风白底。 */
+/** 用户消息底色：插件令牌优先，否则按当前气泡样式取色。 */
 @Composable
-internal fun chatUserBubbleColor(): Color = when (LocalChatBubbleStyle.current) {
-    ChatBubbleStyle.CLASSIC, ChatBubbleStyle.SHADOW, ChatBubbleStyle.MINIMAL -> MaterialTheme.colorScheme.surface
-    ChatBubbleStyle.DARK -> Color(0xFF2B2B2E)
-    ChatBubbleStyle.SQUARE -> MaterialTheme.colorScheme.surface
-    ChatBubbleStyle.GREEN -> Color(0xFF95EC69)
-    ChatBubbleStyle.VALENTINE -> MaterialTheme.colorScheme.surfaceVariant
-    ChatBubbleStyle.ORIGINAL -> MaterialTheme.colorScheme.primaryContainer
+internal fun chatUserBubbleColor(): Color {
+    val fallback = when (LocalChatBubbleStyle.current) {
+        ChatBubbleStyle.CLASSIC, ChatBubbleStyle.SHADOW, ChatBubbleStyle.MINIMAL -> MaterialTheme.colorScheme.surface
+        ChatBubbleStyle.DARK -> Color(0xFF2B2B2E)
+        ChatBubbleStyle.SQUARE -> MaterialTheme.colorScheme.surface
+        ChatBubbleStyle.GREEN -> Color(0xFF95EC69)
+        ChatBubbleStyle.VALENTINE -> MaterialTheme.colorScheme.surfaceVariant
+        ChatBubbleStyle.ORIGINAL -> MaterialTheme.colorScheme.primaryContainer
+    }
+    return com.nox.feature.plugin.dsl.LocalPluginUiStyle.current.bubbleUserColor
+        .resolve(fallback)
 }
 
 /** 用户气泡描边色：按样式返回；无描边样式返回透明（调用方不再画边）。 */
@@ -116,13 +121,18 @@ internal fun chatUserBubbleBorderColor(): Color = when (LocalChatBubbleStyle.cur
     ChatBubbleStyle.ORIGINAL -> Color.Transparent
 }
 
-/** 用户消息文字：白底黑字（深色主题为浅色字）。 */
+/** 用户消息文字：插件令牌优先，否则白底黑字（深色主题为浅色字）。 */
 @Composable
-internal fun chatUserBubbleTextColor(): Color = when (LocalChatBubbleStyle.current) {
-    ChatBubbleStyle.DARK -> Color(0xFFF2F2F4)
-    ChatBubbleStyle.ORIGINAL -> MaterialTheme.colorScheme.onPrimaryContainer
-    else -> MaterialTheme.colorScheme.onSurface
+internal fun chatUserBubbleTextColor(): Color {
+    val fallback = when (LocalChatBubbleStyle.current) {
+        ChatBubbleStyle.DARK -> Color(0xFFF2F2F4)
+        ChatBubbleStyle.ORIGINAL -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    return com.nox.feature.plugin.dsl.LocalPluginUiStyle.current.bubbleUserTextColor
+        .resolve(fallback)
 }
+
 
 /** 1px 细线：扁平风格里唯一的分组手段。 */
 @Composable

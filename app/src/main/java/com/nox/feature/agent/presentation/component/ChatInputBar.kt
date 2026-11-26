@@ -93,6 +93,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import com.nox.feature.plugin.dsl.resolve
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -151,6 +152,7 @@ import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Square
 import compose.icons.feathericons.Shield
 import kotlinx.coroutines.launch
+import com.nox.feature.plugin.dsl.pluginIconTint
 
 /** 输入框区域蒙版高度：盖住圆角容器，滚动内容滑入时被渐变遮罩；随键盘（IME）上移。 */
 private val INPUT_BAR_MASK_HEIGHT = 110.dp
@@ -552,6 +554,14 @@ internal fun ChatInputBar(
                 )
             }
 
+            // 插件样式令牌只在输入框容器读一次，子组件沿用解析后的值
+            val inputStyle = com.nox.feature.plugin.dsl.LocalChatInputStyle.current
+            val inputShape = RoundedCornerShape((inputStyle.radius ?: 20f).dp)
+            val inputShadowOuter = (inputStyle.shadow ?: 18f).dp
+            // 近处那层按外层的 28% 取，与宿主原有 18/5 的比例保持一致
+            val inputShadowNear = ((inputStyle.shadow ?: 18f) * 0.28f).dp
+            val inputMinHeight = inputStyle.minHeight
+
             currentGoal?.let { goal ->
                 GoalBannerRow(
                     goal = goal,
@@ -563,28 +573,31 @@ internal fun ChatInputBar(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // 圆角/阴影/底色/最小高度可由插件通过 contributes.styleTokens 覆盖；
+                    // 未声明时全部落在宿主原值上，观感与升级前一致。
+                    .then(if (inputMinHeight != null) Modifier.heightIn(min = inputMinHeight.dp) else Modifier)
                     // 两层淡阴影叠出柔和外扩的光晕：单层 shadow 只能给一个 elevation，
                     // 想同时要"近处贴合 + 远处扩散"就必须叠两次，且都保持在很低的透明度上。
                     .shadow(
-                        elevation = 18.dp,
-                        shape = RoundedCornerShape(20.dp),
+                        elevation = inputShadowOuter,
+                        shape = inputShape,
                         clip = false,
                         ambientColor = Color.Black.copy(alpha = 0.045f),
                         spotColor = Color.Black.copy(alpha = 0.045f)
                     )
                     .shadow(
-                        elevation = 5.dp,
-                        shape = RoundedCornerShape(20.dp),
+                        elevation = inputShadowNear,
+                        shape = inputShape,
                         clip = false,
                         ambientColor = Color.Black.copy(alpha = 0.06f),
                         spotColor = Color.Black.copy(alpha = 0.06f)
                     )
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(MaterialTheme.colorScheme.surface)
+                    .clip(inputShape)
+                    .background(inputStyle.background.resolve(MaterialTheme.colorScheme.surface))
                     .border(
                         0.5.dp,
                         MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
-                        RoundedCornerShape(20.dp)
+                        inputShape
                     )
                     .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
@@ -657,7 +670,7 @@ internal fun ChatInputBar(
                             Icon(
                                 FeatherIcons.Maximize,
                                 contentDescription = stringResource(R.string.chat_input_expand),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = pluginIconTint(MaterialTheme.colorScheme.onSurfaceVariant),
                                 modifier = Modifier.size(17.dp)
                             )
                         }
@@ -717,7 +730,7 @@ internal fun ChatInputBar(
                             Icon(
                                 FeatherIcons.Box,
                                 contentDescription = stringResource(R.string.settings_mcp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = pluginIconTint(MaterialTheme.colorScheme.onSurfaceVariant),
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -1201,7 +1214,7 @@ internal fun ToolPermissionPanel(
                     ExpandableChevronIcon(
                         expanded = effectiveExpanded,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = pluginIconTint(MaterialTheme.colorScheme.onSurfaceVariant),
                         size = 18.dp
                     )
                 }
@@ -1440,7 +1453,7 @@ internal fun PlanApprovalPanel(
                 ExpandableChevronIcon(
                     expanded = effectiveExpanded,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = pluginIconTint(MaterialTheme.colorScheme.onSurfaceVariant),
                     size = 18.dp
                 )
             }
@@ -1575,7 +1588,7 @@ private fun GoalBannerRow(
                         contentDescription = stringResource(
                             if (goal.status == GoalStatus.ACTIVE) R.string.chat_goal_pause else R.string.chat_goal_resume
                         ),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = pluginIconTint(MaterialTheme.colorScheme.onSurfaceVariant),
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -1584,7 +1597,7 @@ private fun GoalBannerRow(
                 Icon(
                     imageVector = FeatherIcons.X,
                     contentDescription = stringResource(R.string.chat_goal_clear),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = pluginIconTint(MaterialTheme.colorScheme.onSurfaceVariant),
                     modifier = Modifier.size(16.dp)
                 )
             }

@@ -69,6 +69,7 @@ import com.nox.core.ui.PanelSection
 import com.nox.core.ui.PanelValueRow
 import com.nox.core.theme.semanticColors
 import com.nox.core.ui.AnchorPopup
+import com.nox.feature.plugin.dsl.resolve
 import com.nox.core.ui.ChevronRotationStyle
 import com.nox.core.ui.ContentWidth
 import com.nox.core.ui.ExpandableChevronIcon
@@ -488,7 +489,8 @@ internal fun AgentMessageItem(
                                 ) {
                                     MarkdownContent(
                                         text = contentSlice ?: message.content,
-                                        color = MaterialTheme.colorScheme.onSurface,
+                                        color = com.nox.feature.plugin.dsl.LocalPluginUiStyle.current.messageTextColor
+                                            .resolve(MaterialTheme.colorScheme.onSurface),
                                         modifier = Modifier.fillMaxWidth(),
                                         cache = markdownCache,
                                     )
@@ -969,7 +971,8 @@ private fun CompactionSummaryCard(message: AgentUIMessage, markdownCache: Markdo
                 Spacer(Modifier.height(Spacing.xs))
                 MarkdownContent(
                     text = message.content,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = com.nox.feature.plugin.dsl.LocalPluginUiStyle.current.messageTextColor
+                        .resolve(MaterialTheme.colorScheme.onSurface),
                     modifier = Modifier.fillMaxWidth(),
                     cache = markdownCache
                 )

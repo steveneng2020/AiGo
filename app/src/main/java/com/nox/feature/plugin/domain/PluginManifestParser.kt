@@ -56,6 +56,14 @@ object PluginManifestParser {
     private val TOOL_KEYS = setOf("id", "title", "description", "inputSchema", "handler")
     private val HOOK_KEYS = setOf("id", "event", "handler", "mode")
     private val UI_ENTRY_KEYS = setOf("id", "slot", "title", "page", "handler", "confirm", "icon")
+    private val SCREEN_KEYS = setOf("id", "title", "target", "icon", "file", "handler")
+    private val STYLE_TOKEN_KEYS = setOf(
+        "chatInputRadius", "chatInputShadow", "chatInputMinHeight", "chatInputColor",
+        "bubbleRadius", "bubbleUserColor", "bubbleUserTextColor",
+        "topBarColor", "topBarTextColor", "drawerColor", "drawerTextColor",
+        "messageTextColor", "iconColor"
+    )    /** 样式颜色：语义令牌名或十六进制，与 DSL 的 style 共用同一套规则。 */
+    private val STYLE_COLOR = Regex("^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$|^[A-Za-z0-9_.-]{1,64}$")
     private val WORKSPACE_TOOL_KEYS = setOf("id", "title", "description", "icon", "category", "pageFile")
     private val PROVIDER_KEYS = setOf("id", "name", "description", "format", "baseUrl")
     private val SHIZUKU_KEYS = setOf("purpose")
@@ -138,9 +146,13 @@ object PluginManifestParser {
 
             val needsRuntime = contributes != null && (
                 contributes.tools.isNotEmpty() || contributes.hooks.isNotEmpty() ||
-                    contributes.uiEntries.any { it.handler != null }
+                    contributes.uiEntries.any { it.handler != null } ||
+                    contributes.screens.any { it.handler != null }
                 )
             if (needsRuntime && runtime == null) missing("runtime")
+            // 任何让 contributes 作废的分支都必须留下错误；否则下面 requireNotNull 会抛
+            // IllegalArgumentException 把整个插件加载链断掉（历史上就是这么崩的）。
+            if (contributes == null && errors.isEmpty()) invalid("contributes")
             if (errors.isNotEmpty()) return ManifestParseResult.Failure(errors.toList())
 
             return ManifestParseResult.Success(
@@ -158,6 +170,8 @@ object PluginManifestParser {
                     agents = contributes.agents,
                     workspaceTools = contributes.workspaceTools,
                     uiEntries = contributes.uiEntries,
+                    screens = contributes.screens,
+                    styleTokens = contributes.styleTokens,
                     runtime = runtime,
                     tools = contributes.tools,
                     hooks = contributes.hooks,
@@ -398,6 +412,8 @@ object PluginManifestParser {
             val agents: List<PluginContributionRef>,
             val workspaceTools: List<PluginWorkspaceToolRef>,
             val uiEntries: List<PluginUiEntryRef>,
+            val screens: List<PluginScreenRef>,
+            val styleTokens: PluginStyleTokens?,
             val tools: List<PluginToolRef>,
             val hooks: List<PluginHookRef>,
             val mcp: List<PluginMcpRef>,
@@ -415,6 +431,8 @@ object PluginManifestParser {
             var ok = true
             contributes.keys.filter {
                 it != "skills" && it != "agents" && it != "workspaceTools" && it != "uiEntries" &&
+                    it != "screens" &&
+                    it != "styleTokens" &&
                     it != "tools" && it != "hooks" && it != "mcp" && it != "providers" &&
                     it != "shizuku" && it != "overlay" && it != "backup" && it != "modelAccess" &&
                     it != "configPage"
@@ -427,6 +445,15 @@ object PluginManifestParser {
             val workspaceTools = readWorkspaceTools(contributes["workspaceTools"], "contributes.workspaceTools") ?: run { ok = false; emptyList() }
             val uiEntries = readUiEntries(contributes["uiEntries"], "contributes.uiEntries")
                 ?: run { ok = false; emptyList() }
+            val screens = readScreens(contributes["screens"], "contributes.screens")
+                ?: run { ok = false; emptyList() }
+            // 缺省与“写了但不合法”必须分开：前者是正常情况，后者才使清单作废。
+            // 不分开会让缺省声明也把 ok 置 false，而它不产生错误，上层 requireNotNull 随即崩掉。
+            val styleTokensRaw = contributes["styleTokens"]
+            val styleTokens = styleTokensRaw?.let {
+                readStyleTokens(it, "contributes.styleTokens")
+            }
+            if (styleTokensRaw != null && styleTokens == null) ok = false
             val tools = readTools(contributes["tools"], "contributes.tools") ?: run { ok = false; emptyList() }
             val hooks = readHooks(contributes["hooks"], "contributes.hooks") ?: run { ok = false; emptyList() }
             val mcpRefs = readContributionList(contributes["mcp"], "contributes.mcp", extension = ".json")
@@ -470,6 +497,7 @@ object PluginManifestParser {
             }
             val configPage = readConfigPage(contributes["configPage"], "contributes.configPage")
             if (ok && skills.isEmpty() && agents.isEmpty() && workspaceTools.isEmpty() && uiEntries.isEmpty() &&
+                screens.isEmpty() && styleTokens == null &&
                 tools.isEmpty() && hooks.isEmpty() && mcp.isEmpty() && providers.isEmpty() &&
                 shizuku == null && overlay == null && backup == null && modelAccess == null && configPage == null
             ) {
@@ -477,9 +505,144 @@ object PluginManifestParser {
                 ok = false
             }
             return if (ok) Contributes(
-                skills, agents, workspaceTools, uiEntries, tools, hooks, mcp, providers,
+                skills, agents, workspaceTools, uiEntries, screens, styleTokens, tools, hooks, mcp, providers,
                 shizuku, overlay, backup, modelAccess, configPage
             ) else null
+        }
+
+        /**
+         * 样式令牌：全部可选，但写了就必须合法。
+         * 越界值与错色直接判无效，而不是静默施回默认值——样式生效与否看不见，沉默修正最难排查。
+         */
+        private fun readStyleTokens(raw: JsonElement?, path: String): PluginStyleTokens? {
+            if (raw == null) return null
+            val obj = raw as? JsonObject ?: return null.also { invalid(path) }
+            var ok = true
+            obj.keys.filter { it !in STYLE_TOKEN_KEYS }.forEach {
+                err(PluginErrorCode.UNSUPPORTED_FIELD, "$path.$it")
+                ok = false
+            }
+            fun number(key: String): Float? {
+                val element = obj[key] ?: return null
+                val value = (element as? JsonPrimitive)?.contentOrNull?.toFloatOrNull()
+                if (value == null) {
+                    invalid("$path.$key")
+                    ok = false
+                }
+                return value
+            }
+            val radius = number("chatInputRadius")
+            val shadow = number("chatInputShadow")
+            val minHeight = number("chatInputMinHeight")
+            val bubbleRadius = number("bubbleRadius")
+            /** 颜色项：未写返回 null（沿用宿主），写了但不合法则判无效。 */
+            fun color(key: String): String? {
+                val raw = obj[key] ?: return null
+                val text = (raw as? JsonPrimitive)?.contentOrNull
+                if (text == null || !STYLE_COLOR.matches(text)) {
+                    invalid("$path.$key")
+                    ok = false
+                    return null
+                }
+                return text
+            }
+            val chatInputColor = color("chatInputColor")
+            val bubbleUserColor = color("bubbleUserColor")
+            val bubbleUserTextColor = color("bubbleUserTextColor")
+            val topBarColor = color("topBarColor")
+            val topBarTextColor = color("topBarTextColor")
+            val drawerColor = color("drawerColor")
+            val drawerTextColor = color("drawerTextColor")
+            val messageTextColor = color("messageTextColor")
+            val iconColor = color("iconColor")
+
+            if (radius != null && radius !in 0f..48f) { invalid("$path.chatInputRadius"); ok = false }
+            if (shadow != null && shadow !in 0f..40f) { invalid("$path.chatInputShadow"); ok = false }
+            if (minHeight != null && minHeight !in 0f..160f) { invalid("$path.chatInputMinHeight"); ok = false }
+            if (bubbleRadius != null && bubbleRadius !in 0f..32f) { invalid("$path.bubbleRadius"); ok = false }
+            if (!ok) return null
+            val tokens = PluginStyleTokens(
+                chatInputRadius = radius,
+                chatInputShadow = shadow,
+                chatInputMinHeight = minHeight,
+                chatInputColor = chatInputColor,
+                bubbleRadius = bubbleRadius,
+                bubbleUserColor = bubbleUserColor,
+                bubbleUserTextColor = bubbleUserTextColor,
+                topBarColor = topBarColor,
+                topBarTextColor = topBarTextColor,
+                drawerColor = drawerColor,
+                drawerTextColor = drawerTextColor,
+                messageTextColor = messageTextColor,
+                iconColor = iconColor
+            )
+            val empty = tokens.isEmpty
+            if (empty) invalid(path)
+            return if (empty) null else tokens
+        }
+
+        /**
+         * 整屏接管声明：每项必须有局部 ID、标题、合法目标屏，且 `file` / `handler` 二选一。
+         * 同一插件对同一目标屏只允许一条，避免多条接管互相覆盖无法预期。
+         */
+        private fun readScreens(raw: JsonElement?, path: String): List<PluginScreenRef>? {
+            if (raw == null) return emptyList()
+            val array = raw as? JsonArray ?: return null.also { invalid(path) }
+            if (array.size > MAX_IDS_PER_TYPE) return null.also { invalid(path) }
+            val result = mutableListOf<PluginScreenRef>()
+            var ok = true
+            val seenIds = mutableSetOf<String>()
+            val seenTargets = mutableSetOf<String>()
+            array.forEachIndexed { index, element ->
+                val itemPath = "$path[$index]"
+                val item = element as? JsonObject
+                if (item == null) {
+                    invalid(itemPath)
+                    ok = false
+                    return@forEachIndexed
+                }
+                item.keys.filter { it !in SCREEN_KEYS }.forEach {
+                    err(PluginErrorCode.UNSUPPORTED_FIELD, "$itemPath.$it")
+                    ok = false
+                }
+                val id = item["id"]?.stringOrNull()?.takeIf { LOCAL_ID.matches(it) }
+                val titleRaw = item["title"]
+                val title = if (titleRaw != null) parseLocalized(titleRaw, "$itemPath.title", MAX_NAME) else null
+                val target = item["target"]?.stringOrNull()?.takeIf { it in PluginScreenTargets.ALL }
+                val file = item["file"]?.stringOrNull()
+                val handlerRaw = item["handler"]?.stringOrNull()
+                val handler = handlerRaw?.trim()?.takeIf { HANDLER_NAME.matches(it) }
+                val icon = item["icon"]?.stringOrNull()?.trim() ?: "grid"
+
+                if (id == null) { invalid("$itemPath.id"); ok = false }
+                if (title == null) { invalid("$itemPath.title"); ok = false }
+                if (target == null) { invalid("$itemPath.target"); ok = false }
+                if (file != null && (!isSafeRelativePath(file) || !file.endsWith(".json", ignoreCase = true))) {
+                    invalid("$itemPath.file")
+                    ok = false
+                }
+                if (handlerRaw != null && handler == null) { invalid("$itemPath.handler"); ok = false }
+                if ((file == null) == (handler == null)) {
+                    // 两者都写或都不写都不允许：要么静态文件，要么运行时 handler
+                    invalid(itemPath)
+                    ok = false
+                }
+                if (id != null && !seenIds.add(id)) { invalid("$itemPath.id"); ok = false }
+                if (target != null && !seenTargets.add(target)) { invalid("$itemPath.target"); ok = false }
+
+                if (id != null && title != null && target != null && handlerRaw != null && handler == null) {
+                    return@forEachIndexed
+                }
+                result += PluginScreenRef(
+                    id = id ?: "screen$index",
+                    title = title ?: LocalizedText.single("Screen"),
+                    target = target ?: PluginScreenTargets.CHAT,
+                    icon = icon,
+                    file = file,
+                    handler = handler
+                )
+            }
+            return if (ok) result else null
         }
 
         private fun readConfigPage(raw: JsonElement?, path: String): String? {

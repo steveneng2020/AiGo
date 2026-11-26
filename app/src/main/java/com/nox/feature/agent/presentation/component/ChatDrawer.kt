@@ -98,6 +98,7 @@ import com.nox.feature.settings.presentation.component.SettingsGroup
 import com.nox.feature.settings.presentation.component.SettingsGroupHeader
 import com.nox.feature.settings.presentation.component.SettingsRow
 import com.nox.feature.settings.presentation.component.settingsPageBackground
+import com.nox.feature.plugin.dsl.resolve
 import com.nox.feature.agent.domain.model.ChatSession
 import com.nox.feature.agent.presentation.AgentUIState
 import com.nox.feature.agent.presentation.ChatSearchHit
@@ -143,6 +144,7 @@ import java.time.temporal.ChronoUnit
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
+import com.nox.feature.plugin.dsl.pluginIconTint
 
 /**
  * 侧边栏内容：顶部 Tab 切换「会话」/「文件」，底部「设置」入口卡片。
@@ -245,7 +247,11 @@ fun ChatDrawerContent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(settingsPageBackground())
+            .background(
+                // 插件令牌优先；未声明时用宿主设置页底色
+                com.nox.feature.plugin.dsl.LocalPluginUiStyle.current.drawerColor
+                    .resolve(settingsPageBackground())
+            )
             .windowInsetsPadding(
                 WindowInsets.systemBars.only(
                     WindowInsetsSides.Horizontal + WindowInsetsSides.Top
@@ -300,7 +306,8 @@ fun ChatDrawerContent(
                         Text(
                             text = stringResource(R.string.chat_sessions_selected_count, selectedSessionIds.size),
                             style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = com.nox.feature.plugin.dsl.LocalPluginUiStyle.current.drawerTextColor
+                                .resolve(MaterialTheme.colorScheme.onSurface),
                             modifier = Modifier.weight(1f)
                         )
                         val allSessionIds: List<String> = remember(sessions, subSessionsByParent) {
@@ -958,7 +965,8 @@ private fun ChatSearchResultRow(
                 )
             ),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = com.nox.feature.plugin.dsl.LocalPluginUiStyle.current.drawerTextColor
+                .resolve(MaterialTheme.colorScheme.onSurface),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
@@ -1373,39 +1381,39 @@ private fun FileTreeActionSheet(
                 SheetActionRow(
                     icon = FeatherIcons.FilePlus,
                     label = stringResource(R.string.file_browser_new_file),
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                     onClick = onNewFile
                 )
                 SheetActionRow(
                     icon = FeatherIcons.FolderPlus,
                     label = stringResource(R.string.file_browser_new_folder),
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                     onClick = onNewFolder
                 )
             }
             SheetActionRow(
                 icon = FeatherIcons.ExternalLink,
                 label = stringResource(R.string.file_browser_open_external),
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                 onClick = onOpenExternal
             )
             if (node.root == null) {
                 SheetActionRow(
                     icon = FeatherIcons.Copy,
                     label = stringResource(R.string.common_copy),
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                     onClick = onCopy
                 )
                 SheetActionRow(
                     icon = Icons.Filled.ContentCut,
                     label = stringResource(R.string.common_cut),
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                     onClick = onCut
                 )
                 SheetActionRow(
                     icon = FeatherIcons.Edit2,
                     label = stringResource(R.string.common_rename),
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                     onClick = onRename
                 )
                 SheetActionRow(
@@ -1593,7 +1601,7 @@ private fun SessionActionSheet(
             SheetActionRow(
                 icon = Icons.Outlined.PushPin,
                 label = stringResource(if (session.isPinned) R.string.chat_unpin_session else R.string.chat_pin_session),
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                 onClick = {
                     onDismiss()
                     onTogglePin()
@@ -1602,7 +1610,7 @@ private fun SessionActionSheet(
             SheetActionRow(
                 icon = FeatherIcons.Edit2,
                 label = stringResource(R.string.common_rename),
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                 onClick = {
                     onDismiss()
                     onRename()
@@ -1611,7 +1619,7 @@ private fun SessionActionSheet(
             SheetActionRow(
                 icon = FeatherIcons.Download,
                 label = stringResource(R.string.chat_export_session),
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                 onClick = {
                     onDismiss()
                     onExport()
@@ -1620,7 +1628,7 @@ private fun SessionActionSheet(
             SheetActionRow(
                 icon = FeatherIcons.CheckSquare,
                 label = stringResource(R.string.chat_batch_select),
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                 onClick = {
                     onDismiss()
                     onBatchSelect()
@@ -1630,7 +1638,7 @@ private fun SessionActionSheet(
                 SheetActionRow(
                     icon = com.nox.feature.plugin.presentation.pluginPageIcon(entry.icon),
                     label = entry.title.resolve(pluginLanguageTag),
-                    tint = MaterialTheme.colorScheme.onSurface,
+                    tint = pluginIconTint(MaterialTheme.colorScheme.onSurface),
                     onClick = {
                         onDismiss()
                         onPluginEntry(entry)
