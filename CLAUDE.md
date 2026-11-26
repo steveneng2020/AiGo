@@ -352,6 +352,24 @@ print(data.count('新文案'.encode('utf-8')), data.count('旧文案'.encode('ut
 - 已发布过的版本条目**不许回头改日期**（那是发布历史，不是当前工作）。
 - `pre-commit` 的「更新日记日期」一项会自动拦（`scripts/check_changelog_date.py`）。
 
+**两条规则冲突时怎么办（2026-11-27 踩过）**：
+
+v1.0.4 已在 11-26 发布上线，之后合并上游、提交日期变成 11-27，
+门禁报「最新版本日期早于最近提交」。此时**两个都改不了**：
+
+| 想法 | 为什么不行 |
+| --- | --- |
+| 把 v1.0.4 日期改成 11-27 | 已发布版本，改了与 GitHub Release 对不上，App 内更新日记也错 |
+| 不改，硬推 | 门禁拦下，且确实该更新日记 |
+
+**唯一正确的做法是新增版本小节**：在旧版本之前插入 `## vX.Y.(Z+1) — <今天>`，
+把本次改动写进去。旧版本一字不动。追加后记得跑
+`python3 scripts/gen-readme-highlights.py` 同步 README。
+
+判断「是否已发布」：`curl -H "Authorization: Bearer $TOKEN"
+https://api.github.com/repos/steveneng2020/AiGo/releases` 看有没有同名 tag。
+本地 `git tag` 不算数——tag 可能是本地打的、或 Release 被删过。
+
 **同时要求**：CHANGELOG 里**不许留有已删除功能的条目**。
 本轮就出现过「首 token 耗时可拆解」整条描述的功能已被删除（两行拆解因数据源
 测不到真实响应头而移除），但条目还留在日记里，等于对用户说谎。
