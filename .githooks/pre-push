@@ -1,0 +1,77 @@
+#!/bin/sh
+# ---------- pre-push：推送前的最后一道门 ----------
+#
+# 为什么这些检查不能在 pre-commit 做：
+#   「本地必须已全部推送」这一条件在提交阶段天然不成立——
+#   刚刚的提交本身还没推，一拦就永远提交不上去；而 push 又必须先有提交。
+#   2026-11-26 就因为这个死锁，一次正常的提交被反复拦下。
+#
+# 这里做三件事：
+#   1. 分支是否落后远端（落后时推送会被拒或产生非快进合并）
+#   2. 待推送提交里有没有夹带敏感文件
+#   3. 待推送提交的更新日记日期是否仍然正确
+#
+# 注意：pre-push 的 stdin 会给出 refs，但不依赖它，直接比对 origin/<branch>。
+
+set -u
+
+red()  { printf '\033[31m%s\033[0m\n' "$*"; }
+green(){ printf '\033[32m%s\033[0m\n' "$*"; }
+yellow(){ printf '\033[33m%s\033[0m\n' "$*"; }
+
+fail=0
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+remote_ref="origin/${branch}"
+
+echo "推送前检查（分支 ${branch}）"
+
+# ---------- 1. 分支是否落后远端 ----------
+if git rev-parse --verify -q "${remote_ref}" >/dev/null 2>&1; then
+    behind=$(git rev-list --count "HEAD..${remote_ref}" 2>/dev/null || echo 0)
+    if [ "${behind}" -gt 0 ]; then
+        red "  ✘ 本地落后 ${remote_ref} ${behind} 个提交，先 pull --rebase 再推"
+        fail=1
+    else
+        green "  ✔ 未落后远端"
+    fi
+else
+    yellow "  · 远端还没有 ${branch}，将新建分支"
+fi
+
+# ---------- 2. 待推送提交里有没有敏感文件 ----------
+if git rev-parse --verify -q "${remote_ref}" >/dev/null 2>&1; then
+    range="${remote_ref}..HEAD"
+else
+    range="HEAD"
+fi
+
+sensitive=$(git diff --name-only "${range}" 2>/dev/null \
+    | grep -Ei '(^|/)(local\.properties|keystore\.properties|\.env|id_rsa|id_ed25519|.*\.jks|.*\.keystore)$' \
+    || true)
+if [ -n "${sensitive}" ]; then
+    red "  ✘ 待推送提交包含敏感文件："
+    printf '%s\n' "${sensitive}" | sed 's/^/      /'
+    fail=1
+else
+    green "  ✔ 无敏感文件"
+fi
+
+# ---------- 3. 更新日记日期 ----------
+if [ -f scripts/check_changelog_date.py ]; then
+    if python3 scripts/check_changelog_date.py >/tmp/prepush_changelog.log 2>&1; then
+        green "  ✔ 更新日记日期"
+    else
+        red "  ✘ 更新日记日期与代码不一致："
+        sed 's/^/      /' /tmp/prepush_changelog.log
+        fail=1
+    fi
+fi
+
+echo
+if [ "${fail}" != "0" ]; then
+    red "推送被拦下。修完再推，或紧急时 git push --no-verify（事后必须补跑 aigo-gate）"
+    exit 1
+fi
+
+green "推送前检查通过"
+exit 0

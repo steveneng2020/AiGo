@@ -2223,7 +2223,6 @@
     <string name="context_panel_compaction_calls">Compaction calls</string>
     <string name="context_panel_errors">Failed</string>
     <string name="context_panel_retries">Retries</string>
-    <string name="context_panel_threshold_desc">Compact automatically when context usage reaches this ratio</string>
     <string name="context_panel_compact_now">Compact context now</string>
     <string name="context_panel_compacting">Compacting…</string>
     <string name="context_panel_no_data">No calls recorded yet</string>

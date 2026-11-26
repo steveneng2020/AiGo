@@ -630,12 +630,9 @@ fun ContextUsagePanel(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Text(
-            text = stringResource(R.string.context_panel_threshold_desc),
-            style = TextStyle(fontSize = PanelTokens.rowLabelSize, lineHeight = PanelTokens.rowLine),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = PanelTokens.sliderCaptionGap)
-        )
+        // 不再放「上下文占用达到该比例时自动压缩」这行说明：
+        // 组标题已写「自动压缩」、右侧是当前百分比、下面是滑杆，
+        // 语义已经完整，再加一行解释只是把按钮推低、增加视觉噪声。
         Spacer(Modifier.height(PanelTokens.compactButtonGap))
         // 实心主色按钮，高度收到 30dp：比标准按钮矮一档，在信息面板里不至于
         // 压过数据本身；圆角取半高形成胶囊，与卡片 18dp 圆角各自成立。

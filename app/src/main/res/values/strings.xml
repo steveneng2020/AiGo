@@ -2423,7 +2423,6 @@
     <string name="context_panel_errors">失败</string>
     <string name="context_panel_retries">重试</string>
     <string name="context_panel_threshold_range">50%–95%</string>
-    <string name="context_panel_threshold_desc">上下文占用达到该比例时自动压缩</string>
     <string name="context_panel_compact_now">立即压缩上下文</string>
     <string name="context_panel_compacting">正在压缩…</string>
     <string name="context_panel_no_data">暂无调用记录</string>

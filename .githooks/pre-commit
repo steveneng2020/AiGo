@@ -59,12 +59,22 @@ PANEL_CHANGED=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
   || true)
 if [ -n "$PANEL_CHANGED" ]; then
   SHOT_DIR="${AIGO_SHOT_DIR:-$WS_ROOT/验收截图}"
-  newest_shot=$(find "$SHOT_DIR" -type f -name '*.png' -newer "$(git rev-parse --show-toplevel)/$PANEL_CHANGED" 2>/dev/null \
+  # 拿所有改动文件里最新的那个做基准：$PANEL_CHANGED 可能是多个文件，
+  # 直接拼进 `-newer` 会变成一个不存在的路径，导致永远找不到「更新的截图」。
+  repo_root=$(git rev-parse --show-toplevel)
+  newest_src=""
+  for f in $PANEL_CHANGED; do
+    abs="$repo_root/$f"
+    if [ -z "$newest_src" ] || [ "$abs" -nt "$newest_src" ]; then
+      newest_src="$abs"
+    fi
+  done
+  newest_shot=$(find "$SHOT_DIR" -type f -name '*.png' -newer "$newest_src" 2>/dev/null \
     | sort | tail -1)
   if [ -z "$newest_shot" ]; then
     red "  ✘ 改了面板/布局但没找到新的验收截图"
     echo "    改动: $(printf '%s ' $PANEL_CHANGED)"
-    echo "    期望: $SHOT_DIR 下有比源码更新的 .png"
+    echo "    期望: $SHOT_DIR 下有比 $newest_src 更新的 .png"
     echo "    原因: UI 改动必须真机截图，且用 scripts/verify_panel_alignment.py 量过"
     fail=1
   elif [ -f scripts/verify_panel_alignment.py ]; then
@@ -208,17 +218,11 @@ if [ -d "$OUT_DIR" ]; then
   fi
 fi
 
-# ---------- 7. 是否有未推送的提交 ----------
-if git rev-parse --verify -q origin/main >/dev/null 2>&1; then
-  unpushed=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
-  # 本次提交还没生成，所以此处只在「已有旧提交未推送」时报警
-  if [ "$unpushed" -gt 0 ]; then
-    red "  ✘ 有 $unpushed 个提交未推送（做完整项工作必须 push，本地提交不算交付）"
-    fail=1
-  else
-    green "  ✔ 无未推送提交"
-  fi
-fi
+# ---------- 7. 未推送提交 ----------
+# 已移到 pre-push：提交阶段要求「必须已推送」会形成死锁——
+# 首次提交本身就是未推送状态，pre-commit 一拦，就再也提交不了；
+# 而 push 又必须先有提交。放在 pre-push 才符合语义，
+# 由 .githooks/pre-push 检查。
 
 echo
 if [ "$fail" != "0" ]; then
