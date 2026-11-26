@@ -225,6 +225,27 @@ fi
 # 而 push 又必须先有提交。放在 pre-push 才符合语义，
 # 由 .githooks/pre-push 检查。
 
+# ---------- 8. 钩子自身的执行位 ----------
+# 这条检查是「守门人守自己」：钩子文件丢了执行位时，git 只会打印一行
+# 「hook was ignored because it's not set as executable」然后照常放行，
+# 门禁等于不存在，而且极易被忽略（2026-11-26 就发生过一次：pre-push
+# 明明加了单测，推送时根本没跑，改动照常上去）。
+# 索引里记的是 100755、磁盘上却是 600，说明是检出时没保住权限位。
+hook_bad=""
+for h in pre-commit pre-push commit-msg; do
+  [ -f ".githooks/$h" ] || continue
+  if [ ! -x ".githooks/$h" ]; then
+    hook_bad="$hook_bad $h"
+  fi
+done
+if [ -z "$hook_bad" ]; then
+  green "  ✔ 钩子执行位正常"
+else
+  red "  ✘ 钩子缺少执行位，git 会静默跳过它们：$hook_bad"
+  echo "    修复：chmod 755 .githooks/*"
+  fail=1
+fi
+
 echo
 if [ "$fail" != "0" ]; then
   red "提交被门禁拦下。修完再提交，或紧急时 git commit --no-verify（事后必须补跑 aigo-gate）"

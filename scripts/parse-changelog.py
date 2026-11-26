@@ -112,7 +112,13 @@ def to_markdown(entry) -> str:
         out.append(entry["summary"])
         out.append("")
     for it in entry["items"]:
-        out.append(f"- **{it['title']}**：{it['detail']}")
+        # detail 可能含换行（子条目已并进来），续行必须缩进两级，
+        # 否则在 Markdown 里会被当成新的顶级段落，读起来像另一条要点。
+        lines = it["detail"].split("\n")
+        out.append(f"- **{it['title']}**：{lines[0]}")
+        for extra in lines[1:]:
+            if extra.strip():
+                out.append(f"  - {extra.strip()}")
     return "\n".join(out).rstrip() + "\n"
 
 
