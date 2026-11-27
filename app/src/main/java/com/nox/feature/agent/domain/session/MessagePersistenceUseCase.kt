@@ -102,7 +102,11 @@ class MessagePersistenceUseCase @Inject constructor(
         cachedInputTokens: Int = 0,
         isCompacted: Boolean = false,
         isContextExcluded: Boolean = false,
-        isUserInterjection: Boolean = false
+        isUserInterjection: Boolean = false,
+        // 首 token 与总耗时：与 token 一起写进消息表，气泡统计行左右两半同源同步。
+        // 不传时（工具消息、用户消息）保持 null，UI 不渲染右半边。
+        ttfbMillis: Long? = null,
+        durationMillis: Long? = null
     ) {
         agentMessageDao.insert(
             AgentMessageEntity(
@@ -125,7 +129,9 @@ class MessagePersistenceUseCase @Inject constructor(
                 cachedInputTokens = cachedInputTokens,
                 isCompacted = isCompacted,
                 isContextExcluded = isContextExcluded,
-                isUserInterjection = isUserInterjection
+                isUserInterjection = isUserInterjection,
+                ttfbMillis = ttfbMillis,
+                durationMillis = durationMillis
             )
         )
     }

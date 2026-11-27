@@ -266,8 +266,19 @@ cmd_test() { cmd_build :app:testUniversalDebugUnitTest; }
 # 用 armsolo（仅 arm64-v8a）：universal 含两套容器镜像，体积大、打包慢，
 # 本机调试只需要 arm64。要出通用包走 CI 或显式传 flavor。
 cmd_apk() {
+  # 出包前先确认 CHANGELOG 已就绪：它是构建时打进 APK 的，
+  # 顺序错了（先出包、后改日记）只能重新出包才生效。
+  check_changelog_ready || return 1
   cmd_build :app:assembleArmsoloDebug "$@"
   copy_apk armsolo debug
+}
+
+# CHANGELOG 就绪检查：日期是今天或昨天、有条目、格式能被 App 端解析。
+check_changelog_ready() {
+  local script="$MAIN/scripts/check_changelog_ready.py"
+  if [ -f "$script" ]; then
+    python3 "$script" || { echo; echo "先改好更新日记再出包（见上面提示）"; return 1; }
+  fi
 }
 
 # 出包后统一命名与归档。

@@ -661,19 +661,27 @@ class StatefulAgentWorkflow @Inject constructor(
 
                             if (aiResponse.content.isNotBlank() || aiResponse.toolCalls.isNotEmpty() || attachments.isNotEmpty()) {
                                 val persisted = kotlinx.coroutines.CompletableDeferred<Unit>()
+                                // 首 token 与本次调用耗时在这里就算出来随消息带出：
+                                // 气泡统计行右半边（首 token / 输出速度）因此能和 token 一样
+                                // 随消息落库，不必等 finally 里另一条 llm_call_records。
+                                // 两者只在「已经流完」的这一刻才有意义，放在 send 前不影响语义。
+                                val callTtfb = stream.ttfbElapsed?.toLong()
+                                val callDuration = (SystemClock.elapsedRealtime() - callStartElapsed).toLong()
                                 send(
                                     AgentEvent.AssistantText(
-                                        aiResponse.content,
-                                        aiResponse.toolCalls,
-                                        stream.reasoning.toString(),
-                                        aiResponse.signature ?: "",
-                                        aiResponse.inputTokens,
-                                        aiResponse.outputTokens,
-                                        aiResponse.cachedInputTokens,
-                                        aiResponse.thinkingBlocksJson ?: "",
+                                        content = aiResponse.content,
+                                        toolCalls = aiResponse.toolCalls,
+                                        reasoning = stream.reasoning.toString(),
+                                        signature = aiResponse.signature ?: "",
+                                        inputTokens = aiResponse.inputTokens,
+                                        outputTokens = aiResponse.outputTokens,
+                                        cachedInputTokens = aiResponse.cachedInputTokens,
+                                        thinkingBlocksJson = aiResponse.thinkingBlocksJson ?: "",
                                         attachments = attachments,
                                         messageId = responseMessageId,
-                                        persisted = persisted
+                                        persisted = persisted,
+                                        ttfbMillis = callTtfb,
+                                        durationMillis = callDuration
                                     )
                                 )
                                 persisted.await()

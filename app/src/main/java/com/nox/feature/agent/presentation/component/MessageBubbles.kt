@@ -112,7 +112,17 @@ internal data class TurnUsage(
     val inputTokens: Int = 0,
     val outputTokens: Int = 0,
     val cachedInputTokens: Int = 0,
-    /** 本轮步数（轮内 LLM 调用次数）；0 表示没有调用记录可对齐。 */
+    /**
+     * 本轮步数（轮内 LLM 调用次数）；0 表示没有调用记录可对齐。
+     *
+     * 这个字段同时是「统计是否就绪」的判据：
+     * - `steps > 0`：token、首 token、输出速度全部来自 llm_call_records 同一时间窗，口径一致；
+     * - `steps == 0`：调用记录还没对上（刚结束、会话刚切过来、历史数据无记录），
+     *   此时 token 走消息表兜底，但 TTFT/速度没有兜底列，三者不同源。
+     *
+     * 所以 `steps == 0` 时**整行统计都不渲染**，避免出现
+     * 「右边两项凭空消失又出现」的闪动，也避免半截数字被当成完整结果。
+     */
     val steps: Int = 0,
     /** 模型用时（ms）：本轮所有调用 duration 求和。 */
     val modelMillis: Long = 0,
@@ -127,11 +137,27 @@ internal data class TurnUsage(
      * 全算进了工具耗时，会明显虚高。也不用「相邻调用空档」：空档混着网络往返
      * 与授权等待。只有工具自身执行起止的差值才是真实耗时。
      */
-    val toolMillis: Long = 0L
+    val toolMillis: Long = 0L,
+    /**
+     * 输出速度分子/分母的直接来源（仅当轮末消息自带耗时与输出量时才有值）。
+     *
+     * 为什么不复用上面的 [outputTokens] 与 [modelMillis]：那两个是**整轮合计**
+     * （多步求和），而消息自带的耗时是**最后一次调用**的，两者相除会算出虚高速度。
+     * 有值时优先用它，没有时按原逻辑用整轮聚合值反推。
+     */
+    val outputTokensForTps: Int? = null,
+    val genMillisForTps: Long? = null
 ) {
-    /** 输出速度（tok/s）：本轮输出 token / 模型总用时（步骤与耗时都有效时给值）。 */
+    /** 输出速度（tok/s）：优先用轮末消息自带的单次数据，否则用整轮聚合反推。 */
     val outputTps: Double?
         get() {
+            // 路径一：消息自带单次输出量与生成耗时（扣掉等首 token 的时间）。
+            val directOut = outputTokensForTps
+            val directGen = genMillisForTps
+            if (directOut != null && directGen != null && directOut > 0 && directGen > 0) {
+                return directOut / (directGen / 1000.0)
+            }
+            // 路径二：退回整轮聚合。
             if (outputTokens <= 0 || modelMillis <= 0) return null
             // 生成耗时必须扣掉每轮的「等首 token」时间：总耗时里包含 TTFT，
             // 不扣的话等待时间被当成生成时间，速度会偏低一个量级（实测 23 vs 真实 ~152）。
@@ -263,6 +289,24 @@ internal fun computeTurnUsage(
         turn.startMillis,
         turn.endMessage.timestamp
     )
+    // 消息自带的「首 token / 总耗时」：新版落库的消息会把这两个值与 token 一起写入
+    // agent_messages，因此不依赖 llm_call_records 是否已经 insert。
+    //
+    // 取值优先级：
+    //   1. 消息自带（steps 还没对上也能显示，左右两半同时出现）；
+    //   2. 退回调用记录聚合（老消息没有这两列，只能靠 llm_call_records）。
+    //
+    // 只认轮末那条助手消息：与 token 合计的挂载点一致，避免把中间步骤的值当成整轮。
+    val messageTtfb = turn.endMessage.ttfbMillis?.takeIf { it > 0 }
+    val messageDuration = turn.endMessage.durationMillis?.takeIf { it > 0 }
+    val ttfbFromMessage = messageTtfb != null && messageDuration != null
+    // 输出速度只在该轮末消息自身带着耗时与输出量时才算：用整轮聚合的 outputTokens
+    // 除以单次调用的生成时间会算出虚高的值，宁可留空也不给错数。
+    val tpsFromMessage = ttfbFromMessage && turn.endMessage.outputTokens > 0
+    val messageGenMillis = if (tpsFromMessage) {
+        (messageDuration!! - messageTtfb!!).coerceAtLeast(1L)
+    } else 0L
+
     turn.endMessage.id to TurnUsage(
         // 与 steps / modelMillis 同源（llm_call_records 同一时间窗），
         // 不再用消息表的 sumOf：两套数据源拼一起会得出「单步输入超过会话上限」的矛盾值。
@@ -274,9 +318,11 @@ internal fun computeTurnUsage(
         cachedInputTokens = if (agg.steps > 0) agg.cachedInputTokens.toInt()
         else turn.assistantMessages.sumOf { it.cachedInputTokens },
         steps = agg.steps,
-        modelMillis = agg.modelMillis,
-        avgTtfbMillis = agg.avgTtfbMillis,
-        totalTtfbMillis = agg.totalTtfbMillis,
+        modelMillis = if (ttfbFromMessage) messageDuration!! else agg.modelMillis,
+        avgTtfbMillis = messageTtfb?.toDouble() ?: agg.avgTtfbMillis,
+        totalTtfbMillis = messageTtfb ?: agg.totalTtfbMillis,
+        outputTokensForTps = if (tpsFromMessage) turn.endMessage.outputTokens else null,
+        genMillisForTps = if (tpsFromMessage) messageGenMillis else null,
         toolMillis = toolMillisInRange(turn.startMillis, turn.endMessage.timestamp)
     )
 }
@@ -521,22 +567,39 @@ internal fun AgentMessageItem(
                 //
                 // 用量与耗时按**本轮合计**（1 轮 n 步的所有调用求和）挂在轮末那条助手消息上：
                 // 逐步显示会把一次任务的开销拆成碎片，中间步骤的数字对用户也没有意义。
+                // 统计行只在「调用记录已对上」时渲染（steps > 0）。
+                //
+                // 为什么不用消息表兜底硬撑：token 能从消息表取到，但首 token 与输出速度
+                // 只存在于 llm_call_records，没有兜底列。曾经的做法是 token 走兜底、
+                // 右边两项留空，结果是同一轮里前后两次渲染出不同的数字
+                //（↑1.4M 变成 ↑2.1M，右半边凭空出现），看起来像 bug 又像正常，
+                // 用户无法判断哪个是真的。
+                //
+                // 现在统一为：数据没就绪就整行不显示，就绪后一次性出现。
+                // 唯一的中间态是「短暂没有统计行」，不会闪。
+                // 就绪判据：只要「首 token 或输出速度」有值就渲染整行。
+                // 以前要求 steps > 0（调用记录已对上），但右半边现在随消息落库，
+                // 不必再等 llm_call_records；若仍卡 steps，反而会把刚到的数据藏起来。
+                val statsReady = turnUsage != null &&
+                    (turnUsage.steps > 0 || turnUsage.avgTtfbMillis != null || turnUsage.outputTps != null)
                 val tokenStats = turnUsage
-                    ?.takeIf { it.inputTokens > 0 || it.outputTokens > 0 }
+                    ?.takeIf { statsReady && (it.inputTokens > 0 || it.outputTokens > 0) }
                     ?.let {
                         val inStr = formatTokenCount(it.inputTokens.toLong())
                         val outStr = formatTokenCount(it.outputTokens.toLong())
                         "↑$inStr ↓$outStr"
                     }
-                val cacheHitRate = turnUsage?.let {
+                val cacheHitRate = turnUsage?.takeIf { statsReady }?.let {
                     formatCacheHitRate(it.inputTokens, it.cachedInputTokens)
                 }
+                // 耗时来自消息时间戳（与调用记录无关），即使统计没就绪也能显示，
+                // 它是「这轮跑了多久」的独立事实，不与 token 口径耦合。
                 val durationText = taskDurationMs?.let { formatTaskDuration(it) }
                 // 首 token 平均与输出速度直接排在统计行里，不必展开就能看到。
-                val ttfbText = turnUsage?.avgTtfbMillis?.let {
+                val ttfbText = turnUsage?.takeIf { statsReady }?.avgTtfbMillis?.let {
                     stringResource(R.string.chat_meta_ttfb_short, formatMetaSeconds(it))
                 }
-                val tpsText = turnUsage?.outputTps?.let {
+                val tpsText = turnUsage?.takeIf { statsReady }?.outputTps?.let {
                     stringResource(R.string.chat_meta_tps_short, it.roundToInt())
                 }
                 val hasMeta = isUser || tokenStats != null || cacheHitRate != null ||

@@ -158,7 +158,11 @@ data class AgentUIMessage(
     // 仅 ASSISTANT 消息：本次调用输入中命中服务端缓存的 token 数，气泡下方据此算缓存命中率。
     val cachedInputTokens: Int = 0,
     // 用户插话（AI 运行中补充的要求）：气泡内加标识与普通对话区分，并提示已优先执行。
-    val isUserInterjection: Boolean = false
+    val isUserInterjection: Boolean = false,
+    // 仅 ASSISTANT 消息：首 token 耗时与总耗时（ms），随消息落库，
+    // 与 token 同源同步，气泡统计行左右两半才能同时出现。
+    val ttfbMillis: Long? = null,
+    val durationMillis: Long? = null
 )
 
 @Immutable

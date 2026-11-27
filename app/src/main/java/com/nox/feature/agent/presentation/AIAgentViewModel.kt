@@ -2354,7 +2354,11 @@ class AIAgentViewModel @Inject constructor(
                             attachments = event.attachments,
                             inputTokens = event.inputTokens,
                             outputTokens = event.outputTokens,
-                            cachedInputTokens = event.cachedInputTokens
+                            cachedInputTokens = event.cachedInputTokens,
+                            // 首 token 与总耗时随消息一起落库：气泡统计行右半边
+                            // 从此与左半边同源同步，不再出现「先显示一半、过几秒补上」。
+                            ttfbMillis = event.ttfbMillis,
+                            durationMillis = event.durationMillis
                         )
                         if (event.inputTokens > 0 || event.outputTokens > 0) {
                             _llmCallEvents.tryEmit(LlmCallEvent(sessionId, event.inputTokens, event.outputTokens, event.cachedInputTokens))

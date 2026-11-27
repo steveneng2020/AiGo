@@ -22,6 +22,15 @@ sealed class AgentEvent {
         val inputTokens: Int = 0,
         val outputTokens: Int = 0,
         val cachedInputTokens: Int = 0,
+        /**
+         * 首 token 耗时与本次调用总耗时（ms）。
+         *
+         * 随 AssistantText 一起带出来，让 ViewModel 能把它们和 token 一起写进
+         * agent_messages。这样气泡统计行左右两半同源、同时出现，
+         * 不必等 workflow 在 finally 里另外 insert 一条 llm_call_records。
+         */
+        val ttfbMillis: Long? = null,
+        val durationMillis: Long? = null,
         /** Anthropic thinking / redacted_thinking 内容块的原样快照（JSON 数组文本），随 reasoning 落库供后续轮原样回传。 */
         val thinkingBlocksJson: String = "",
         /** 模型直出图片（Gemini 图像模型）落盘后构造的文件卡片，随消息落库供 UI 渲染。 */

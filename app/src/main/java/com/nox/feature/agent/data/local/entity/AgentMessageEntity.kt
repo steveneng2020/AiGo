@@ -57,7 +57,24 @@ data class AgentMessageEntity(
     val compactedBySummaryId: String? = null,
     /** 用户插话（AI 运行中补充的要求）：气泡内需标识与普通对话区分，默认 false。 */
     @ColumnInfo(defaultValue = "0")
-    val isUserInterjection: Boolean = false
+    val isUserInterjection: Boolean = false,
+    /**
+     * 仅 ASSISTANT 行：本次调用的首 token 耗时（ms）。0 或 null 表示该渠道没报。
+     *
+     * 为什么存进消息表而不是只读 llm_call_records：
+     * 气泡底部的统计行左右两半原本来自两张表——token 随消息落库（同步，立刻可见），
+     * 首 token 与输出速度只能等 workflow 在 finally 里 insert 调用记录。
+     * 两个写库动作时机不同，于是出现「左边已显示、右边空着，过几秒才补上」的闪动。
+     * 把这两个值随消息一起写，左右同源同步，天然同时出现。
+     *
+     * llm_call_records 仍是统计页/面板的数据源，两边各自独立、互为校验。
+     */
+    // 不加 defaultValue：可空列必须与迁移里的 `DEFAULT NULL` 一致。
+    // 写成 defaultValue = "0" 会让 Room 校验期望 `DEFAULT 0`，
+    // 与实际表结构（DEFAULT NULL）不符，启动时直接 IllegalStateException。
+    val ttfbMillis: Long? = null,
+    /** 仅 ASSISTANT 行：本次调用的总耗时（ms），用于算输出速度。口径同 [ttfbMillis]。 */
+    val durationMillis: Long? = null
 ) {
     fun toUIMessage(): AgentUIMessage {
         val roleEnum = MessageRole.valueOf(role)
@@ -79,7 +96,9 @@ data class AgentMessageEntity(
             inputTokens = inputTokens,
             outputTokens = outputTokens,
             cachedInputTokens = cachedInputTokens,
-            isUserInterjection = isUserInterjection
+            isUserInterjection = isUserInterjection,
+            ttfbMillis = ttfbMillis,
+            durationMillis = durationMillis
         )
     }
 
