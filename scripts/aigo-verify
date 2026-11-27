@@ -1,0 +1,83 @@
+#!/bin/sh
+# 装包并用 uiautomator/screencap 自动校验界面，不依赖用户肉眼。
+#
+# 为什么有这个脚本：之前的流程把「装包看效果」交给用户，导致用户反复当试错员。
+# 本机有 root + uiautomator + screencap，界面文本与截图都能自己读。
+#
+# 用法：
+#   aigo-verify install <apk>              只装包
+#   aigo-verify ui <包名> <界面关键词...>   打开 App、进指定界面、校验关键词是否出现
+#   aigo-verify parse <xml> <关键词...>    解析宿主侧 dump 出的 XML 并校验
+#   aigo-verify shot                       打印宿主截图命令
+
+set -u
+
+OUT=/storage/emulated/0/Download/AiGo/AiGo开发/build-output
+TMP=/storage/emulated/0/Download/AiGo/AiGo开发
+
+say() { echo "$*"; }
+die() { echo "错误: $*" >&2; exit 1; }
+
+# 容器内 adb 连不上设备（无 USB），安装走宿主侧的 pm install。
+# 该命令需要 root 通道，由调用方用 Root 工具执行；本脚本只打印要跑的命令。
+cmd_install() {
+  apk="${1:-}"
+  [ -f "$apk" ] || die "APK 不存在: $apk"
+  say "请在宿主执行（容器内无 adb 连接）："
+  say "  pm install -r $apk"
+}
+
+# 容器内的 /system/bin/am 存在但跑不起来：它的 shebang 指向 /system/bin/sh，
+# 而容器里的 sh 在 /bin/sh，找不到解释器会报 "bad interpreter"。
+# uiautomator / screencap 同理，都是宿主 Android 的可执行文件，容器里无法直接调。
+# 但它们**在宿主 root 通道完全可用**（已实测 am start、uiautomator dump、screencap 均成功）。
+# 因此这里改成打印宿主命令，由调用方用 Root 工具执行；dump 结果经共享目录回读。
+cmd_ui() {
+  pkg="$1"; shift
+  [ -n "$pkg" ] || die "缺少包名"
+  say "在宿主执行（容器内 am/uiautomator 因 shebang 指向 /system/bin/sh 而无法运行）："
+  say "  am start -n $pkg/com.nox.MainActivity"
+  say "  uiautomator dump /data/local/tmp/ui.xml"
+  say "  cp /data/local/tmp/ui.xml /storage/emulated/0/Download/AiGo/AiGo开发/ui.xml"
+  say ""
+  say "然后把 ui.xml 放到 $TMP/ui-dump.xml 再跑："
+  say "  aigo-verify parse $TMP/ui-dump.xml $*"
+}
+
+# 只做解析：读取已由宿主侧 dump 出来的 XML，校验关键词。
+cmd_parse() {
+  [ -f "$1" ] || die "XML 不存在: $1"
+  say "界面文本："
+  xml="$1"; shift
+  python3 - "$xml" "$@" <<'PY'
+import re, sys
+path = sys.argv[1]
+keys = sys.argv[2:]
+s = open(path, encoding="utf-8").read()
+texts = re.findall(r'text="([^"]+)"', s)
+for t in texts:
+    print("  -", t)
+if keys:
+    joined = "\n".join(texts)
+    print()
+    missing = [k for k in keys if k not in joined]
+    if missing:
+        print("MISS 未找到:", ", ".join(missing))
+        sys.exit(1)
+    print("OK 全部关键词出现:", ", ".join(keys))
+PY
+}
+
+cmd_shot() {
+  say "在宿主执行（容器内 screencap 同样因 shebang 不可用）："
+  say "  screencap -p /data/local/tmp/shot.png"
+  say "  cp /data/local/tmp/shot.png /storage/emulated/0/Download/AiGo/AiGo开发/build-output/shot.png"
+}
+
+case "${1:-}" in
+  install) shift; cmd_install "$@" ;;
+  ui)      shift; cmd_ui "$@" ;;
+  parse)   shift; cmd_parse "$@" ;;
+  shot)    cmd_shot ;;
+  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' ;;
+esac

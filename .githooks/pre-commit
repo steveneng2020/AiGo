@@ -319,20 +319,35 @@ fi
 # 而所有人都以为门禁在跑。这正是「门禁存在但不执行」，比没有门禁更危险。
 #
 # 现在只允许 scripts/aigo-gate.sh 一份；/root/bin/aigo-gate 必须是指向它的软链接。
-gate_main="scripts/aigo-gate.sh"
+# 检查三个命令：主脚本在 scripts/，/root/bin 下只能是指向它的软链接。
+#
+# 2026-11-27 一次性发现四个都有问题：
+#   aigo         /root/bin 是副本，已与 scripts/aigo 差 11 行（gate 调用路径不同）
+#   aigo-gate    三份并存，aigo 实际调的是最旧那份，新检查从未生效
+#   aigo-sync    引用的 /root/workspace/source 与 /tmp/aigobuild 都已不存在
+#   aigo-verify  没进 git，删了就没了
 gate_bad=""
-[ -f "$gate_main" ] || gate_bad="$gate_bad 缺少$gate_main"
-[ -x "$gate_main" ] || gate_bad="$gate_bad $gate_main无执行位"
-[ -f "scripts/aigo-gate" ] && gate_bad="$gate_bad 存在旧副本scripts/aigo-gate"
-if [ -e /root/bin/aigo-gate ] && [ ! -L /root/bin/aigo-gate ]; then
-  gate_bad="$gate_bad /root/bin/aigo-gate不是软链接（会与主版本漂移）"
-fi
+check_cmd() {
+  main="$1"; disk="$2"
+  [ -f "$main" ] || gate_bad="$gate_bad 缺少$main"
+  [ -x "$main" ] || gate_bad="$gate_bad $main无执行位"
+  [ -e "$disk" ] && [ ! -L "$disk" ] && \
+    gate_bad="$gate_bad $disk是副本不是软链接（会与主版本漂移）"
+}
+check_cmd scripts/aigo        /root/bin/aigo
+check_cmd scripts/aigo-gate.sh /root/bin/aigo-gate
+check_cmd scripts/aigo-verify  /root/bin/aigo-verify
+# 旧副本不允许再出现
+for old_f in scripts/aigo-gate scripts/aigo-sync /root/bin/aigo-sync; do
+  [ -e "$old_f" ] && gate_bad="$gate_bad 存在已废弃的$old_f"
+done
+
 if [ -z "$gate_bad" ]; then
-  green "  ✔ 门禁脚本唯一（scripts/aigo-gate.sh）"
+  green "  ✔ 脚本唯一（aigo / aigo-gate / aigo-verify 均由 scripts/ 提供）"
 else
-  red "  ✘ 门禁脚本存在多版本或配置错误：$gate_bad"
-  echo "    修复：删掉多余副本，只保留 scripts/aigo-gate.sh，"
-  echo "          /root/bin/aigo-gate 用 ln -sf 指向它"
+  red "  ✘ 脚本存在多版本或配置错误：$gate_bad"
+  echo "    修复：主脚本只放 scripts/，/root/bin 下用 ln -sf 指向它。"
+  echo "          详细原因见 CLAUDE.md 3.1 与本次提交记录。"
   fail=1
 fi
 
