@@ -12,11 +12,15 @@
   现在 sync-rules-doc.sh 在 aigo push 时自动同步，但如果改了 CLAUDE.md
   却没 push，副本就是旧的——所以需要这个检查把窗口期暴露出来。
 
-检查对象：
+检查对象（三份副本，同一批源）：
   · <docs>/铁律/CLAUDE.md           ← CLAUDE.md
   · <docs>/技能/<skill>/SKILL.md    ← ~/.nox/skills/<skill>/SKILL.md
   · <docs>/开发规范/<doc>.md         ← ~/.nox/skills/<skill>/SKILL.md（中文名）
   · <docs>/开发规范/<script>         ← scripts/<script>
+  · docs/skills/<skill>/SKILL.md    ← ~/.nox/skills/<skill>/SKILL.md（进 git）
+
+方向始终是「本地真实文件 → 副本」。本地那份（~/.nox/skills/、CLAUDE.md、scripts/）
+永远不动，因此断网、容器重启都不会影响使用。
 
 只比对「两边都存在」的文件：
   宿主目录可能整体不存在（换机器、首次 clone），那不算错误。
@@ -31,6 +35,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOCS = pathlib.Path("/root/workspace/docs")
+REPO_SKILLS = ROOT / "docs" / "skills"
 SKILLS = pathlib.Path.home() / ".nox" / "skills"
 
 SKILL_NAMES = [
@@ -85,6 +90,8 @@ def main() -> int:
         cn = SKILL_TO_DOC.get(name)
         if cn:
             pairs.append((src, DOCS / "开发规范" / f"{cn}.md", f"开发规范/{cn}.md"))
+        # 仓库内副本（进 git，防容器与宿主同时损坏）
+        pairs.append((src, REPO_SKILLS / name / "SKILL.md", f"docs/skills/{name}"))
 
     # 脚本
     for s in SCRIPTS:
