@@ -47,6 +47,28 @@ else
     yellow "  · 远端还没有 ${branch}，将新建分支"
 fi
 
+# ---------- 1b. 并发构建/推送检测 ----------
+# push 会触发 pre-push 单测，与正在跑的构建抢同一个 app/build。
+# 2026-11-27 一天内因为并发失败 3 次：三个 push 同时跑单测，
+# 两个 Gradle daemon 互发 --stop，日志报
+#   "Gradle build daemon has been stopped: stop command received"
+# 表现为「推送失败」但代码和网络都没问题。
+#
+# 注意这条必须放在 pre-push，不能只放 pre-commit：
+# pre-commit 检查的是「提交前」，而并发实际发生在 push 阶段。
+running=$(ps -ef 2>/dev/null | grep -c "[j]ava.*[G]radleWrapperMain" || true)
+running=${running:-0}
+if [ "${running}" -gt 1 ]; then
+    red "  ✘ 已有 ${running} 个 Gradle 构建在跑，拒绝并发推送"
+    ps -ef 2>/dev/null | grep "[j]ava.*[G]radleWrapperMain" \
+        | awk '{print "      pid " $2 "  父 " $3}' | head -5
+    echo "      并发会让两个构建互发 --stop，单测跑不起来，推送必然失败。"
+    echo "      处理：等它们结束；确认放弃则 sh gradlew --stop 后重试。"
+    fail=1
+elif [ "${running}" -eq 1 ]; then
+    yellow "  · 检测到 1 个 Gradle 进程在跑（可能是上一次残留），继续"
+fi
+
 # ---------- 2. 待推送提交里有没有敏感文件 ----------
 if git rev-parse --verify -q "${remote_ref}" >/dev/null 2>&1; then
     range="${remote_ref}..HEAD"

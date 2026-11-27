@@ -30,6 +30,7 @@
 #   aigo clean-shots       归档验收截图到 验收截图/<日期>/，并清理 7 天前的旧归档
 #   aigo verify-push       确认本次 push 确实产生了 workflow run（防半成功推送）
 #   aigo sync-fuse         整目录覆盖重建归档副本（5~10 分钟，换设备/重建时用）
+#   aigo lock [status]      查看/管理构建锁（并发会在 acquire 时被拒）
 #   aigo where              打印两个位置
 #
 # 实测耗时（宿主 6 核持续高负载下）：
@@ -98,6 +99,10 @@ cmd_push() {
       *) git_args="$git_args $arg" ;;
     esac
   done
+
+  # push 会触发 pre-push 单测，同样需要独占构建资源。
+  sh "$MAIN/scripts/build-lock.sh" acquire "aigo push $*" || exit 1
+  trap 'rc=$?; sh "$MAIN/scripts/build-lock.sh" release; exit $rc' EXIT INT TERM
 
   echo "从主副本直接推送 $MAIN"
   # shellcheck disable=SC2086
@@ -250,6 +255,12 @@ cmd_release_check() {
 
 cmd_build() {
   [ -d "$MAIN" ] || die "主副本不存在，先执行: aigo pull"
+  # 构建互斥：并发会互相 --stop、共用 app/build，产物不可信（一天踩过 4 次）。
+  # 锁在实践中比文档有效——规则写在天上，脚本拦在面前。
+  sh "$MAIN/scripts/build-lock.sh" acquire "aigo build $*" || exit 1
+  # trap 里显式保留退出码：直接 trap 'release' EXIT 会让 shell 用 trap 命令的
+  # 退出码覆盖真实结果，导致构建失败也报 exit 0。
+  trap 'rc=$?; sh "$MAIN/scripts/build-lock.sh" release; exit $rc' EXIT INT TERM
   task="${1:-:app:compileUniversalDebugKotlin}"
   shift 2>/dev/null || true
   cd "$MAIN" || die "进入 $MAIN 失败"
@@ -495,6 +506,7 @@ case "${1:-}" in
   sync-fuse) cmd_sync_fuse ;;
   sync-archive) cmd_sync_archive ;;
   sync-rules) cmd_sync_rules ;;
+  lock)   shift; sh "$MAIN/scripts/build-lock.sh" "${@:-status}" ;;
   clean-shots) cmd_clean_shots ;;
   verify-push) shift; cmd_verify_push "$@" ;;
   where)  cmd_where ;;

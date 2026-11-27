@@ -75,6 +75,19 @@ if [ -f scripts/check_active_session.py ]; then
   fi
 fi
 
+# ---------- 1a-3b. Room 可空列默认值 ----------
+# 可空字段带 defaultValue 会让 Room 校验期与实际表结构不符，装包启动即崩。
+# 2026-11-27 vc143 因此崩过一次，编译/单测/出包全部通过，只有真机才暴露。
+if [ -f scripts/check_room_nullable_default.py ]; then
+  if python3 scripts/check_room_nullable_default.py --quiet >/tmp/precommit_room.log 2>&1; then
+    green "  ✔ Room 可空列默认值"
+  else
+    red "  ✘ Room 实体有问题（装包会崩）："
+    sed 's/^/      /' /tmp/precommit_room.log
+    fail=1
+  fi
+fi
+
 # ---------- 1a-4. 并行构建自检 ----------
 # 2026-11-27 连续三次并行启动同参数构建，三路互相 --stop 打断，全败，
 # 日志还被写坏（NUL 空洞、Task 行重复）。根因是「用日志里有没有 BUILD 行
