@@ -112,8 +112,8 @@ android {
         //      保活需换 specialUse。
         // 代价：不能上 Google Play。
         targetSdk = 28
-        versionCode = 26
-        versionName = "1.0.25"
+        versionCode = 28
+        versionName = "1.0.27"
 
         // 插件上传暂存区令牌：由 local.properties 的 PLUGIN_INBOX_TOKEN 提供。
         // 不写进源码，避免明文凭据随仓库分发；本机没有配置时留空，上传会提示未配置。

@@ -3,6 +3,7 @@ package com.nox.feature.settings.presentation.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +44,7 @@ import com.nox.core.theme.Brand
 import com.nox.core.theme.Spacing
 import com.nox.core.theme.semanticColors
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Search
 
@@ -140,16 +142,60 @@ internal fun CollapsibleGroupHeader(
 internal fun settingsPageBackground(): Color =
     MaterialTheme.semanticColors.pageBackground
 
-/** 分组小标题：卡片上方灰色小字，左对齐。 */
+/**
+ * 分组标题。
+ *
+ * [onClick] 非空时整行可点，右侧箭头提示折叠状态，标题后跟着该组的会话数量；
+ * 数量常驻是因为收起后仍需要知道组里有多少条。
+ */
 @Composable
-internal fun SettingsGroupHeader(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyMedium,
-        fontWeight = FontWeight.Normal,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 0.dp, top = 20.dp, bottom = 8.dp)
-    )
+internal fun SettingsGroupHeader(
+    text: String,
+    count: Int? = null,
+    collapsed: Boolean = false,
+    onClick: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onClick
+                    )
+                } else {
+                    Modifier
+                }
+            )
+            .padding(start = 0.dp, top = 20.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Normal,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (count != null) {
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            )
+        }
+        if (onClick != null) {
+            Spacer(Modifier.width(2.dp))
+            Icon(
+                imageVector = if (collapsed) FeatherIcons.ChevronRight else FeatherIcons.ChevronDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
 }
 
 /** 白色/深色分组圆角卡片容器：内部按行排布，行间用 [SettingsDivider] 分隔。 */

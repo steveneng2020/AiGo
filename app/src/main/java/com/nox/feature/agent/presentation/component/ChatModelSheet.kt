@@ -150,13 +150,17 @@ internal fun ReasoningEffortSelector(
         plan.effectiveLevel != null -> stringResource(plan.effectiveLevel!!.labelRes())
         else -> stringResource(effort.labelRes())
     }
+    // 快速模式生效：档位文字与闪电图标一起变主色，一眼能看出状态
+    val fastModeActive = showFastMode && fastMode
+    val fastModeLabel = stringResource(R.string.chat_fast_mode_label)
     val tint = when {
         !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+        fastModeActive -> MaterialTheme.colorScheme.primary
         thinkingOn -> MaterialTheme.colorScheme.onSurfaceVariant
         else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
     }
 
-    // 闪电 + 当前档位：整块可点，点开同一个弹层。
+    // 闪电 + 当前档位 + Fast 标记：整块可点，点开同一个弹层。
     Row(
         modifier = Modifier
             .height(36.dp)
@@ -167,7 +171,12 @@ internal fun ReasoningEffortSelector(
     ) {
         Icon(
             FeatherIcons.Zap,
-            contentDescription = stringResource(effort.labelRes()),
+            contentDescription = if (fastModeActive) {
+                // 开启后说明改成「Fast 模式已开启，思考强度 X」，读屏用户也能知道状态
+                stringResource(R.string.chat_fast_mode_active_description, barLabel)
+            } else {
+                stringResource(effort.labelRes())
+            },
             tint = tint,
             modifier = Modifier.size(20.dp)
         )
@@ -180,6 +189,19 @@ internal fun ReasoningEffortSelector(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.widthIn(max = 64.dp)
         )
+        if (fastModeActive) {
+            Spacer(Modifier.width(Spacing.xs))
+            Text(
+                text = fastModeLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+                },
+                maxLines = 1
+            )
+        }
     }
 
     if (showSheet) {

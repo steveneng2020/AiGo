@@ -214,6 +214,27 @@ class PluginChatService @Inject constructor(
         return buildJsonObject { put("session", sessionJson(session)) }
     }
 
+    /**
+     * 重置会话上下文：保留全部历史记录与界面，只把「发给模型的历史」从此刻重新计数。
+     *
+     * 用途是绕过上游对单会话轮数的限制：旧消消息仍在列表里可查，但不再进入请求，
+     * 上游看到的是一次从零开始的新对话。
+     */
+    suspend fun resetSessionContext(pluginId: String, params: JsonObject): JsonElement {
+        ensureActive(pluginId)
+        val workspace = requireWorkspace()
+        val sessionId = PluginHostPaths.requireString(params, "sessionId").trim()
+        val session = requireSession(sessionId, workspace)
+        // 起点取当前时间 + 1：同毫秒内刚发出的消息不会被旧历史截断遗漏
+        val startAt = System.currentTimeMillis() + 1
+        sessionUseCase.updateContextStartAt(session.id, startAt)
+        return buildJsonObject {
+            put("ok", true)
+            put("sessionId", session.id)
+            put("contextStartAt", startAt)
+        }
+    }
+
     suspend fun renameSession(pluginId: String, params: JsonObject): JsonElement {
         ensureActive(pluginId)
         val workspace = requireWorkspace()
@@ -498,6 +519,8 @@ class PluginChatService @Inject constructor(
         session.subagentType?.let { put("subagentType", it) }
         session.providerId?.let { put("providerId", it) }
         session.model?.let { put("model", it) }
+        // 插件需要知道当前上下文起点，才能判断「这个会话是否被重置过」
+        put("contextStartAt", session.contextStartAt)
         session.goal?.let { put("goal", it) }
         session.goalStatus?.let { put("goalStatus", it.lowercase()) }
         put("reasoningEffort", session.reasoningEffort.lowercase())

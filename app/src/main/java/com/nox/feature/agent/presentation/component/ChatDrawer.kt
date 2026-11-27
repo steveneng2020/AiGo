@@ -639,6 +639,13 @@ private fun SessionListContent(
             restore = { it.toSet() }
         )
     ) { mutableStateOf(emptySet<String>()) }
+    // 被折叠的分组：记住 groupKey 而不是下标，会话增减时不会错位为另一组
+    var collapsedGroups by rememberSaveable(
+        stateSaver = listSaver<Set<String>, String>(
+            save = { it.toList() },
+            restore = { it.toSet() }
+        )
+    ) { mutableStateOf(emptySet<String>()) }
     val groups = remember(sessions) {
         val now = System.currentTimeMillis()
         val pinned = sessions.filter { it.isPinned }
@@ -655,11 +662,28 @@ private fun SessionListContent(
         // 每个分组占一个 item、组内 forEach 全量渲染会让 LazyColumn 失去惰性：
         // 「最近 30 天」这种分组有上百个会话时，一个 item 就要组合上百行。分组头与会话各自成 item。
         groups.forEach { group ->
+            // 置顶组不折叠：它是使用者主动钉住的，收起只会增加找它的成本
+            val collapsible = group.groupKey != "pinned"
+            val collapsed = collapsible && group.groupKey in collapsedGroups
             item(key = "group-${group.groupKey}", contentType = "group-header") {
                 SettingsGroupHeader(
-                    text = sessionGroupLabel(group.groupKey, group.sessions.first())
+                    text = sessionGroupLabel(group.groupKey, group.sessions.first()),
+                    count = group.sessions.size,
+                    collapsed = collapsed,
+                    onClick = if (!collapsible) {
+                        null
+                    } else {
+                        {
+                            collapsedGroups = if (collapsed) {
+                                collapsedGroups - group.groupKey
+                            } else {
+                                collapsedGroups + group.groupKey
+                            }
+                        }
+                    }
                 )
             }
+            if (collapsed) return@forEach
             itemsIndexed(
                 items = group.sessions,
                 key = { _, session -> session.id },

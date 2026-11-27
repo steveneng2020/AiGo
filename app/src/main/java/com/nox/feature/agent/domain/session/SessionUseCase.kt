@@ -236,6 +236,11 @@ class SessionUseCase @Inject constructor(
         chatSessionDao.updatePinned(sessionId, pinned)
     }
 
+    /** 设置上下文起点：之后发给模型的历史只取该时间之后的消息，历史本身不删。 */
+    suspend fun updateContextStartAt(sessionId: String, startAt: Long) {
+        chatSessionDao.updateContextStartAt(sessionId, startAt)
+    }
+
     suspend fun touch(sessionId: String, timestamp: Long) {
         chatSessionDao.touch(sessionId, timestamp)
     }

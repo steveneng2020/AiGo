@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import android.view.View
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,6 +54,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -121,6 +124,7 @@ import com.nox.feature.workspace.presentation.WorkspaceViewModel
 import com.nox.feature.workspace.presentation.component.WorkspaceBrowserScreen
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
@@ -131,6 +135,12 @@ import com.nox.R
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    /** 防误触锁屏是否生效。存内存即可：Activity 重建时锁屏自动退出更安全。 */
+    private val touchLockActiveFlow = MutableStateFlow(false)
+
+    /** 进入锁屏前的窗口亮度；退出时原样恢复，避免把用户手调的亮度改掉。 */
+    private var savedScreenBrightness: Float? = null
 
     /** 用于冷启动时在前台恢复常驻保活通知（App.onCreate 的启动可能被后台 FGS 限制挡掉）。 */
     @Inject
@@ -261,10 +271,24 @@ class MainActivity : ComponentActivity() {
                 AppThemeMode.LIGHT -> false
             }
             val view = LocalView.current
+            val touchLockActive by touchLockActiveFlow.collectAsStateWithLifecycle()
             SideEffect {
                 val controller = WindowCompat.getInsetsController(window, view)
-                controller.isAppearanceLightStatusBars = !darkTheme
-                controller.isAppearanceLightNavigationBars = !darkTheme
+                // 锁屏时状态栏必须用浅色图标，否则在纯黑遮罩上看不见
+                controller.isAppearanceLightStatusBars = if (touchLockActive) false else !darkTheme
+                controller.isAppearanceLightNavigationBars = if (touchLockActive) false else !darkTheme
+            }
+
+            // 进/出锁屏时调暗窗口并隐藏系统栏；退出时恢复原亮度与栏位
+            var appliedTouchLock by remember { mutableStateOf(false) }
+            LaunchedEffect(touchLockActive, view) {
+                if (touchLockActive) {
+                    appliedTouchLock = true
+                    applyTouchLockWindowMode(locked = true, anchorView = view)
+                } else if (appliedTouchLock) {
+                    appliedTouchLock = false
+                    applyTouchLockWindowMode(locked = false, anchorView = view)
+                }
             }
 
             LaunchedEffect(darkTheme) {
@@ -288,9 +312,11 @@ class MainActivity : ComponentActivity() {
                         AgreementGate(repository = agreementRepository) { agreementAccepted ->
                             AppNavigation(
                                 onboardingRepository = onboardingRepository,
-                                agreementAccepted = agreementAccepted
+                                agreementAccepted = agreementAccepted,
+                                touchLockActive = touchLockActive,
+                                onEnterTouchLock = { touchLockActiveFlow.value = true }
                             )
-                            if (agreementAccepted) {
+                            if (agreementAccepted && !touchLockActive) {
                                 // 全局凭据弹窗：覆盖所有页面，命令行 git 缺凭据在任意页面都能弹。
                                 com.nox.feature.credentials.presentation.component.GlobalCredentialDialogHost(
                                     bridge = credentialRequestBridge
@@ -321,6 +347,12 @@ class MainActivity : ComponentActivity() {
                         }
                         // beta 包全局水印，置于最上层，不拦截触摸。
                         BetaWatermark()
+                        // 防误触遮罩盖在最上面：纯黑全屏、吞掉全部触摸，长按才能退出
+                        if (touchLockActive) {
+                            com.nox.core.ui.TouchLockOverlay(
+                                onUnlock = { touchLockActiveFlow.value = false }
+                            )
+                        }
                     }
                 }
             }
@@ -345,8 +377,51 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        // 锁屏中途被销毁（返回桌面后回收）也要把亮度恢复，否则下次打开会一直是黑的
+        if (savedScreenBrightness != null) {
+            applyTouchLockWindowMode(locked = false, anchorView = window.decorView)
+        }
         browserManager.detachHiddenHost()
         super.onDestroy()
+    }
+
+    /**
+     * 锁屏时调暗窗口并隐藏系统栏，退出时原样恢复。
+     *
+     * 只改窗口级亮度（`screenBrightness`），不动系统设置，退出应用即失效；
+     * 进入时记下原值，之所以不直接设回 BRIGHTNESS_OVERRIDE_NONE，
+     * 是因为用户可能在系统里手调过亮度，恢复原值才不会跳变。
+     */
+    private fun applyTouchLockWindowMode(locked: Boolean, anchorView: View = window.decorView) {
+        if (locked) {
+            if (savedScreenBrightness == null) {
+                savedScreenBrightness = window.attributes.screenBrightness
+            }
+            val target = com.nox.core.ui.resolveTouchLockTargetBrightness(
+                savedScreenBrightness ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            )
+            if (window.attributes.screenBrightness != target) {
+                window.attributes = window.attributes.apply { screenBrightness = target }
+            }
+        } else {
+            savedScreenBrightness?.let { previous ->
+                if (window.attributes.screenBrightness != previous) {
+                    window.attributes = window.attributes.apply { screenBrightness = previous }
+                }
+                savedScreenBrightness = null
+            }
+        }
+        val controller = WindowCompat.getInsetsController(window, anchorView)
+        if (locked) {
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.isAppearanceLightStatusBars = false
+            controller.isAppearanceLightNavigationBars = false
+        } else {
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
     }
 
 }
@@ -373,7 +448,9 @@ private const val MAX_PANE_SPLIT = 0.7f
 @Composable
 fun AppNavigation(
     onboardingRepository: com.nox.feature.onboarding.data.OnboardingRepository,
-    agreementAccepted: Boolean
+    agreementAccepted: Boolean,
+    touchLockActive: Boolean = false,
+    onEnterTouchLock: () -> Unit = {}
 ) {
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -875,7 +952,8 @@ fun AppNavigation(
                                         }
                                     },
                                     chatScrollableState = chatScrollable,
-                                    chatAnchorState = chatAnchor
+                                    chatAnchorState = chatAnchor,
+                                    onEnterTouchLock = onEnterTouchLock
                                 )
                             }
                             // 消息导航：贴在聊天列右缘、垂直居中，长按展开气泡选择器

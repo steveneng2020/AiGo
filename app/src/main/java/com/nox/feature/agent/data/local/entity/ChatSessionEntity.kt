@@ -40,6 +40,9 @@ data class ChatSessionEntity(
     val totalOutputTokens: Int = 0,
     val lastInputTokens: Int = 0,
     val isPinned: Boolean = false,
+    /** 上下文起点（毫秒时间戳）：发给模型的历史只取该时间之后；0 表示不过滤。 */
+    @ColumnInfo(defaultValue = "0")
+    val contextStartAt: Long = 0L,
     /** 子代理会话：父会话 id；null 表示普通根会话。 */
     val parentId: String? = null,
     /** 子代理会话：派生子代理的类型（如 coder / researcher）；null 表示普通根会话。 */

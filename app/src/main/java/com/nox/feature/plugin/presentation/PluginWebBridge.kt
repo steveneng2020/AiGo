@@ -404,6 +404,7 @@ class PluginWebBridge(
         "chat.openSession" -> chatService.openSession(page.pluginId, params)
         "chat.getSession" -> chatService.getSession(page.pluginId, params)
         "chat.renameSession" -> chatService.renameSession(page.pluginId, params)
+        "chat.resetSessionContext" -> chatService.resetSessionContext(page.pluginId, params)
         "chat.pinSession" -> chatService.pinSession(page.pluginId, params)
         "chat.deleteSession" -> chatService.deleteSession(page.pluginId, params)
         "chat.getRunState" -> chatService.getRunState(page.pluginId, params)

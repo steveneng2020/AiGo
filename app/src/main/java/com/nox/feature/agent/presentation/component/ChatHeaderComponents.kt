@@ -63,6 +63,7 @@ import compose.icons.feathericons.GitBranch
 import compose.icons.feathericons.Globe
 import compose.icons.feathericons.Menu
 import compose.icons.feathericons.Edit3
+import compose.icons.feathericons.Lock
 import compose.icons.feathericons.Terminal
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -89,6 +90,8 @@ internal fun ChatHeader(
     terminalActive: Boolean = false,
     gitActive: Boolean = false,
     browserActive: Boolean = false,
+    /** 进入防误触锁屏；菜单里点「防误触」时回调。 */
+    onEnterTouchLock: () -> Unit = {},
     /** 当前供应商名，显示在模型后的括号里。 */
     providerName: String? = null,
     /** 点击标题重命名会话。 */
@@ -207,7 +210,8 @@ internal fun ChatHeader(
                     onNavigateToGit = onNavigateToGit,
                     pluginEntries = pluginEntries,
                     pluginLanguageTag = pluginLanguageTag,
-                    onPluginEntry = onPluginEntry
+                    onPluginEntry = onPluginEntry,
+                    onEnterTouchLock = onEnterTouchLock
                 )
             }
             // 远程模式：左边 SSH 连接状态，右边 token 累计统计
@@ -261,7 +265,8 @@ private fun OverlayMenuButton(
     onNavigateToGit: () -> Unit,
     pluginEntries: List<com.nox.feature.plugin.domain.PluginUiEntry> = emptyList(),
     pluginLanguageTag: String = "",
-    onPluginEntry: (com.nox.feature.plugin.domain.PluginUiEntry) -> Unit = {}
+    onPluginEntry: (com.nox.feature.plugin.domain.PluginUiEntry) -> Unit = {},
+    onEnterTouchLock: () -> Unit = {}
 ) {
     var expanded by remember { mutableStateOf(false) }
     val density = LocalDensity.current
@@ -307,6 +312,20 @@ private fun OverlayMenuButton(
                             label = stringResource(R.string.chat_open_terminal),
                             active = terminalActive,
                             onClick = { expanded = false; onNavigateToTerminal() }
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 46.dp, end = 14.dp),
+                            thickness = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+                        HeaderMenuRow(
+                            icon = FeatherIcons.Lock,
+                            label = stringResource(R.string.chat_touch_lock),
+                            active = false,
+                            onClick = {
+                                expanded = false
+                                onEnterTouchLock()
+                            }
                         )
                         pluginEntries.forEach { entry ->
                             HorizontalDivider(

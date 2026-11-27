@@ -528,6 +528,11 @@
     <string name="chat_fast_mode_title">Fast mode</string>
     <string name="chat_fast_mode_label">Fast</string>
     <string name="chat_fast_mode_cost_hint">Faster responses may incur additional charges</string>
+    <string name="chat_touch_lock">Touch lock</string>
+    <string name="touch_lock_active_title">Touch lock active</string>
+    <string name="touch_lock_hold_hint">Hold %1$d s to exit</string>
+    <string name="touch_lock_holding_countdown">Keep holding (%1$d s)</string>
+    <string name="touch_lock_unlock_cd">Hold for 3 seconds to exit touch lock</string>
     <string name="chat_fast_mode_active_description">Fast mode on, reasoning %1$s</string>
     <string name="chat_reasoning_effort">Reasoning effort</string>
     <string name="chat_reasoning_effort_none">None</string>
