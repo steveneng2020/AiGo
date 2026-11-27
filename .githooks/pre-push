@@ -148,5 +148,22 @@ if [ "${fail}" != "0" ]; then
     exit 1
 fi
 
+# ---------- 5. 同步规则副本到宿主与仓库 ----------
+# 为什么挂在这里而不只在 aigo push：
+#   直接 `git push` 不经过 aigo，规则改了却没同步到
+#   ~/workspace/docs/ 与 docs/skills/，副本就落后了。
+#   2026-11-27 实测：技能文件改过之后直接 git push，宿主那份还是旧的。
+#
+# 同步失败不阻断推送——它是副本维护，不是代码正确性。
+# 但必须显示出来，让人知道副本可能过期。
+if [ -x scripts/sync-rules-doc.sh ] || [ -f scripts/sync-rules-doc.sh ]; then
+    if sh scripts/sync-rules-doc.sh 2>&1 | sed 's/^/    /'; then
+        green "  ✔ 规则副本已同步"
+    else
+        yellow "  ⚠ 规则副本同步失败，可稍后手动 sh scripts/sync-rules-doc.sh"
+    fi
+    echo
+fi
+
 green "推送前检查通过"
 exit 0

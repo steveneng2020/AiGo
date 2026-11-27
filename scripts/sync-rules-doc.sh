@@ -50,10 +50,29 @@ SKILL_TO_DOC_upstream="上游同步"
 SKILL_TO_DOC_branding="品牌改名"
 
 # 需要同步的脚本（权威版本在 scripts/）
-SCRIPTS="aigo aigo-gate.sh build-lock.sh watch.sh check_ui_tokens.py \
-check_changelog_ready.py check_changelog_date.py check_no_parallel_build.sh \
-check_room_nullable_default.py select_tests.py gen-readme-highlights.py \
-verify_panel_alignment.py check_migrations.py check_active_session.py"
+# 脚本清单自动发现，不写死。
+#
+# 原来写死一份名单，结果 2026-11-27 新增的三个文档门禁
+# （check_doc_xref / check_doc_mirror / check_doc_consistency）和
+# check_readme_parity / aigo-verify 全都没被同步——改了脚本却忘了改名单。
+# 这和「副本会漂移」是同一类问题：靠人记得维护清单，必然漏。
+#
+# 排除：__pycache__、内部工具（migrate-schema 那类只跑一次的）。
+SCRIPTS_EXCLUDE="migrate-schema.py sync-gitcode-releases.py build-vscode-themes.py"
+discover_scripts() {
+  for f in "$MAIN"/scripts/*; do
+    [ -f "$f" ] || continue
+    name=$(basename "$f")
+    case "$name" in
+      *.md|*.jks|__pycache__*) continue ;;
+    esac
+    case " $SCRIPTS_EXCLUDE " in
+      *" $name "*) continue ;;
+    esac
+    printf '%s\n' "$name"
+  done
+}
+SCRIPTS=$(discover_scripts)
 
 n=0
 failed=0
@@ -119,6 +138,24 @@ cat > "$DOCS_DST/开发规范/README.md" <<'EOF'
 **最后同步时间**：见各文件的 mtime。`aigo push` 会自动刷新。
 EOF
 
+# ---- 4b. 清理已废弃的脚本副本 ----
+# 源里删掉的脚本，副本要跟着删，否则宿主目录会留下过期文件。
+# 2026-11-27 删掉 scripts/aigo-gate 后，宿主那份还在，
+# 有人照着跑就会用旧逻辑——这比「少一份」更危险。
+pruned=0
+if [ -d "$DOCS_DST/开发规范" ]; then
+  for f in "$DOCS_DST/开发规范"/*; do
+    [ -f "$f" ] || continue
+    name=$(basename "$f")
+    case "$name" in
+      *.md) continue ;;   # 文档由技能同步产生，另有来源
+    esac
+    if [ ! -f "$MAIN/scripts/$name" ]; then
+      rm -f "$f" && pruned=$((pruned + 1))
+    fi
+  done
+fi
+
 # ---- 5. 仓库内技能副本的说明 ----
 cat > "$REPO_DST/README.md" <<'REPOEOF'
 # 技能副本（进 git）
@@ -162,4 +199,7 @@ if [ "$failed" -gt 0 ]; then
   exit 1
 fi
 
+if [ "$pruned" -gt 0 ]; then
+  echo "已清理 $pruned 份已废弃的脚本副本"
+fi
 echo "已同步 $n 份到 $DOCS_DST（铁律 + 技能 + 开发规范）"
