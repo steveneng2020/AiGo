@@ -48,6 +48,10 @@ ALLOWLIST = {
 }
 
 FONT_PATTERN = re.compile(r"\b(fontSize|lineHeight)\s*=\s*[0-9]+(\.[0-9]+)?\.sp\b")
+
+# 豁免说明里声明的「N 处」，用于交叉校验。
+# 例：`// ui-tokens-exempt: 存量文件，字号尚未迁移到 PanelTokens（4 处）。`
+EXEMPT_COUNT = re.compile(r"ui-tokens-exempt:[^\n]*?（(\d+)\s*处）")
 FEATHER_PATTERN = re.compile(r"\bFeatherIcons\b")
 
 # 图标体系规则只对「统计卡片」生效：这类卡片内部的 16×16 图标要和分组标题同一套。
@@ -80,6 +84,7 @@ def is_panel_scope(path: pathlib.Path) -> bool:
 
 def main() -> int:
     problems: list[str] = []
+    exempt_mismatch: list[str] = []
     checked = 0
 
     for path in sorted(SRC.rglob("*.kt")):
@@ -89,6 +94,24 @@ def main() -> int:
         rel = path.relative_to(ROOT)
 
         if EXEMPT_MARK in text:
+            # 豁免文件不参与「必须用令牌」的检查，但要核对豁免说明里的数字是否还准。
+            #
+            # 为什么查这个：豁免注释写着「（4 处）」，但文件后来被人改了
+            # （新增两处字号、或删掉一处），数字就成了假的。
+            # 假数字比没数字更糟——它会让人以为债务规模没变，实际已经滚大或缩小。
+            # 2026-11-27 就有文件因为上游合并多出硬编码，而注释仍写旧数字。
+            declared = EXEMPT_COUNT.search(text)
+            if declared:
+                want = int(declared.group(1))
+                got = sum(
+                    1 for line in text.splitlines()
+                    if not line.lstrip().startswith("//") and FONT_PATTERN.search(line)
+                )
+                if got != want:
+                    exempt_mismatch.append(
+                        f"{rel}: 豁免说明写「{want} 处」，实际 {got} 处"
+                        f"（{'+' if got > want else ''}{got - want}）"
+                    )
             continue
         if path.name in ALLOWLIST:
             continue
@@ -129,7 +152,19 @@ def main() -> int:
         print(f"存量文件可临时加注释 {EXEMPT_MARK}: <原因> 豁免。")
         return 1
 
-    print(f"UI 设计系统检查通过（扫描 {checked} 个面板类文件）")
+    # 豁免数字不符：只警告不拦，因为它不影响界面正确性，
+    # 但必须让人看见——数字失真意味着债务规模判断失效。
+    if exempt_mismatch:
+        print(f"[警告] {len(exempt_mismatch)} 个文件的豁免数字与实际不符：")
+        for m in exempt_mismatch:
+            print(f"  {m}")
+        print()
+        print("  豁免注释里的「N 处」应与文件内实际硬编码数量一致。")
+        print("  改了这些文件就顺手更新数字，否则债务规模无从判断。")
+        print()
+
+    print(f"UI 设计系统检查通过（扫描 {checked} 个面板类文件，"
+          f"{len(exempt_mismatch)} 个豁免待更新）")
     return 0
 
 
