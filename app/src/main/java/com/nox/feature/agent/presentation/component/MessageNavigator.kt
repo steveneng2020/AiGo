@@ -1,5 +1,9 @@
 package com.nox.feature.agent.presentation.component
 
+// ui-tokens-exempt: 上游新引入文件（Nox 5c1a494 消息导航器），字号尚未迁移到 PanelTokens（2 处）。
+// 保持与上游一致便于后续合并；迁移时按信息密度选档位，不要机械替换成最小值。
+// 迁移完成前本文件不参与 UI 门禁检查。
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi

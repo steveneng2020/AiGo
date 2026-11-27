@@ -93,9 +93,29 @@ else
     if sh gradlew :app:testUniversalDebugUnitTest >/tmp/prepush_test.log 2>&1; then
         green "  ✔ 单元测试通过"
     else
-        red "  ✘ 单元测试未过："
-        grep -E 'FAILED|tests completed' /tmp/prepush_test.log | head -15 | sed 's/^/      /'
-        echo "      完整日志: /tmp/prepush_test.log"
+        # Gradle 非零退出有两种完全不同的原因，必须分开报：
+        #   ① 测试真的失败了（有用例 FAILED）—— 代码问题，改代码
+        #   ② 构建本身没跑起来（ksp IO 冲突、并发抢目录、缓存损坏）—— 环境问题，别改代码
+        #
+        # 2026-11-27 的教训：第 1 轮推送失败在资源打包阶段，
+        # 测试任务一次都没执行（日志里 testUniversalDebugUnitTest 出现 0 次），
+        # 但钩子笼统报「单元测试未过」。按这个提示去查测试代码，
+        # 方向完全错了，差点误报「代码有 bug」。真实原因是并发构建抢 app/build。
+        if grep -qE '^[a-zA-Z0-9_.]+ > .* FAILED| tests completed, [0-9]+ failed' /tmp/prepush_test.log; then
+            red "  ✘ 单元测试未过（有用例失败，属代码问题）："
+            grep -E 'FAILED|tests completed' /tmp/prepush_test.log | head -15 | sed 's/^/      /'
+            echo "      完整日志: /tmp/prepush_test.log"
+        else
+            red "  ✘ 测试没跑起来（构建阶段失败，通常不是代码问题）："
+            grep -E 'What went wrong|FAILED|error:|Could not|still writing' /tmp/prepush_test.log \
+                | head -8 | sed 's/^/      /'
+            echo "      完整日志: /tmp/prepush_test.log"
+            echo
+            yellow "      常见原因与处理："
+            yellow "        · 有别的 Gradle 在跑：ps -ef | grep \"[j]ava.*gradle\""
+            yellow "        · 中间产物被抢写：sh gradlew --stop && rm -rf app/build"
+            yellow "        · 构建缓存损坏：rm -rf /root/.gradle-home/caches/build-cache-1"
+        fi
         fail=1
     fi
 fi
