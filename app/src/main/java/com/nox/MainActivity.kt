@@ -808,6 +808,9 @@ fun AppNavigation(
                     }
                 }
                 val paneOpen = expanded && paneKind != WorkbenchPaneKind.NONE
+                // 聊天列表是否超出视口、视口顶部是哪条：由 AIChatPanel 回写，导航器据此决定显不显示、停在哪
+                val chatScrollable = remember { mutableStateOf(false) }
+                val chatAnchor = remember { mutableStateOf<String?>(null) }
                 // 拖动把手时要把位移像素换算成分栏比例，所以记下容器实测宽度与左栏宽度。
                 var rowWidthPx by remember { mutableIntStateOf(0) }
                 var leftPaneWidthPx by remember { mutableIntStateOf(0) }
@@ -870,9 +873,18 @@ fun AppNavigation(
                                         if (onboardingUiState.active && onboardingUiState.step == OnboardingStep.SIMULATE_CHOOSE_MODEL) {
                                             onboardingCoordinator.goToStep(OnboardingStep.OPEN_MODEL_PICKER)
                                         }
-                                    }
+                                    },
+                                    chatScrollableState = chatScrollable,
+                                    chatAnchorState = chatAnchor
                                 )
                             }
+                            // 消息导航：贴在聊天列右缘、垂直居中，长按展开气泡选择器
+                            com.nox.feature.agent.presentation.component.MessageNavigatorLayer(
+                                viewModel = agentViewModel,
+                                scrollable = chatScrollable.value,
+                                anchorMessageId = chatAnchor.value,
+                                modifier = Modifier.align(androidx.compose.ui.Alignment.CenterEnd)
+                            )
                         }
                         if (paneOpen) {
                             VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
