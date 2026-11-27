@@ -35,6 +35,15 @@ interface AgentMessageDao {
     suspend fun getMessagesBySessionOnce(sessionId: String): List<AgentMessageEntity>
 
     /**
+     * 消息导航器的数据源：整个会话里指定角色的消息，不受聊天分页上限限制。
+     *
+     * 聊天列表只加载最近若干条（滚到顶再补），导航器需要完整的会话历史，
+     * 否则用户往回找早期消息时只能看到已加载的一小段。
+     */
+    @Query("SELECT * FROM agent_messages WHERE sessionId = :sessionId AND role = :role ORDER BY timestamp ASC")
+    fun getMessagesByRole(sessionId: String, role: String): Flow<List<AgentMessageEntity>>
+
+    /**
      * 按时间倒序读取一页消息，供插件只读会话内容。
      * [before] / [after] 为空表示不设该边界；返回按 timestamp 倒序，调用方需要时可再反转。
      */

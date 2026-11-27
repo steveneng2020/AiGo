@@ -739,6 +739,10 @@ fun AIChatPanel(
     onboardingStep: OnboardingStep? = null,
     onSelectModelInOnboarding: (() -> Unit)? = null,
     onDismissModelSheetInOnboarding: (() -> Unit)? = null,
+    /** 把「消息列表是否超出视口」回写给外层，导航器把手据此决定是否出现。 */
+    chatScrollableState: androidx.compose.runtime.MutableState<Boolean>? = null,
+    /** 把「视口顶部那条消息的 id」回写给外层，导航器据此决定展开时停在哪一条。 */
+    chatAnchorState: androidx.compose.runtime.MutableState<String?>? = null,
     modifier: Modifier = Modifier
 ) {
     val agentState by viewModel.agentState.collectAsStateWithLifecycle()
@@ -855,6 +859,12 @@ fun AIChatPanel(
     var editingMessage by remember { mutableStateOf<AgentUIMessage?>(null) }
     var queuedEditing by remember { mutableStateOf<QueuedRequest?>(null) }
     val listState = rememberLazyListState()
+    // 消息是否超出视口：导航器把手只在有历史可翻时才出现。
+    // 包一层 derivedStateOf，滚动时只有布尔值翻转才会重组面板，不跟着每像素闪。
+    val chatCanScroll by remember(listState) {
+        derivedStateOf { listState.canScrollBackward || listState.canScrollForward }
+    }
+    SideEffect { chatScrollableState?.value = chatCanScroll }
     // 消息未就绪时的加载提示：本地读库通常几十毫秒，立刻显示反而闪一下，等一小会儿还没就绪才提示。
     var showMessagesLoading by remember(currentSessionId) { mutableStateOf(false) }
     LaunchedEffect(currentSessionId, messagesReady) {
@@ -955,6 +965,10 @@ fun AIChatPanel(
     }
     val readyAsyncItems = asyncItems?.takeIf { useAsyncItems && it.sessionId == currentSessionId }
     val chatItems = readyAsyncItems?.items ?: remember(chatItemsKey) { buildItems() }
+    // 把视口顶部那条消息回写给外层：消息导航器展开时要停在「当前正在看的那条」附近。
+    SideEffect {
+        chatAnchorState?.value = chatItems.getOrNull(listState.firstVisibleItemIndex)?.message?.id
+    }
     // 每轮任务的总耗时（用户发送 → 本轮 AI 收工）与 token 合计，都只挂在轮末助手气泡下方
     val taskDurations = remember(messages, isBusy) {
         computeTaskDurations(messages, lastTurnFinished = !isBusy)

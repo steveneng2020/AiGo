@@ -565,6 +565,56 @@ class AIAgentViewModel @Inject constructor(
         _pendingScrollMessage.value = null
     }
 
+    /**
+     * 消息导航器：在当前会话内定位到某条已加载的消息。
+     *
+     * 复用搜索结果跳转那条链路（[pendingScrollMessage]），由聊天页在列表就绪后
+     * 找下标并滚动，跟随贴底会被同时关掉，不会刚跳过去又被拉回末尾。
+     */
+    /**
+     * 消息导航器：在当前会话内定位到某条消息。
+     *
+     * 不能只登记 pendingScroll：导航器能看到整个会话的用户消息，而聊天列表只加载了最近若干条。
+     * 目标不在已加载窗口内时，聊天页找不到下标，只能放弃——表现就是点一下没反应、
+     * 反复点几下列表恰好补载到位才跳过去。这里先按目标时间戳算出需要多少条，
+     * 把分页上限抬到足够包含它，再登记待定位。
+     */
+    fun scrollToMessageInSession(sessionId: String, messageId: String) {
+        viewModelScope.launch {
+            val timestamp = withContext(Dispatchers.IO) {
+                agentMessageDao.getMessageById(messageId)?.timestamp
+            }
+            if (timestamp != null) {
+                val needed = withContext(Dispatchers.IO) {
+                    agentMessageDao.countMessagesFromTimestamp(sessionId, timestamp)
+                } + messageLimitMargin
+                val current = _messageLimit.value[sessionId] ?: defaultLimit
+                if (needed > current) {
+                    _messageLimit.value = _messageLimit.value + (sessionId to needed)
+                }
+            }
+            _pendingScrollMessage.value = sessionId to messageId
+        }
+    }
+
+    /**
+     * 消息导航器的数据源：整个会话的用户消息，不受聊天列表分页上限限制。
+     *
+     * 只在使用者展开导航器时调一次，不做长期订阅：流式回复期间会频繁写库，
+     * 常驻 Flow 会被反复失效重查，白白消耗 CPU。
+     * 过滤掉上下文压缩锚点与后台任务完成通知——后者同样是 USER 角色，但不是人手发的。
+     */
+    suspend fun loadUserMessagesForNavigator(sessionId: String): List<AgentUIMessage> =
+        withContext(Dispatchers.IO) {
+            agentMessageDao.getMessagesByRole(sessionId, MessageRole.USER.name).first()
+                .asSequence()
+                .map { it.toUIMessage() }
+                .filter { message ->
+                    !message.isCompactionMarker && !message.isBackgroundNotification && message.content.isNotBlank()
+                }
+                .toList()
+        }
+
     /** 转义 LIKE 通配符，配合 SQL 里的 ESCAPE '!'（转义字符本身需最先处理）。 */
     private fun escapeLike(raw: String): String =
         raw.replace("!", "!!").replace("%", "!%").replace("_", "!_")
