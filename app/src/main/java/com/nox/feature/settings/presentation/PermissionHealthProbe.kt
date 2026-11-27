@@ -100,15 +100,23 @@ class PermissionHealthProbe @Inject constructor(
         )
     }
 
+    /**
+     * 存储访问。
+     *
+     * ## 判据为什么看 targetSdk 而不是系统版本
+     *
+     * 本应用 targetSdk 锁在 28（见 app/build.gradle.kts 的说明），
+     * 走的是旧式全盘读写（READ/WRITE_EXTERNAL_STORAGE），
+     * **不适用** Android 13+ 的分媒体权限模型。
+     *
+     * 上一版写成 `if (SDK_INT >= TIRAMISU) true`，等于在 Android 13+
+     * 的设备上永远返回「已就绪」——从不检查，纯装饰。本机是 Android 16，
+     * 所以这一项永远绿。实测点进去才发现是假的。
+     */
     private fun storage(): Item {
-        val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+ 分媒体权限；项目实际通过 SAF 与自有目录工作，只作提示。
-            true
-        } else {
-            ContextCompat.checkSelfPermission(
-                context, Manifest.permission.READ_EXTERNAL_STORAGE,
-            ) == PackageManager.PERMISSION_GRANTED
-        }
+        val granted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.WRITE_EXTERNAL_STORAGE,
+        ) == PackageManager.PERMISSION_GRANTED
         return Item(
             key = "storage",
             title = "存储访问",

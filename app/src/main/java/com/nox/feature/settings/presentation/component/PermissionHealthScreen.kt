@@ -12,16 +12,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import compose.icons.FeatherIcons
@@ -58,13 +50,21 @@ import com.nox.feature.settings.presentation.PermissionHealthViewModel
  * 因此状态分 READY（就绪）/ ATTENTION（需注意）/ MISSING（未授予），
  * 用三种颜色 + 三档文案区分，且旁边始终有文字，不单靠颜色传意。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PermissionHealthScreen(
     onBack: () -> Unit,
     viewModel: PermissionHealthViewModel = hiltViewModel(),
 ) {
     val items by viewModel.items.collectAsStateWithLifecycle()
+
+    // 存储权限走运行时请求，不跳设置页：本应用 targetSdk=28，
+    // READ/WRITE_EXTERNAL_STORAGE 是普通运行时权限，一步到位。
+    // 系统没有直达单个 runtime 权限的稳定 Action，跳「应用信息」只会多翻两层。
+    val storageLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        viewModel.refresh()
+    }
 
     // 从系统设置页返回时重新探测：用户可能刚授权完。
     LifecycleResumeEffect(Unit) {
@@ -74,61 +74,69 @@ internal fun PermissionHealthScreen(
 
     val (ready, total) = viewModel.summary()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings_permission_health)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.common_back),
-                        )
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = Spacing.lg)
-                .padding(bottom = Spacing.xl),
-            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-        ) {
-            // 顶部总结：一句话说清「还差什么」
-            Text(
-                text = stringResource(R.string.settings_permission_health_summary, ready, total),
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (ready == total) {
-                    MaterialTheme.semanticColors.success
-                } else {
-                    MaterialTheme.semanticColors.warning
-                },
-                modifier = Modifier.padding(vertical = Spacing.sm),
-            )
+    // 不要自己的 Scaffold/TopAppBar：外层 SettingsScreen 已经提供了标题栏与返回按钮，
+    // 再套一层会出现「权限健康」重复两次（实测截图里就是两层标题）。
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = Spacing.lg)
+            .padding(bottom = Spacing.xl),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+    ) {
+        // 顶部总结：一句话说清「还差什么」
+        Text(
+            text = stringResource(R.string.settings_permission_health_summary, ready, total),
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (ready == total) {
+                MaterialTheme.semanticColors.success
+            } else {
+                MaterialTheme.semanticColors.warning
+            },
+            modifier = Modifier.padding(vertical = Spacing.sm),
+        )
 
-            SettingsGroupHeader(text = stringResource(R.string.settings_permission_health_group))
+        SettingsGroupHeader(text = stringResource(R.string.settings_permission_health_group))
 
-            SettingsGroup {
-                items.forEach { item ->
-                    PermissionHealthRow(
-                        item = item,
-                        onClick = { viewModel.onItemClick(item.action) },
-                    )
-                }
+        SettingsGroup {
+            items.forEach { item ->
+                PermissionHealthRow(
+                    item = item,
+                    onClick = {
+                        // 只有「运行时权限」需要分情况：
+                        // 已授予时 requestPermissions 会立刻返回、不弹框，
+                        // 用户看到的就是「点了没反应」——所以要改跳设置页。
+                        //
+                        // 其余项都是特殊权限（悬浮窗 / 修改系统设置 / 安装应用 /
+                        // 通知 / 电池优化 / 无障碍），它们的系统页无论是否已授权
+                        // 都能进、且用户可能想进去撤销，所以一律照常跳转。
+                        if (item.action == PermissionHealthProbe.Action.STORAGE) {
+                            if (item.state == PermissionHealthProbe.State.READY) {
+                                // 已授予：没有可申请的，跳到应用详情让用户自己看/撤销
+                                viewModel.openAppDetails()
+                            } else {
+                                storageLauncher.launch(
+                                    arrayOf(
+                                        android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                                        android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                                    ),
+                                )
+                            }
+                        } else {
+                            viewModel.onItemClick(item.action)
+                        }
+                    },
+                )
             }
-
-            // 底部提示：说明这一页只读不改，避免用户以为在这里能直接授权
-            Text(
-                text = stringResource(R.string.settings_permission_health_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = Spacing.sm, start = Spacing.sm, end = Spacing.sm),
-            )
         }
+
+        // 底部提示：说明这一页只读不改，避免用户以为在这里能直接授权
+        Text(
+            text = stringResource(R.string.settings_permission_health_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = Spacing.sm, start = Spacing.sm, end = Spacing.sm),
+        )
     }
 }
 
@@ -157,11 +165,6 @@ private fun PermissionHealthRow(
                     modifier = Modifier
                         .size(8.dp)
                         .background(stateColor(item.state), CircleShape),
-                )
-                Icon(
-                    Icons.Filled.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
