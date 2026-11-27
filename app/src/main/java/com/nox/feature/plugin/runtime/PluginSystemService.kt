@@ -137,7 +137,26 @@ class PluginSystemService @Inject constructor(
         val accentColor = (params["accentColor"] as? JsonPrimitive)?.contentOrNull
         val cornerRadius = (params["cornerRadius"] as? JsonPrimitive)?.intOrNull ?: 0
         val dimAlpha = (params["dimAlpha"] as? JsonPrimitive)?.floatOrNull ?: 0.4f
-        val showClose = (params["showClose"] as? JsonPrimitive)?.booleanOrNull ?: true
+        val showClose = (params["showClose"] as? JsonPrimitive)?.booleanOrNull ?: false
+        val capture = (params["capture"] as? JsonPrimitive)?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+            ?.also {
+                if (it.length > MAX_CAPTURE_SCRIPT_CHARS) {
+                    throw PluginHostException("PARAM_INVALID", "capture script too long")
+                }
+            }
+        val autoCapture = (params["autoCapture"] as? JsonPrimitive)?.booleanOrNull ?: false
+        val autoFinish = (params["autoFinish"] as? JsonPrimitive)?.booleanOrNull ?: true
+        val successWhen = (params["successWhen"] as? JsonPrimitive)?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+            ?.also {
+                if (it.length > MAX_CAPTURE_SCRIPT_CHARS) {
+                    throw PluginHostException("PARAM_INVALID", "successWhen script too long")
+                }
+            }
+        val showFinishButton = (params["showFinishButton"] as? JsonPrimitive)?.booleanOrNull ?: false
+        val showCancel = (params["showCancel"] as? JsonPrimitive)?.booleanOrNull ?: true
+        val cancelText = (params["cancelText"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
         return PluginLoginSession.launch(
             context = context,
             url = url,
@@ -147,7 +166,14 @@ class PluginSystemService @Inject constructor(
             accentColor = accentColor,
             cornerRadiusDp = cornerRadius,
             dimAlpha = dimAlpha,
-            showClose = showClose
+            showClose = showClose,
+            capture = capture,
+            autoCapture = autoCapture,
+            autoFinish = autoFinish,
+            successWhen = successWhen,
+            showFinishButton = showFinishButton,
+            showCancel = showCancel,
+            cancelText = cancelText
         ) ?: throw PluginHostException("LOGIN_CANCELED", "user canceled login")
     }
 
@@ -285,6 +311,9 @@ class PluginSystemService @Inject constructor(
         const val MAX_CLIPBOARD_BYTES = 1024 * 1024
         const val MAX_SHARE_CHARS = 100_000
         const val MAX_URL_CHARS = 4096
+
+        /** 插件传入的抓取脚本长度上限：脚本会在登录页上下文执行，不宜过长。 */
+        const val MAX_CAPTURE_SCRIPT_CHARS = 8 * 1024
         const val MAX_LOG_MESSAGE_CHARS = 2000
         const val MAX_LOG_TAG_CHARS = 64
         const val DEFAULT_TAG_PREFIX = "plugin:"
