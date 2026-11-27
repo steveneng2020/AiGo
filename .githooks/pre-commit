@@ -310,6 +310,45 @@ else
   fail=1
 fi
 
+# ---------- 8b. 文档自身的一致性 ----------
+# 三件事：交叉引用能解析、副本与源一致、同一术语口径不矛盾。
+#
+# 2026-11-27 一天内三件都出过问题：
+#   插入条目后编号顺延，正文「见 3.5」还指着旧编号（手工 rg 才发现）
+#   docs/铁律/CLAUDE.md 落后主副本 145 行（副本会漂移）
+#   --no-build-cache 三处说法相反，其中一处是错的（靠人工比对才发现）
+#
+# 三条都是「文档写了但实际不是那样」，靠读看不出来，只能靠脚本。
+doc_ok=1
+if [ -f scripts/check_doc_xref.py ]; then
+  if python3 scripts/check_doc_xref.py >/tmp/pc_xref.log 2>&1; then
+    green "  ✔ 文档交叉引用可解析"
+  else
+    red "  ✘ 文档交叉引用失效："
+    sed 's/^/      /' /tmp/pc_xref.log
+    doc_ok=0
+  fi
+fi
+if [ -f scripts/check_doc_mirror.py ]; then
+  if python3 scripts/check_doc_mirror.py >/tmp/pc_mirror.log 2>&1; then
+    green "  ✔ 宿主副本与源一致"
+  else
+    red "  ✘ 文档副本已漂移："
+    sed 's/^/      /' /tmp/pc_mirror.log | head -12
+    doc_ok=0
+  fi
+fi
+if [ -f scripts/check_doc_consistency.py ]; then
+  if python3 scripts/check_doc_consistency.py >/tmp/pc_cons.log 2>&1; then
+    green "  ✔ 术语口径无冲突"
+  else
+    red "  ✘ 术语口径冲突："
+    sed 's/^/      /' /tmp/pc_cons.log | head -16
+    doc_ok=0
+  fi
+fi
+[ "$doc_ok" = "1" ] || fail=1
+
 # ---------- 9. 门禁脚本不能有多个版本 ----------
 # 2026-11-27 发现：aigo-gate 同时存在三份，行数与检查项全不相同——
 #   scripts/aigo-gate.sh  834 行 9 步（最新，但没人调用）
