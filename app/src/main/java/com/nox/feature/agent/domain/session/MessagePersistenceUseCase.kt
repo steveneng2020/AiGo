@@ -21,7 +21,8 @@ import javax.inject.Singleton
 @Singleton
 class MessagePersistenceUseCase @Inject constructor(
     private val agentMessageDao: AgentMessageDao,
-    private val agentDatabase: AgentDatabase
+    private val agentDatabase: AgentDatabase,
+    private val sessionUseCase: SessionUseCase
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -33,6 +34,8 @@ class MessagePersistenceUseCase @Inject constructor(
     private class HistoryEntry(
         val version: Long,
         val pendingToolMarker: String,
+        /** 构建这份缓存时的上下文起点；插件重置后必须失效，否则会继续用旧历史。 */
+        val contextStartAt: Long,
         val messages: List<AgentMessage>
     )
 
@@ -239,25 +242,34 @@ class MessagePersistenceUseCase @Inject constructor(
         // 避免工具循环中每轮 LLM 调用都全量读库 + 多次遍历 + JSON 解码。
         // InvalidationTracker 覆盖所有写路径（含 rewind 删除、压缩标记、冷启动清理），不会漏失效。
         val version = dbVersion.get()
+        val contextStartAt = sessionUseCase.getSessionById(sessionId)?.contextStartAt ?: 0L
         synchronized(historyCache) {
             historyCache[sessionId]?.let { cached ->
-                if (cached.version == version && cached.pendingToolMarker == pendingToolMarker) {
+                if (cached.version == version &&
+                    cached.pendingToolMarker == pendingToolMarker &&
+                    cached.contextStartAt == contextStartAt
+                ) {
                     return cached.messages
                 }
             }
         }
         val messages = withContext(Dispatchers.IO) {
-            buildHistoryUncached(sessionId, pendingToolMarker)
+            buildHistoryUncached(sessionId, pendingToolMarker, contextStartAt)
         }
         synchronized(historyCache) {
-            historyCache[sessionId] = HistoryEntry(version, pendingToolMarker, messages)
+            historyCache[sessionId] = HistoryEntry(version, pendingToolMarker, contextStartAt, messages)
         }
         return messages
     }
 
-    private suspend fun buildHistoryUncached(sessionId: String, pendingToolMarker: String): List<AgentMessage> {
+    private suspend fun buildHistoryUncached(
+        sessionId: String,
+        pendingToolMarker: String,
+        contextStartAt: Long
+    ): List<AgentMessage> {
         val entities = agentMessageDao.getMessagesBySessionOnce(sessionId)
             .filter { !it.isCompacted && !it.isContextExcluded }
+            .filter { contextStartAt <= 0L || it.timestamp >= contextStartAt }
             .let { orderHistoryEntities(it) }
 
         // 第一遍：求 assistant 声明的 toolCallId 与 tool 结果 toolCallId 的交集。

@@ -120,6 +120,10 @@ interface ChatSessionDao {
     @Query("UPDATE chat_sessions SET isPinned = :pinned WHERE id = :id")
     suspend fun updatePinned(id: String, pinned: Boolean)
 
+    /** 设置上下文起点：发往模型的历史只取该时间之后的消息。 */
+    @Query("UPDATE chat_sessions SET contextStartAt = :startAt WHERE id = :id")
+    suspend fun updateContextStartAt(id: String, startAt: Long)
+
     @Query("DELETE FROM chat_sessions WHERE id = :id")
     suspend fun delete(id: String)
 

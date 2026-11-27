@@ -188,12 +188,26 @@ fi
 
 # ---------- 4. 提交信息里禁止「参照/对标」这类表述 ----------
 # 功能说明只写「做了什么、对使用者有什么影响」，不写「照谁的做的」。
-# 排除规则定义文件本身：规则说明必然要举出被禁字样作为例子，
-# 把 CLAUDE.md/.githooks/scripts 一起检查只会导致规则自锁。
-# 这些文件的改动仍需人工审阅，但不由机器按关键字拦。
+#
+# 排除两类：
+#   1. 规则定义文件本身 —— 规则说明必然要举出被禁字样作为例子，
+#      把 CLAUDE.md/.githooks/scripts 一起检查只会导致规则自锁。
+#   2. 上游同步进来的文件 —— 那是 Nox 的原文注释，改它会让下次 merge
+#      在无关位置冲突。2026-11-28 实测：ChatDrawer.kt 里
+#      「底部 sheet 样式参照 git 分支的 RefActionSheet」来自上游 b37dd2a。
+#
+# 第 2 类的判据：该文件当前内容与 upstream/main 完全一致。
+# 用 diff 判断而不是硬编码路径——上游改了这行、我们也跟着改，
+# 就不该再享受豁免。
 msg_bad=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | while read -r f; do
   [ -f "$f" ] || continue
   case "$f" in .githooks/*|scripts/*|CLAUDE.md|AGENTS.md) continue ;; esac
+  # 与上游同文则跳过（说明这行不是我们写的）
+  if git cat-file -e "upstream/main:$f" 2>/dev/null; then
+    if git diff --quiet upstream/main -- "$f" 2>/dev/null; then
+      continue
+    fi
+  fi
   grep -nE '参照|对标' "$f" 2>/dev/null | sed "s|^|    $f:|"
 done | head -5)
 if [ -n "$msg_bad" ]; then

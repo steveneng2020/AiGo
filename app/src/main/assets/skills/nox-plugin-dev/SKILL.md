@@ -575,6 +575,26 @@ await aicode.fs.write('data://config.json', JSON.stringify(cfg));
 
 ---
 
+### 重置会话上下文（绕过上游轮数限制）
+
+有些上游按「单会话累计轮数」限制（如 100 轮），到上限就拒服务。
+这种情况不需要新建会话：调 `resetSessionContext` 把上下文起点移到当前时刻，
+**历史消息全部保留在界面与数据库里**，只是不再发给模型，上游看到的就是一次新对话。
+
+```js
+// runtime 里（需要当前会话 id，一般从页面上下文或你自己的配置里拿）
+await hostCall('host.chat.resetSessionContext', { sessionId })
+// → { ok: true, sessionId, contextStartAt }
+```
+
+```js
+// 页面里
+aicode.call('chat.resetSessionContext', { sessionId })
+```
+
+`getSession` 返回的 `contextStartAt` 可以判断该会话是否被重置过（`0` 表示从未重置）。
+重置不需要修改会话 id，历史记录与侧栏位置都不变。
+
 ## 四、runtime 的 JSON-RPC 协议
 
 宿主启动插件进程后，双方通过 **stdout/stdin 上的 JSON-RPC 2.0 单行消息**通信。
@@ -724,6 +744,7 @@ rl.on('close', () => process.exit(0));
 | `host.app.info` / `host.app.isForeground` ✅ | 宿主版本、包名；是否在前台 |
 | `host.chat.setDraft` ✅ | 往输入框写草稿 |
 | `host.chat.openSession` / `getSession` / `renameSession` / `pinSession` / `deleteSession` | 会话管理 |
+| `host.chat.resetSessionContext` | 重置上下文起点：历史全保留，但之后只把新消息发给模型 |
 | `host.chat.getRunState` / `waitForRun` | 读运行状态、等待一轮结束 |
 | `host.chat.listApprovals` / `resolveToolApproval` / `resolveQuestion` / `resolvePlanApproval` | 审批与提问 |
 | `host.overlay.create` / `close` / `postMessage` ✅ | 悬浮窗的创建、关闭、给浮层页面发消息 |

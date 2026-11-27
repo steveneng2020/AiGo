@@ -743,6 +743,8 @@ fun AIChatPanel(
     chatScrollableState: androidx.compose.runtime.MutableState<Boolean>? = null,
     /** 把「视口顶部那条消息的 id」回写给外层，导航器据此决定展开时停在哪一条。 */
     chatAnchorState: androidx.compose.runtime.MutableState<String?>? = null,
+    /** 进入防误触锁屏；由顶栏菜单入口触发。 */
+    onEnterTouchLock: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val agentState by viewModel.agentState.collectAsStateWithLifecycle()
@@ -1825,7 +1827,8 @@ fun AIChatPanel(
                 showMenuButton = showMenuButton,
                 terminalActive = terminalActive,
                 gitActive = gitActive,
-                browserActive = browserActive
+                browserActive = browserActive,
+                onEnterTouchLock = onEnterTouchLock
             )
         }
     ) { padding ->
