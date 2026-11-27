@@ -310,6 +310,32 @@ else
   fail=1
 fi
 
+# ---------- 9. 门禁脚本不能有多个版本 ----------
+# 2026-11-27 发现：aigo-gate 同时存在三份，行数与检查项全不相同——
+#   scripts/aigo-gate.sh  834 行 9 步（最新，但没人调用）
+#   scripts/aigo-gate     748 行 7 步（旧版）
+#   /root/bin/aigo-gate   748 行 8 步（aigo gate 实际调的是这份）
+# 结果是 11-26 之后新增的「UI 设计系统」「README 同步」两项检查从未执行过，
+# 而所有人都以为门禁在跑。这正是「门禁存在但不执行」，比没有门禁更危险。
+#
+# 现在只允许 scripts/aigo-gate.sh 一份；/root/bin/aigo-gate 必须是指向它的软链接。
+gate_main="scripts/aigo-gate.sh"
+gate_bad=""
+[ -f "$gate_main" ] || gate_bad="$gate_bad 缺少$gate_main"
+[ -x "$gate_main" ] || gate_bad="$gate_bad $gate_main无执行位"
+[ -f "scripts/aigo-gate" ] && gate_bad="$gate_bad 存在旧副本scripts/aigo-gate"
+if [ -e /root/bin/aigo-gate ] && [ ! -L /root/bin/aigo-gate ]; then
+  gate_bad="$gate_bad /root/bin/aigo-gate不是软链接（会与主版本漂移）"
+fi
+if [ -z "$gate_bad" ]; then
+  green "  ✔ 门禁脚本唯一（scripts/aigo-gate.sh）"
+else
+  red "  ✘ 门禁脚本存在多版本或配置错误：$gate_bad"
+  echo "    修复：删掉多余副本，只保留 scripts/aigo-gate.sh，"
+  echo "          /root/bin/aigo-gate 用 ln -sf 指向它"
+  fail=1
+fi
+
 echo
 if [ "$fail" != "0" ]; then
   red "提交被门禁拦下。修完再提交，或紧急时 git commit --no-verify（事后必须补跑 aigo-gate）"

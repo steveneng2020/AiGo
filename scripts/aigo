@@ -497,7 +497,7 @@ cmd_sync_rules() {
 case "${1:-}" in
   build)  shift; cmd_build "$@" ;;
   apk)    shift; cmd_apk "$@" ;;
-  gate)   shift; exec /root/bin/aigo-gate "$@" ;;
+  gate)   shift; exec "$MAIN/scripts/aigo-gate.sh" "$@" ;;
   release-check) cmd_release_check ;;
   fast)   shift; cmd_fast "$@" ;;
   test)   cmd_test ;;
