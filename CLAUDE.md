@@ -13,8 +13,7 @@
 
 ```
 红线：  不破坏 fork 关系 │ 密钥不入库 │ 不手改版本号 │ 不加 applicationIdSuffix │ 不并行构建
-出包：  sh gradlew :app:assembleArmsoloDebug --no-configuration-cache --no-build-cache \
-          -PversionCodeOverride=N -PversionNameOverride=1.0.x
+出包：  aigo apk   （或 sh gradlew :app:assembleArmsoloDebug -PversionCodeOverride=N）
 验收：  编译通过 ≠ 完成。改 UI 必须出包 → 装机 → 截图自己核对 → 报「我已验证：…」
 等待：  超过 1 分钟的等待必须派子代理，且主会话要主动读它的进度
 装包：  先问用户「有正在跑的会话吗」
@@ -127,14 +126,32 @@ ps -ef | grep -c "[j]ava.*[G]radleWrapperMain"   # 1 = 正常单构建，0 = 空
 > `versionCode` 的计算结果从缓存里取，`-P` 被旧缓存覆盖——
 > `--rerun-tasks` 只强制重跑 task，不清缓存条目。
 
-**固定写法**（三个参数缺一不可）：
+**推荐用 `aigo apk`**（内部就是 `sh gradlew :app:assembleArmsoloDebug`，
+不额外加 cache 参数，出包后自动核验并归档）。
+
+手拼命令时这样写：
 
 ```bash
 cd /root/.aigo-build && sh gradlew :app:assembleArmsoloDebug \
-  --no-configuration-cache --no-build-cache \
   -PversionCodeOverride=N -PversionNameOverride=1.0.x \
   > /tmp/vcN.log 2>&1
 ```
+
+**关于 `--no-build-cache` / `--no-configuration-cache`（2026-11-27 实测更正）**：
+
+旧版说这两个参数「缺一不可」，理由是 `org.gradle.caching=true` 会让 versionCode
+计算命中缓存导致 `-P` 静默失效（曾产出 127 而非 133）。**该结论已不成立**：
+
+| 实测 | 参数 | 产出 versionCode | 耗时 |
+| --- | --- | --- | --- |
+| A | 不加任何 cache 参数 | **999（正确）** | 9m54s |
+| B | `--no-build-cache` | **888（正确）** | 6m03s |
+
+两次 `-PversionCodeOverride` 都生效。原因：`-P` 参与 Gradle 的 cache key 计算，
+参数变了缓存自然不命中，不需要手动关缓存。
+
+**仍然必须核验**（见下），因为「参数生效」和「打包用的代码是最新的」是两件事。
+若将来再遇到 versionCode 不符，先按 2.3 查是否有并发构建，而不是先怪缓存。
 
 **出包后必须核验 APK 里的 versionCode**，而不是相信命令行参数：
 
