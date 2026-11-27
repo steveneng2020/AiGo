@@ -22,7 +22,8 @@
 #   aigo build [task]       在主副本编译（默认冒烟编译）
 #   aigo apk                出可安装的 debug 包（最快，无需 R8）
 #   aigo fast               出 release 包但跳过 R8（快 3~5 分钟，仅自测）
-#   aigo test               跑单元测试
+#   aigo test               跑单测（按改动筛测试类，快）
+#   aigo test --all         跑全量单测（143 个类，8~9 分钟）
 #   aigo gate [--fast]      跑完整门禁（敏感信息/迁移/品牌/编译/单测）
 #   aigo release-check      检查并清理会污染 versionName 的临时 tag
 #   aigo sync-archive      把归档副本快进到主副本 HEAD（秒级，手机 Git 面板立即可见）
@@ -260,7 +261,50 @@ cmd_build() {
   sh gradlew "$task" "$@"
 }
 
-cmd_test() { cmd_build :app:testUniversalDebugUnitTest; }
+# 单测。默认按改动筛测试类（快），--all 跑全量。
+#
+# 为什么默认筛选：全量 143 个测试类要 8~9 分钟，只改一行文案也要等这么久。
+# 但安全性不打折——CI 的 verify job 始终全量跑，本地只看「明显被影响的」。
+#
+# 筛选逻辑见 scripts/select_tests.py：
+#   同名测试类 + 同包测试类；core/**、domain/**、构建配置一律全量。
+cmd_test() {
+  all=0
+  for arg in "$@"; do
+    [ "$arg" = "--all" ] && all=1
+  done
+
+  if [ "$all" = "1" ]; then
+    echo "全量单测（143 个类，约 8~9 分钟）"
+    cmd_build :app:testUniversalDebugUnitTest
+    return
+  fi
+
+  selector="$MAIN/scripts/select_tests.py"
+  if [ ! -f "$selector" ]; then
+    cmd_build :app:testUniversalDebugUnitTest
+    return
+  fi
+
+  # 先看筛选结果：没有要跑的测试就直接返回，不要空跑 Gradle
+  # （空 --tests 会让 Gradle 报 No tests found，白等 40 秒）。
+  report=$(python3 "$selector" 2>&1)
+  if ! printf '%s' "$report" | grep -q "选中\|跑全量"; then
+    printf '%s\n' "$report"
+    return
+  fi
+  args=$(python3 "$selector" --gradle-args 2>/dev/null)
+  if [ -z "$args" ]; then
+    printf '%s\n' "$report"
+    return
+  fi
+
+  echo "按改动筛选单测（CI 仍跑全量兜底）"
+  python3 "$selector" | head -20
+  echo
+  # shellcheck disable=SC2086
+  eval "cmd_build :app:testUniversalDebugUnitTest $args"
+}
 
 # 本地要出可安装包时用这个：debug 变体，无需 R8，缓存命中约 30~60 秒。
 # 用 armsolo（仅 arm64-v8a）：universal 含两套容器镜像，体积大、打包慢，
