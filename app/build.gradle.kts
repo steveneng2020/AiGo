@@ -399,6 +399,13 @@ gradle.projectsEvaluated {
 }
 
 dependencies {
+    // Xposed 模块 API（L3 无障碍保活）。
+    //
+    // compileOnly：运行时由 LSPosed 框架注入，不能打进 APK——
+    // 打进去会与宿主进程里的真实实现冲突，而且体积白涨。
+    // 版本 102 对应 LSPosed API 102（本机实测 `lspctl status` 报 API: 102）。
+    compileOnly("io.github.libxposed:api:102.0.0")
+
     // Compose BOM
     val composeBom = platform("androidx.compose:compose-bom:2026.01.00")
     implementation(composeBom)

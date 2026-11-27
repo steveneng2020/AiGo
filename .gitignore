@@ -36,4 +36,9 @@ __pycache__/
 
 # 容器镜像目录：由 scripts/sync-container-images.py 生成，CI 发布到 data 分支；
 # 内置兜底快照另存于 app/src/main/assets/container-images.json
-/data/container-images.jsondesign-demos/
+/data/container-images.json
+design-demos/
+
+# 本机专属：gradlew 并发防护逻辑（由 gradlew 里一行 source 引入）。
+# 不进 git —— 上游永远不会碰它，也就永远不会在同步时冲突。
+.aigo-gradle-guard.sh

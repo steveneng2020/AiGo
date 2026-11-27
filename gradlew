@@ -1,5 +1,9 @@
 #!/bin/sh
 
+# AiGo: 并发防护。逻辑在同目录 .aigo-gradle-guard.sh（不进 git，上游不会冲突）。
+# 这一行是唯一对官方脚本的改动；上游更新 gradlew 时最多冲突这一处。
+[ -f "$(dirname "$0")/.aigo-gradle-guard.sh" ] && . "$(dirname "$0")/.aigo-gradle-guard.sh" "$@"
+
 #
 # Copyright © 2015-2021 the original authors.
 #

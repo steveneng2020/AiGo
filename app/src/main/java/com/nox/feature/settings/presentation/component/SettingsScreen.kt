@@ -1,5 +1,6 @@
 package com.nox.feature.settings.presentation.component
 
+import com.nox.feature.settings.presentation.AccessibilityGuardViewModel
 import com.nox.feature.settings.presentation.RolesViewModel
 import android.content.Intent
 import android.net.Uri
@@ -66,6 +67,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.nox.core.theme.AppThemePreset
 import com.nox.core.theme.Spacing
 import com.nox.core.theme.isDynamicColorSupported
@@ -106,6 +108,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.Activity
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.BarChart2
 import compose.icons.feathericons.Book
@@ -193,6 +196,7 @@ internal enum class SettingsSection(@param:StringRes val titleRes: Int) {
     Log(R.string.settings_log),
     Permissions(R.string.settings_permissions),
     AppPermissions(R.string.settings_app_permissions),
+    PermissionHealth(R.string.settings_permission_health),
     BackgroundRun(R.string.settings_category_background),
     RemoteServers(R.string.settings_remote_servers),
     Storage(R.string.settings_storage),
@@ -1743,6 +1747,11 @@ fun SettingsScreen(
                     onAllowAll = { viewModel.allowAllTools() },
                     onDisallowAll = { viewModel.disallowAllTools() }
                 )
+                SettingsSection.PermissionHealth -> {
+                    PermissionHealthScreen(
+                        onBack = onNavigateBack,
+                    )
+                }
                 SettingsSection.AppPermissions -> {
                     val shizukuViewModel: ShizukuViewModel =
                         androidx.hilt.navigation.compose.hiltViewModel()
@@ -1759,6 +1768,26 @@ fun SettingsScreen(
                         onOpenShizuku = { shizukuViewModel.openShizukuApp() },
                         onRefreshShizuku = { shizukuViewModel.refresh() },
                         onOpenPetOverlay = { showPetOverlaySheet = true }
+                    )
+
+                    // 无障碍保活：排在权限页末尾，因为它依赖「无障碍服务是否开着」这个前提，
+                    // 上面那一组讲的是怎么开，这里讲开了之后怎么不掉。
+                    val a11yGuardViewModel: AccessibilityGuardViewModel =
+                        androidx.hilt.navigation.compose.hiltViewModel()
+                    val a11yStatus by a11yGuardViewModel.status.collectAsStateWithLifecycle()
+                    val a11yKeepEnabled by a11yGuardViewModel.keepEnabled.collectAsStateWithLifecycle()
+
+                    // 从系统设置页返回时刷一次：用户可能刚手动开启了服务。
+                    LifecycleResumeEffect(Unit) {
+                        a11yGuardViewModel.refresh()
+                        onPauseOrDispose { }
+                    }
+
+                    AccessibilityGuardSection(
+                        status = a11yStatus,
+                        enabled = a11yKeepEnabled,
+                        onEnabledChange = { a11yGuardViewModel.setKeepEnabled(it) },
+                        onOpenSystemSettings = { a11yGuardViewModel.openSystemSettings() },
                     )
                 }
                 SettingsSection.BackgroundRun -> BackgroundRunSection(
@@ -2616,11 +2645,24 @@ internal fun SettingsMenu(
         // ── 权限与后台 ──
         SettingsGroupHeader(text = stringResource(R.string.settings_category_permissions))
         SettingsGroup {
+            // 权限健康排最前：它是一屏总览，用户先看这里就知道还差什么，
+            // 再决定进哪个具体页面。放后面会变成「先点开一堆才知道缺什么」。
+            SettingsRow(
+                icon = FeatherIcons.Activity,
+                title = stringResource(SettingsSection.PermissionHealth.titleRes),
+                onClick = { onOpen(SettingsSection.PermissionHealth) }
+            )
+            SettingsDivider()
             SettingsRow(
                 icon = FeatherIcons.Shield,
                 title = stringResource(SettingsSection.AppPermissions.titleRes),
                 onClick = { onOpen(SettingsSection.AppPermissions) }
             )
+            SettingsDivider()
+            // 无障碍服务与自动保持放在主菜单，不埋在权限子页里：
+            // 它们是「手机控制能不能用」的直接开关，用户排查时第一眼就该看到。
+            // 主设置页直接给「无障碍服务」状态与「强制保持」开关，不埋进子页。
+            PermissionHealthAccessibilityRows()
             SettingsDivider()
             SettingsRow(
                 icon = FeatherIcons.RefreshCw,

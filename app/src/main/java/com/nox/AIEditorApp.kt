@@ -243,6 +243,15 @@ class AIEditorApp : Application(), Configuration.Provider {
     @Inject
     lateinit var containerImageCatalog: com.nox.feature.agent.domain.container.ContainerImageCatalog
 
+    /**
+     * 无障碍保活：启动即注册设置变化监听。
+     *
+     * 必须在 App 启动时就开始，不能等用户进设置页——常见掉线场景是
+     * 「放着没动，厂商把它关了」，那时用户根本不在界面里。
+     */
+    @Inject
+    lateinit var accessibilityGuard: com.nox.feature.device.AccessibilityGuard
+
     /** 提供商级代理注册表：启动即构建 provider→代理 索引，供 AppProxy 按 target host 分派。 */
     @Inject
     lateinit var providerProxyRegistry: com.nox.feature.settings.data.repository.ProviderProxyRegistry
@@ -323,6 +332,10 @@ class AIEditorApp : Application(), Configuration.Provider {
             }.getOrNull().orEmpty()
             pluginHookDispatcher.dispatchAppStarted(appVersion)
         }
+        // 无障碍保活：注册 ContentObserver，掉线立刻知道（不需要任何权限）。
+        // 修复能力取决于设备：有 Root 才写回设置，有 LSPosed 模块则交给它。
+        runCatching { accessibilityGuard.start() }
+            .onFailure { FileLogger.w(TAG, "启动无障碍保活监听失败：${it.message}") }
         createNotificationChannels()
         // 启动凭据请求监听：容器内 credential helper 写来的 cred-req-* → 全局弹窗回填 → 回喂 git 续跑。
         credentialRequestBridge.start()
