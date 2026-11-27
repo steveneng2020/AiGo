@@ -75,6 +75,31 @@ if [ -f scripts/check_active_session.py ]; then
   fi
 fi
 
+# ---------- 1a-4. 并行构建自检 ----------
+# 2026-11-27 连续三次并行启动同参数构建，三路互相 --stop 打断，全败，
+# 日志还被写坏（NUL 空洞、Task 行重复）。根因是「用日志里有没有 BUILD 行
+# 判断构建是否在跑」—— 那行只在最后才写，中途看当然是空的。
+# 这道检查只提醒：真正该做的是启动前先看进程，而不是启动后再补救。
+if [ -f scripts/check_no_parallel_build.sh ]; then
+  parallel_msg=$(sh scripts/check_no_parallel_build.sh 2>&1) || {
+    yellow "  ⚠ $parallel_msg"
+  }
+fi
+
+# ---------- 1a-5. 出包前的 CHANGELOG 就绪检查 ----------
+# 更新日记是「构建时打进 APK」的（generateChangelog → assets/changelog.json），
+# 所以顺序必须是「先改 CHANGELOG 再出包」。
+# 2026-11-27 做成了「出包 → 装机发现文案不对 → 才改日记」，包里因此是旧内容。
+if [ -f scripts/check_changelog_ready.py ]; then
+  if python3 scripts/check_changelog_ready.py --quiet >/tmp/precommit_clready.log 2>&1; then
+    green "  ✔ 更新日记已就绪（可出包）"
+  else
+    red "  ✘ 更新日记未就绪，出包会打进旧内容："
+    sed 's/^/      /' /tmp/precommit_clready.log
+    fail=1
+  fi
+fi
+
 # ---------- 1b. UI 改动的量化验收 ----------
 # 踩过的坑（本项就是因为这个才加的）：改了面板布局，靠目测整屏截图判「通过」，
 # 实际数值列右边缘相差 107px——数字在中间飘、单位孤零零贴右。

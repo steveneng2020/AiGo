@@ -339,6 +339,73 @@ data = zipfile.ZipFile(apk).read('resources.arsc')
 print(data.count('新文案'.encode('utf-8')), data.count('旧文案'.encode('utf-8')))
 ```
 
+### 8d-3. 更新日记是「构建时打进包」的，必须先改再出包
+
+> 2026-11-27 的教训：通过装机验收发现关于页的更新日记还是旧文案。
+> 查下来不是「联网读不到」，而是顺序错了——我先出包（包里写的是当时的
+> CHANGELOG 快照），后来才改 `CHANGELOG.md`。事后改文件对已出的包无效。
+
+**机制**（`app/build.gradle.kts` 的 `generateChangelog`）：
+
+```
+CHANGELOG.md ──(构建时解析)──► assets/changelog.json ──(打包)──► APK
+```
+
+日记随包走，离线可读，不依赖网络。所以**包里永远是「出包那一刻」的快照**。
+
+**铁律**：
+
+- 顺序固定为：**改 CHANGELOG → 出包 → 装机验收**。
+- 改了日记必须重新出包，否则源码里的 CHANGELOG 与包内 `changelog.json` 不一致。
+- `aigo apk` 已内置 `check_changelog_ready.py` 前置检查（日期、条目、格式），
+  `pre-commit` 也会拦。绕不过去时说明确实该改日记了。
+
+### 8d-4. 判断构建状态只看进程，不看日志
+
+> 2026-11-27 的教训：同一天连续三次并行启动同参数构建，三路互相 `--stop`
+> 打断 daemon，全部失败，白等 11 分钟；三路 fd 还都指向同一个日志，
+> 写出 NUL 空洞与重复 Task 行，日志彻底不可读。
+
+**根因是判据错了**：我用「日志里有没有 `BUILD SUCCESSFUL/FAILED`」判断构建是否还活着。
+那行只在构建**最后**才写，中途看必然是空的 → 误判为「失败了/没起来」→ 又启动一个。
+
+**正确判据**：
+
+```bash
+ps -ef | grep -c "[j]ava.*[G]radleWrapperMain"   # 1 = 正常单构建
+```
+
+- 判定「还在跑」：进程数 ≥ 1，或日志文件大小仍在增长。
+- 判定「已结束」：进程消失 **且** 日志里出现 `BUILD ` 行。
+- 启动一次后就等通知/轮询进程，**不要因为「日志没结果」再启动第二次**。
+- 真要放弃：`sh gradlew --stop` → 确认 0 残留 → 单跑一次 **且换新日志文件名**。
+  复用旧日志会让前后两次的输出混在一起，无法归因。
+
+`scripts/check_no_parallel_build.sh` 会检测并提示（`pre-commit` 已接入）。
+
+### 8d-5. Room 可空列不能加 defaultValue
+
+> 2026-11-27 的教训：给 `AgentMessageEntity` 加两个可空时间列时写成
+> `@ColumnInfo(defaultValue = "0") val ttfbMillis: Long? = null`，
+> 装包后启动即崩：
+
+```
+IllegalStateException: Migration didn't properly handle: agent_messages
+Expected: TableInfo { ... defaultValue='0' ... }
+Found:    ... defaultValue='null' ...
+```
+
+**原因**：`defaultValue` 会写进 Room 生成的 schema 期望；可空列的迁移通常写成
+`ADD COLUMN x INTEGER DEFAULT NULL`，两边对不上，校验直接抛异常。
+
+**做法**：
+
+- 可空列**不加** `defaultValue`，迁移里用 `DEFAULT NULL`（或什么都不写）。
+- 非空列才用 `@ColumnInfo(defaultValue = "0")` 配合 `DEFAULT 0 NOT NULL`。
+- 改完实体**必须重新生成 schema json**（删掉旧的 → 跑 KSP），
+  否则校验用的是上一次的 schema，本地测不出来、装包才崩。
+- 装包前先比对 schema，见铁律 14。
+
 ### 8e. 更新日记日期必须跟着代码走
 
 > 2026-11-26 的教训：代码已经改到 11-26、发版也在 11-26，
