@@ -1035,15 +1035,34 @@ git merge upstream/main -m "chore: 同步上游 Nox <短hash>（<标题>）"
 - **AI 工作流改动 → 同步 `app/src/main/assets/prompts/`**：工具增删改名、
   参数签名变化、agent 行为或提示词逻辑调整，都要更新 `prompts/` 下对应文件。
 - **功能或工具变化 → 检查 `docs-site/docs/`** 是否有使用文档要更新。
-- **提供商预设只在仓库数据文件维护**：新增或调整内置 AI 供应商，
-  **只改 `data/providers.json`**（App 启动时动态拉取的源）；
-  **不要**同步改 `app/src/main/assets/providers.json`（内置兜底快照，随发版固化）。
-- **容器镜像目录由脚本生成，禁止手改**：`data/container-images.json` 由 CI
-  （`sync-container-images.yml`，每日）跑 `scripts/sync-container-images.py`
-  抓上游生成后发布到 `data` 分支；`app/src/main/assets/container-images.json`
-  是内置兜底快照，**发版前用同一脚本刷新**
-  （`python3 scripts/sync-container-images.py --out app/src/main/assets/container-images.json`）
-  ——它承载离线可用的版本号与 SHA-256 校验和，与 providers 快照「不维护」的策略刻意不同。
+- **提供商预设**：`data/providers.json` 是我们仓库维护的源文件，
+  `app/src/main/assets/providers.json` 是随发版固化的内置兜底快照，
+  **不要手改快照**。注意运行时拉的仍是官方仓库那份（见上一条），
+  所以改 `data/providers.json` 只影响内置快照的生成与版本控制记录，
+  不会立刻改变已装 App 的 provider 列表。
+- **运行时数据源是官方仓库，不是我们的 fork**（2026-11-27 查证）：
+
+  `RepoDataFetcher.DEFAULT_OWNER = "jieapi"`、`DEFAULT_REPO = "nox"` 是**硬编码常量**，
+  6 个调用点无一传 `owner`/`repo`。所以 App 启动后拉的是
+  `raw.githubusercontent.com/jieapi/nox/data/...`，与 `steveneng2020/AiGo` 无关。
+
+  查证依据：`git ls-remote --heads origin data` 为空，`upstream` 有 `data`（`feda886`）；
+  本地 `data/` 只有 `providers.json`，没有 `container-images.json`。
+  仓库里的 `sync-container-images.yml` / `sync-models.yml` 带每日 cron，
+  但 fork 的 workflow 默认禁用（见 1.1），从未成功跑过，也没建出 `data` 分支。
+
+  **实务影响**：改了本地 `data/` 下的文件，App 读不到——它读官方仓库。
+  这两个文件在本仓库的作用是「内置兜底快照的生成源」，不是「运行时数据」。
+
+- **容器镜像目录由脚本生成，禁止手改**：`app/src/main/assets/container-images.json`
+  是内置兜底快照，承载离线可用的版本号与 SHA-256 校验和，**发版前用脚本刷新**：
+
+  ```bash
+  python3 scripts/sync-container-images.py --out app/src/main/assets/container-images.json
+  ```
+
+  要增删发行版或改镜像源，改脚本里的配置或 `sources` 表，不要改生成结果。
+  （这与 providers 快照「不维护」的策略刻意不同：镜像目录必须离线可用。）
 - **更新日记必须内置，不能只靠网络**：`assets/changelog.json` 由 Gradle 任务
   `generateChangelog` 在构建时解析仓库根 `CHANGELOG.md` 生成。
   关于页先读内置（离线可读），联网成功再覆盖。
