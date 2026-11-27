@@ -109,6 +109,13 @@ merge 进来会产生双根历史，versionCode 体系与 fork 关系同时失�
 ps -ef | grep -c "[j]ava.*[G]radleWrapperMain"   # 1 = 正常单构建，0 = 空闲
 ```
 
+- 启动构建前先查。**有输出就等它结束。**
+- **不要用 `pgrep -f "GradleWrapperMain"`**：它会匹配到自己的轮询 shell
+  （命令行里含该字符串），导致误判「有构建在跑」并空等。方括号写法让 grep 排除自身。
+- 构建状态损坏时不要反复重试，直接清干净重建：
+  `sh gradlew --stop` → `rm -rf app/build build` → 单构建全量重建。
+  删了 `app/build` 后**不能**只跑 `packageArmsoloDebug`（会缺 dex）。
+
 **如何保证不并行（不靠自觉）**：
 
 2026-11-27 一天内又违反三次：三个 terminal 标签同跑同一个 compile 任务，
@@ -136,13 +143,6 @@ ps -ef | grep -c "[j]ava.*[G]radleWrapperMain"   # 1 = 正常单构建，0 = 空
 2. 若必须手拼 `sh gradlew`，`gradlew` 层会自动拦，**不要设 `AIGO_ALLOW_PARALLEL=1` 绕过**。
 3. **terminal 标签用完必须 `close`**。看到「任务已结束」不等于标签已消失，
    旧标签的进程可能还在跑；开新标签前先确认 `ps -eo args | awk '/^java / && /GradleWrapperMain/'` 为空。
-
-- 启动构建前先查。**有输出就等它结束。**
-- **不要用 `pgrep -f "GradleWrapperMain"`**：它会匹配到自己的轮询 shell
-  （命令行里含该字符串），导致误判「有构建在跑」并空等。方括号写法让 grep 排除自身。
-- 构建状态损坏时不要反复重试，直接清干净重建：
-  `sh gradlew --stop` → `rm -rf app/build build` → 单构建全量重建。
-  删了 `app/build` 后**不能**只跑 `packageArmsoloDebug`（会缺 dex）。
 
 ---
 
