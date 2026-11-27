@@ -31,6 +31,7 @@
 #   aigo verify-push       确认本次 push 确实产生了 workflow run（防半成功推送）
 #   aigo sync-fuse         整目录覆盖重建归档副本（5~10 分钟，换设备/重建时用）
 #   aigo lock [status]      查看/管理构建锁（并发会在 acquire 时被拒）
+#   aigo watch [show|tail]  看子代理进度（派完就 cat 一眼，别等它主动说话）
 #   aigo where              打印两个位置
 #
 # 实测耗时（宿主 6 核持续高负载下）：
@@ -507,6 +508,7 @@ case "${1:-}" in
   sync-archive) cmd_sync_archive ;;
   sync-rules) cmd_sync_rules ;;
   lock)   shift; sh "$MAIN/scripts/build-lock.sh" "${@:-status}" ;;
+  watch)  shift; sh "$MAIN/scripts/watch.sh" "${@:-show}" ;;
   clean-shots) cmd_clean_shots ;;
   verify-push) shift; cmd_verify_push "$@" ;;
   where)  cmd_where ;;
