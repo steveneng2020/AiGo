@@ -82,23 +82,35 @@ the other). Upstream Nox updates keep flowing into AiGo.
 | Item | Nox | AiGo |
 | --- | --- | --- |
 | App name | Nox | AiGo |
-| Package | `com.nox` | `com.aigo` (can coexist) |
-| Update check | points at Nox | points at this project |
+| Package | `com.nox` | `com.aigo` (both can coexist on one device) |
+| App icon | one set | nine switchable sets (six Kun + three originals) |
+| Usage detail | one line of small text under each reply | full panel + per-turn breakdown card |
+| Update check | points at the Nox repo | points at this project |
 | Contact | QQ group | steveneng@163.com |
+
+The table above is maintained by hand. Everything else in this file is a summary —
+the authoritative list of changes is [CHANGELOG.md](CHANGELOG.md).
 
 ### Additions and improvements
 
-- **Attach files while the AI is working** — the `+` button in the composer no longer greys out
-  during a run. Add images or files while waiting; they go out with the queued message.
-- **Notification icon follows the app icon** — notification and foreground-service icons follow
-  whichever icon is selected under Icon Settings; existing notifications refresh after a switch
-  instead of showing a fixed system placeholder.
-- **Plugin group in the sidebar** — plugin entries are grouped separately, with a group header
-  and a "more plugins" entry.
-- **Changelog card on the About page** — shows what changed in recent versions, expandable to
-  the full history, and readable offline.
-- **Multiple app icons** — three built-in icon sets, switchable, with launcher and notification
-  icons staying in sync.
+This fork is under active development. Rather than mirroring the full release notes here
+(which would drift out of sync), the detailed per-version changelog lives in one place:
+
+- **[CHANGELOG.md](CHANGELOG.md)** — every version, in Chinese, with what changed and why
+- **In-app**: open **About → What's new**. The notes ship inside the APK, so they work offline
+
+A few of the larger additions, so you know what to expect beyond upstream:
+
+- **Context usage panel** — full breakdown of token usage, cache hit rate, and per-turn details,
+  instead of a single line of small text under each reply
+- **Nine switchable app icon sets** — pick one under About; launcher and notification icons
+  stay in sync
+- **Accidental-touch guard** — dims the screen and blocks stray taps, with a configurable
+  hold-to-exit duration
+- **Plugin management** — export, update, and block plugins from both the drawer and the store
+
+> The Chinese README carries the complete, auto-generated release highlights.
+> See [README.md](README.md).
 
 ## Features
 
@@ -155,16 +167,16 @@ participate in comparison and does not affect update prompts.
 The in-app **About** page lists what changed in each version. Those notes ship inside the APK,
 so they work offline too.
 
-## Star
-
-If AiGo is helpful to you, give it a [Star](https://github.com/steveneng2020/AiGo).
-
 ## Feedback & Contribution
 
 - **Contact**: steveneng@163.com
 - **Bug reports**: open an [Issue](https://github.com/steveneng2020/AiGo/issues) with reproduction steps, device model and OS version
 - **Feature requests**: discuss your ideas in [Issues](https://github.com/steveneng2020/AiGo/issues)
 - **Contributing**: submit a [Pull Request](https://github.com/steveneng2020/AiGo/pulls)
+
+## Star
+
+If AiGo is helpful to you, give it a [Star](https://github.com/steveneng2020/AiGo).
 
 ## Acknowledgements
 

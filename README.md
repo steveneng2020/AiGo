@@ -84,6 +84,8 @@ AiGo 与 Nox **可以同机共存**（包名不同，互不覆盖），装了两
 | 更新检查 | 指向 Nox 仓库 | 指向本项目 |
 | 联系渠道 | QQ 群 | 邮箱 steveneng@163.com |
 
+上表为手工维护。英文版只保留概述与链接，完整更新日志见 [CHANGELOG.md](CHANGELOG.md)（中文）。
+
 ### 新增与改进
 
 > 本节由 `scripts/gen-readme-highlights.py` 从 [CHANGELOG.md](CHANGELOG.md) 自动生成，
@@ -186,6 +188,10 @@ App 内「关于」页可以查看每个版本的更新内容，断网也能看�
 - **Bug 反馈**：到 [Issues](https://github.com/steveneng2020/AiGo/issues) 提交，附上复现步骤、设备型号与系统版本
 - **功能建议**：欢迎先在 [Issues](https://github.com/steveneng2020/AiGo/issues) 讨论
 - **贡献代码**：欢迎提交 [Pull Request](https://github.com/steveneng2020/AiGo/pulls)
+
+## Star
+
+如果 AiGo 对你有帮助，欢迎给个 [Star](https://github.com/steveneng2020/AiGo)。
 
 ## 致谢
 
