@@ -921,6 +921,10 @@
     <string name="chat_cache_hit_rate">Cache hit rate %1$s</string>
     <string name="chat_status_generating">Generating</string>
     <string name="chat_status_thinking">Thinking</string>
+    <!-- Appended after 3s of waiting; measured median TTFB is 6.3s, P90 14.9s. -->
+    <string name="chat_status_waited">%1$ds elapsed</string>
+    <string name="chat_status_normal_wait">normal</string>
+    <string name="chat_status_server_slow">Server is slow</string>
     <string name="chat_status_calling_tool">Calling tool</string>
     <string name="chat_status_running_command">Running command</string>
     <string name="chat_status_editing_file">Editing file</string>

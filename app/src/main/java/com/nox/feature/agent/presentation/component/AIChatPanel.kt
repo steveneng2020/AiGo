@@ -1973,7 +1973,14 @@ fun AIChatPanel(
                                     )
                                 }
                                 when (tailKind) {
-                                    TailKind.THINKING -> ThinkingBubble(label = thinkingLabel)
+                                    // 等待首字时带上「已等多久」：实测首字中位 6.3s、
+                                    // P90 14.9s，占整轮耗时中位 84%，用户干等时无从判断
+                                    // 是在正常生成还是卡住了。只在没有可用工具名时计入
+                                    // （有工具名说明已在执行具体动作，等待解释的是它）。
+                                    TailKind.THINKING -> ThinkingBubbleWithElapsed(
+                                        label = thinkingLabel,
+                                        active = activeToolName == null
+                                    )
                                     TailKind.STREAMING -> StreamingBubble(text = typewriterRenderText, cache = markdownCache)
                                     TailKind.COMPACTING -> CompactionProgressBubble()
                                     TailKind.RETRYING -> {

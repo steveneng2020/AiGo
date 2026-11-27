@@ -951,6 +951,13 @@
     <string name="chat_cache_hit_rate">缓存命中率 %1$s</string>
     <string name="chat_status_generating">正在生成</string>
     <string name="chat_status_thinking">正在思考</string>
+    <!-- 等待首 token 超过 3 秒后附在「正在思考」后面，让用户知道等了多久、还要多久。
+         实测首字延迟中位 6.3s、P90 14.9s，用户干等时无法判断是卡住了还是正常。 -->
+    <string name="chat_status_waited">已等 %1$ds</string>
+    <!-- 等过中位 6.3s 后追加：说明这就是常态，不必担心 -->
+    <string name="chat_status_normal_wait">正常范围</string>
+    <!-- 等过历史 P90 之后的提示：区分「模型侧慢」与「自己网络/设备问题」 -->
+    <string name="chat_status_server_slow">服务端较慢</string>
     <string name="chat_status_calling_tool">正在调用工具</string>
     <string name="chat_status_running_command">正在执行命令</string>
     <string name="chat_status_editing_file">正在编辑文件</string>

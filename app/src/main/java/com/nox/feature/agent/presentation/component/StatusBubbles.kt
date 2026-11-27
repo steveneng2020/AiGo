@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -221,6 +222,76 @@ internal fun ThinkingBubble(label: String) {
         showDots = true
     )
 }
+
+/**
+ * 等待首 token 的状态行，带「已等多久」与「是否属正常范围」。
+ *
+ * 为什么需要：实测首 token 延迟（8511 次对话调用）中位 6.3s、P90 14.9s，
+ * 且首字占总耗时中位 84%。用户干等时无从判断「在正常生成」还是「卡住了」，
+ * 只能反复看屏幕或直接重试——而重试要重新排队，反而更慢。
+ *
+ * 分级（阈值取自实测分布，不做「预计剩余时间」——服务端没有进度可查，
+ * 编一个数字比不给更糟）：
+ *   < 3s      只显示「正在思考」，此时还没到需要解释的程度
+ *   3s 起     追加「已等 Ns」
+ *   ≥ 7s      追加「正常范围」（已越过中位 6.3s，但仍在常见区间）
+ *   ≥ 15s     改成「服务端较慢」（越过 P90 14.9s，此时确实可以怀疑服务端）
+ *
+ * 计时从 [active] 变为 true 时开始，回到 false 即重置；
+ * 用 remember(active) 而非 remember 是为了同一会话连发多条时不累积。
+ *
+ * @param active 是否正在等待首字（该轮已发出、尚无任何流式内容）
+ */
+@Composable
+internal fun ThinkingBubbleWithElapsed(
+    label: String,
+    active: Boolean
+) {
+    var elapsedSec by remember(active) { mutableIntStateOf(0) }
+
+    // 只在等待态计时。LaunchedEffect(active) 在 active 变 false 时自动取消，
+    // 不会继续空转；重新变 true 会因 remember(active) 重置而从 0 开始。
+    LaunchedEffect(active) {
+        if (!active) return@LaunchedEffect
+        while (true) {
+            kotlinx.coroutines.delay(1000)
+            elapsedSec += 1
+        }
+    }
+
+    // 等待信息拼在标签后面，而不是另起一行：
+    // 状态行高度已按 toolRowMinHeight 定好，多一行会让消息流在等待→出字时跳动。
+    // 秒数在每一档都要保留：越慢越需要知道等了多久。
+    // 原先 ≥15s 那档只显示「服务端较慢」，把秒数丢了——用户反而更慌。
+    val suffix = when {
+        !active || elapsedSec < ELAPSED_SHOW_FROM_SEC -> ""
+        else -> {
+            val waited = stringResource(R.string.chat_status_waited, elapsedSec)
+            when {
+                elapsedSec >= SERVER_SLOW_FROM_SEC ->
+                    " · $waited " + stringResource(R.string.chat_status_server_slow)
+                elapsedSec >= NORMAL_RANGE_FROM_SEC ->
+                    " · $waited " + stringResource(R.string.chat_status_normal_wait)
+                else -> " · $waited"
+            }
+        }
+    }
+
+    AgentBusyIndicator(
+        label = label + suffix,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = ChatStyle.toolRowMinHeight),
+        showDots = true
+    )
+}
+
+/** 从第几秒开始显示「已等 Ns」：短于这个时长属正常即时响应，不必解释。 */
+private const val ELAPSED_SHOW_FROM_SEC = 3
+/** 越过实测中位（6.3s）后标注「正常范围」。取 7 免得太早安慰。 */
+private const val NORMAL_RANGE_FROM_SEC = 7
+/** 越过实测 P90（14.9s）后改口「服务端较慢」。 */
+private const val SERVER_SLOW_FROM_SEC = 15
 
 /** 上下文压缩期间的临时状态行，不落库。 */
 @Composable
