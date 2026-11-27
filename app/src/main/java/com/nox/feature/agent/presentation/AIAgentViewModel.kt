@@ -1069,17 +1069,25 @@ class AIAgentViewModel @Inject constructor(
             // 判据是「这次查到的最后一条，比上次看到的更新」，而不是「一条都没有」：
             // 历史会话本来就有记录，points 非空但本轮那条还没落库，
             // 只看 isEmpty 的话永远不会补查，表现就是本轮统计行右边两项一直不出来。
-            val seenLatest = _sessionCallPoints.value[sid]?.lastOrNull()?.createdAt ?: 0L
+            val seenPoints = _sessionCallPoints.value[sid]
+            val seenLatest = seenPoints?.lastOrNull()?.createdAt ?: 0L
+            val seenCount = seenPoints?.size ?: 0
             var points = runCatching {
                 llmCallRecordDao.getSessionCallPoints(sid).first()
             }.getOrDefault(emptyList())
             if (expectedCalls > 0) {
                 // 退避重试而不是只查一次：写库发生在 workflow 的 finally，
-                // 那一段还要先算 reasoning plan 再 insert，慢的时候远超单次 120ms。
-                // 三次累计最多等 120+240+360 = 720ms，足以覆盖正常写入；
-                // 真查不到（调用失败/被取消，不进 status='success'）就停，不无限等。
+                // 那一段还要先算 reasoning plan 再 insert，且中间还要走完
+                // actionQueue 的后续步骤，慢的时候是秒级而不是毫秒级。
+                // 累计最多等 12 秒（见 CALL_POINT_RETRY_DELAYS_MS），
+                // 绝大多数情况第一档 120ms 就命中，不会真等到最后。
+                //
+                // 判据用「记录条数变多 或 createdAt 变新」：
+                // 只比 createdAt 的话，同一毫秒写入的两条记录会被判成「没更新」，
+                // 于是把已有的旧数据当成最终结果 break 掉。
                 for (delayMs in CALL_POINT_RETRY_DELAYS_MS) {
-                    if ((points.lastOrNull()?.createdAt ?: 0L) > seenLatest) break
+                    val newest = points.lastOrNull()?.createdAt ?: 0L
+                    if (points.size > seenCount || newest > seenLatest) break
                     kotlinx.coroutines.delay(delayMs)
                     points = runCatching {
                         llmCallRecordDao.getSessionCallPoints(sid).first()
@@ -1405,7 +1413,20 @@ class AIAgentViewModel @Inject constructor(
          * 足够覆盖正常写入；仍查不到说明这次调用没进 status='success'（失败/取消），
          * 继续等也没意义，循环自然结束。
          */
-        private val CALL_POINT_RETRY_DELAYS_MS = longArrayOf(120L, 240L, 360L)
+        // 退避重试的时间点（累计，不是每段间隔）：
+        //   120 → 360 → 840 → 1840 → 3840 → 7840 → 11840ms
+        //
+        // 为什么跨度要拉到 12 秒：调用记录的 insert 在 workflow 的 finally 里，
+        // 而 AssistantText 事件在 finally 之前很早就发出了（中间还要走
+        // actionQueue 的后续步骤）。实测新会话首条消息的右半边
+        // （首 token / 输出速度）要等好几秒才出现，720ms 完全不够。
+        // 早先只配 120/240/360，靠的是 ChatInputBar 的 LaunchedEffect
+        // 碰巧又跑一次补上，属于运气而不是设计。
+        //
+        // 前几档保持短间隔：绝大多数情况（旧会话、快速轮次）在 120ms 内就命中，
+        // 不需要真的等到最后。只有落库确实慢时才逐步退到秒级。
+        private val CALL_POINT_RETRY_DELAYS_MS =
+            longArrayOf(120L, 240L, 480L, 1000L, 2000L, 4000L, 4000L)
         /** wakeLock 超时保险：构建、装依赖类工具动辄十几分钟，给足 60 分钟；任务正常结束会主动释放。 */
         const val KEEPALIVE_TIMEOUT_MS = 60 * 60 * 1000L
 
@@ -2423,16 +2444,20 @@ class AIAgentViewModel @Inject constructor(
                         setRetryState(sessionId, null)
                         setKeySwitchState(sessionId, null)
                         setCompacting(sessionId, false)
-                        // 整轮结束时无条件补刷一次会话统计。
-                        // 调用记录由 workflow 在 finally 里异步落库，与 LlmCallFinished
-                        // 不是同一个协程：那边收到事件时 insert 可能还没执行完，
-                        // 退避 720ms 也等不到（insert 前还要算 reasoning plan）。
-                        // 只在 LlmCallFinished 补查的话，错过那次窗口就再没有机会，
-                        // 表现为气泡统计行右半边（首 token / 输出速度）一直空着，
-                        // 展开明细或切走再回来才出现。
-                        // 这里不带 expectedCalls：不重试、不等待，直接读当前库，
-                        // 因为走到 Completed 时该写的都已经写完了。
-                        refreshSessionStats(sessionId)
+                        // 整轮结束时补刷一次会话统计，必须带重试。
+                        //
+                        // 调用记录由 workflow 在 finally 里写库，与 AssistantText 事件
+                        // 不是同一个协程：那次事件触发补查时 insert 往往还没执行完
+                        // （insert 前还要算 reasoning plan）。
+                        //
+                        // 实测教训：先前这里写成 refreshSessionStats(sessionId)
+                        // （不带 expectedCalls，只读一次库），新会话首条消息的右半边
+                        // （首 token / 输出速度）仍要等好几秒才出现——靠的是
+                        // ChatInputBar 的 LaunchedEffect 碰巧又跑了一次才补上。
+                        //
+                        // 所以这里必须传 expectedCalls = 1 走退避重试（120/240/360ms）：
+                        // 不带就是「只读一次」，早于 insert 就永远读不到。
+                        refreshSessionStats(sessionId, expectedCalls = 1)
                         // 子代理会话完成时通知父会话（异步回调）
                         if (isSub) {
                             sessionUseCase.getSessionById(sessionId)?.parentId?.let { parentId ->
