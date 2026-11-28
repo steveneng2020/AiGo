@@ -126,75 +126,27 @@ KIND_ORDER = ["added", "polished", "improved", "fixed", "synced"]
 
 
 def render(entries) -> str:
-    """渲染最近 RECENT_VERSIONS 个版本的完整条目。
+    """渲染「近期更新」为「简述 + 链接」（方案 B，2026-11-27 用户选定）。
 
-    设计取舍（2026-11-28 改）：
-      早先这套逻辑会「挑重点」——过滤修复类、按主题去重、每版只留几条。
-      那时 RECENT_VERSIONS=999，README 要承载全部历史，必须做减法。
-
-      现在职责拆开了：长期能力写在 README 手写的「核心能力」表里，
-      本节只留最近 2 版。既然只有 2 版，就不该再挑——用户点进来是想看
-      「这两版具体改了什么」，删条目会让「改了 8 条」显示成「4 条」，
-      与 CHANGELOG 和 App 关于页对不上。
-
-      所以：不过滤、不去重、不按长度筛，只按分类分组排列。
+    不镜像逐版逐条：README 与 CHANGELOG 两处各自维护必然漂移，
+    而且每版 10+ 条会把 README 撑成发布日志。完整日记只保留一处：
+    CHANGELOG.md 与 App 内的「关于 → 更新内容」。
     """
-    lines = []
-    used = entries[:RECENT_VERSIONS]
-    printed_tags = []
-
-    for entry in used:
-        tag = entry["tag"]
-        date = entry["date"]
-        items = entry.get("items") or []
-        if not items:
-            continue
-
-        if printed_tags:
-            lines.append("")
-        lines.append(f"**{tag}（{date}）**")
-        printed_tags.append(tag)
-
-        # 按分类分组；未分类（历史版本或没写小标题）归到空串组，不画标题
-        groups = {}
-        for it in items:
-            k = it.get("kind") or ""
-            groups.setdefault(k, []).append(it)
-
-        # 空串组排最前（保持原有阅读顺序），其余按 KIND_ORDER
-        ordered = []
-        if "" in groups:
-            ordered.append(("", groups.pop("")))
-        for k in KIND_ORDER:
-            if k in groups:
-                ordered.append((k, groups.pop(k)))
-        # 兜底：KIND_ORDER 里没收录的新 kind，按出现顺序追加
-        ordered.extend(groups.items())
-
-        for kind, group in ordered:
-            lines.append("")
-            if kind:
-                lines.append(f"_{KIND_LABELS.get(kind, kind)}_")
-                lines.append("")
-            for it in group:
-                title = it.get("title", "").strip()
-                if not title:
-                    continue
-                detail = shorten(it.get("detail", ""), limit=160)
-                lines.append(f"- **{title}** — {detail}" if detail else f"- **{title}**")
-
-    # 「更早的版本」按实际没列出来的算
-    unlisted = [e["tag"] for e in entries if e["tag"] not in printed_tags]
-    if unlisted:
-        oldest = unlisted[-1]
-        span = unlisted[0] if len(unlisted) == 1 else f"{unlisted[0]} ~ {oldest}"
-        lines.append("")
-        lines.append(
-            f"更早的 {len(unlisted)} 个版本（{span}）见 "
-            f"[CHANGELOG.md](CHANGELOG.md)，App 内「关于 → 更新内容」也能离线查看。"
-        )
-
-    return "\n".join(lines)
+    return "\n".join([
+        "本项目在持续开发。完整版本日记只有一处权威来源，不在此处镜像（镜像必然漂移）：",
+        "",
+        "- **[CHANGELOG.md](CHANGELOG.md)** —— 每个版本、改了什么、为什么",
+        "- **App 内**：打开 **设置 → 关于 → 更新内容**。日记随 APK 打包，离线也能看",
+        "",
+        "几条较大的新增，方便了解超出上游的部分：",
+        "",
+        "- **上下文用量面板** —— 完整拆分 token 用量、缓存命中率与单轮明细，不再只是回复下方一行小字",
+        "- **九套可切换图标** —— 在「关于」页直接切换，桌面与通知图标同步",
+        "- **防误触模式** —— 调暗屏幕并屏蔽误触，长按退出时长可调",
+        "- **插件管理** —— 导出、更新、屏蔽插件，抽屉与插件市场均可操作",
+        "",
+        "> 更早的历史与每一版的完整条目见 [CHANGELOG.md](CHANGELOG.md)。",
+    ])
 
 
 def splice(readme: str, block: str) -> str:
