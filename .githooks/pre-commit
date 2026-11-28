@@ -294,6 +294,23 @@ if [ -d "$OUT_DIR" ]; then
     else
       green "  ✔ 出包已归档"
     fi
+
+    # 6c. 归档包里的更新日记是否与 CHANGELOG.md 一致
+    #
+    # 6a/6b 只比时间戳，查不出「包里的 changelog.json 是旧内容」：
+    # 2026-11-28 出 vc171 时 CHANGELOG 在 08:41 改了 8 条，APK 是 08:17 构建的，
+    # 时间戳上新包旧于源码会被 6a 放行（源码没动过），但包里日记仍是 4 条。
+    # 只有读产物本身才能发现。Gradle 的 generateChangelog 在 CHANGELOG
+    # 比源码旧时判定「没变」不重跑，静默沿用旧输出——这就是当时的机制。
+    if [ -f scripts/check_apk_changelog.py ]; then
+      if python3 scripts/check_apk_changelog.py "$newest_apk" >/tmp/precommit_apklog.log 2>&1; then
+        green "  ✔ 包内更新日记与 CHANGELOG 一致"
+      else
+        red "  ✘ 包内更新日记与 CHANGELOG 不一致："
+        sed 's/^/    /' /tmp/precommit_apklog.log | head -8
+        fail=1
+      fi
+    fi
   fi
 fi
 

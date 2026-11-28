@@ -326,7 +326,35 @@ cmd_apk() {
   # 顺序错了（先出包、后改日记）只能重新出包才生效。
   check_changelog_ready || return 1
   cmd_build :app:assembleArmsoloDebug "$@"
+  # 出包后立刻验产物里的更新日记，不符就不归档。
+  #
+  # 2026-11-28 事故：CHANGELOG.md 在 08:41 改成 8 条，而 APK 是 08:17 构建的，
+  # 包里 assets/changelog.json 还是旧的 4 条。装完用户看到「日记没更新」。
+  # 上面 check_changelog_ready 只校验源文件，查不出这件事——
+  # Gradle 的 generateChangelog 在 CHANGELOG 比源码旧时判定「没变」不重跑，
+  # 静默沿用旧输出。所以必须读产物本身。
+  verify_apk_changelog armsolo debug || return 1
   copy_apk armsolo debug
+}
+
+# 校验 APK 内的 assets/changelog.json 与仓库 CHANGELOG.md 是否一致。
+# 不一致直接返回 1，调用方据此中止（不归档，避免旧日记的包流出去）。
+verify_apk_changelog() {
+  local flavor="${1:-armsolo}"
+  local build="${2:-debug}"
+  local apk="$MAIN/app/build/outputs/apk/$flavor/$build/app-$flavor-$build.apk"
+  local script="$MAIN/scripts/check_apk_changelog.py"
+
+  [ -f "$script" ] || { echo "缺少产物校验脚本: $script"; return 1; }
+  [ -f "$apk" ] || { echo "未找到产物: $apk"; return 1; }
+
+  if ! python3 "$script" "$apk"; then
+    echo
+    echo "包里内置的更新日记与 CHANGELOG.md 不一致，已中止归档。"
+    echo "多半是 CHANGELOG.md 改过之后 Gradle 判定 generateChangelog 没变而没重跑。"
+    echo "处理：touch CHANGELOG.md 后重出包，或先 ./gradlew :app:generateChangelog --rerun-tasks"
+    return 1
+  fi
 }
 
 # CHANGELOG 就绪检查：日期是今天或昨天、有条目、格式能被 App 端解析。

@@ -39,10 +39,17 @@ END = "<!-- 新增与改进:END -->"
 # 插件分组、通知栏图标跟随…），用「最近 N 版」窗口会把这些直接丢掉。
 RECENT_VERSIONS = 999
 
-# 每个版本最多列几条：CHANGELOG 里一版可能有 13 条，全抄过来会把 README
-# 撑成发布日志。用户要的是「这个项目最近做了什么值得知道的事」，
-# 不是逐条流水账。默认取重要性排序后的前 N 条（CHANGELOG 已按重要性排序）。
-MAX_ITEMS_PER_VERSION = 3
+# 每个版本最多列几条：不再截断，全列。
+#
+# 早先设成 3，理由是「怕 README 撑成发布日志」。2026-11-28 发现这个取舍错了：
+# v1.0.6 在 CHANGELOG 里有 8 条，README 只显示前 3 条 + 同步上游 = 4 条，
+# 于是 GitHub 首页的版本说明与 App 里「关于页」的更新日记对不上。
+# 用户从 GitHub 看是「这版只改了 4 件事」，装完 App 看到 8 件——
+# 同一份 CHANGELOG 的两处呈现不一致，比 README 长一点糟得多。
+#
+# 何况 MAX_LEN=100 已经限制了单条长度，一版 8 条也只有 8 行。
+# 完整列表才符合「新增与改进」这个标题的承诺。
+MAX_ITEMS_PER_VERSION = None
 
 # 一个版本至少要有几条重点才值得写进 README。
 # 只有 1~2 条的版本通常是补丁版，列出来反而显得项目没什么进展。
@@ -145,7 +152,9 @@ def render(entries) -> str:
             if it["_topic"]:
                 seen_topics.add(it["_topic"])
 
-        shown = picked[:MAX_ITEMS_PER_VERSION]
+        # MAX_ITEMS_PER_VERSION 为 None 表示不截断（全列）。
+        # 保留这个变量是为了需要再收紧时有单一开关可改。
+        shown = picked if MAX_ITEMS_PER_VERSION is None else picked[:MAX_ITEMS_PER_VERSION]
         # 够分量的改动不足 MIN_ITEMS_PER_VERSION 条 → 整个版本不出现在 README。
         # 只留一两条会显得这一版没什么可说的，反而拉低整段的可信度；
         # 这些小版本的内容在 CHANGELOG 与 App 内更新日记里都能看到。

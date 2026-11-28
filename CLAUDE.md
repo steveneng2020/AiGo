@@ -445,8 +445,38 @@ CHANGELOG.md ──(构建时解析)──► assets/changelog.json ──(打�
 
 - 顺序固定为：**改 CHANGELOG → 出包 → 装机验收**。
 - 改了日记必须重新出包，否则源码里的 CHANGELOG 与包内 `changelog.json` 不一致。
-- `aigo apk` 已内置 `check_changelog_ready.py` 前置检查（日期、条目、格式），
-  `pre-commit` 也会拦。
+
+### 这道检查为什么要放在产物上（2026-11-28 事故）
+
+只校验源文件是不够的，我踩过：
+
+```
+08:17  出包 vc171        → 包内 changelog.json 快照 = 当时的 4 条
+08:41  改 CHANGELOG 到 8 条
+       既有门禁全部放行（check_changelog_ready 只查源文件格式与日期）
+装完用户看到「日记没更新」
+```
+
+**机制**：`generateChangelog` 把 `CHANGELOG.md` 声明为 inputs，但
+**CHANGELOG 比源码旧时它判定「没变」就不重跑**，静默沿用旧输出。
+所以「改了 CHANGELOG」这个动作本身不保证包里的 JSON 会更新。
+
+**三道强制检查，全部硬失败**：
+
+| 层 | 位置 | 判据 |
+|---|---|---|
+| 出包前置 | `build-lock.sh acquire`（描述含「出包/apk/assemble」时） | `app/src`/`CHANGELOG.md` 有未提交改动 → 拒绝；CHANGELOG 比任何 `*.kt` 旧 → 拒绝 |
+| 出包后产物 | `aigo apk` → `verify_apk_changelog` | 读 APK 内 `assets/changelog.json` 与当场解析的 CHANGELOG 逐条比对，不符 → 不归档 |
+| 提交前 | `pre-commit` 第 6c 项 | 同上，针对 `build-output` 里最新的包 |
+| 装包前 | `check_apk_changelog.py --dir` | 归档包不一致 → 拒绝安装 |
+
+**判据文件**：`scripts/check_apk_changelog.py`（比对版本号、日期、条目数、每条标题与正文）。
+
+**为什么不能靠「记得」**：2026-11-28 那轮里我违反了 3 条已有规则
+（先改日记再出包、出包后归档、装包前问用户），而原门禁一条都没拦住——
+因为它们全都在校验源文件。**门禁必须校验产物，且必须自动触发。**
+
+- `aigo apk` 另有 `check_changelog_ready.py` 前置检查（日期、条目、格式）。
 
 **日记写法**（详见 `docs/` 与技能 `aigo-release`）：
 

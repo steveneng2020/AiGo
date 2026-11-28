@@ -72,6 +72,46 @@ case "${1:-}" in
     owner=${PPID:-$$}
     printf '%s|%s|%s\n' "$owner" "$now" "$desc" > "$LOCK"
     echo "已获取构建锁（持有者 pid ${owner}，${desc}）"
+
+    # ---- 出包前置检查：只在「出包」时执行，test/push 不需要 ----
+    #
+    # 2026-11-28 两次真实事故，都是这一步该拦而没拦：
+    #   1. 先出包（08:17）再改 CHANGELOG（08:41）→ 包里日记是旧的 4 条
+    #   2. 出完包没归档，build-output 里没有新包，以为出包失败
+    #
+    # Gradle 的 generateChangelog 把 CHANGELOG.md 声明为 inputs，
+    # 但 CHANGELOG 比源码旧时它判定「没变」不重跑，静默沿用旧输出。
+    # 所以必须在出包前就把「日记是否落后」拦下来，而不是出完再查。
+    case "$desc" in
+      *出包*|*apk*|*Apk*|*APK*|*assemble*)
+        repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+        # 检查 1：app/src 有未提交改动 → 包内容与 git 不一致，拒绝
+        if command -v git >/dev/null 2>&1; then
+          dirty=$(cd "$repo_dir" && git status --porcelain -- app/src CHANGELOG.md 2>/dev/null | head -5)
+          if [ -n "$dirty" ]; then
+            echo "拒绝出包：app/src 或 CHANGELOG.md 有未提交改动。" >&2
+            printf '%s\n' "$dirty" | sed 's/^/  /' >&2
+            echo "先 git commit，再出包——否则包里内容与 git 记录对不上。" >&2
+            rm -f "$LOCK" 2>/dev/null || true
+            exit 1
+          fi
+        fi
+
+        # 检查 2：CHANGELOG.md 比 app/src 下最新源码旧 → 日记必然落后，拒绝
+        if [ -f "$repo_dir/CHANGELOG.md" ]; then
+          newest_src=$(find "$repo_dir/app/src" -name '*.kt' -newer "$repo_dir/CHANGELOG.md" 2>/dev/null | head -1)
+          if [ -n "$newest_src" ]; then
+            echo "拒绝出包：CHANGELOG.md 落后于源码。" >&2
+            echo "  更新的源码：${newest_src#$repo_dir/}" >&2
+            echo "  本次改动如果用户能感知，先写进 CHANGELOG.md 再出包；" >&2
+            echo "  否则包里的更新日记会是上一版内容（Gradle 不会自动重跑该任务）。" >&2
+            rm -f "$LOCK" 2>/dev/null || true
+            exit 1
+          fi
+        fi
+        ;;
+    esac
     ;;
 
   release)
