@@ -1,6 +1,7 @@
 package com.nox.feature.agent.domain.workflow
 
 import com.nox.feature.agent.domain.model.AgentContext
+import com.nox.feature.agent.domain.model.AgentMessage
 import com.nox.feature.agent.domain.model.AgentMode
 import com.nox.feature.agent.domain.provider.RetryErrorInfo
 import com.nox.feature.agent.domain.tool.AgentTool
@@ -111,6 +112,11 @@ interface AgentWorkflow {
         userRequest: String,
         context: AgentContext,
         tools: List<AgentTool>,
+        /**
+         * 运行中插话队列：每轮模型调用前取一次，把用户中途补充的要求并入上下文。
+         * 返回的条目会被当作新的用户消息追加到当前会话末尾并落库。
+         */
+        drainSteer: (suspend () -> List<AgentMessage.UserMessage>)? = null,
         /**
          * 每次请求模型前重新取工具表。
          *

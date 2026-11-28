@@ -1973,6 +1973,7 @@
     <string name="chat_action_fork">从此处新建分支</string>
     <string name="chat_action_delete">删除消息</string>
     <string name="chat_fork_title">Fork of %1$s</string>
+    <string name="chat_steer_queued">已插话，AI 将在下一步看到</string>
     <string name="chat_edit_dialog_title">编辑消息</string>
     <string name="chat_edit_dialog_hint">请输入消息内容</string>
 

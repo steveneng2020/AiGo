@@ -1936,6 +1936,7 @@
     <string name="chat_action_fork">Fork From Here</string>
     <string name="chat_action_delete">Delete Message</string>
     <string name="chat_fork_title">Fork of %1$s</string>
+    <string name="chat_steer_queued">Interjection queued — the AI will see it on its next step</string>
     <string name="chat_edit_dialog_title">Edit Message</string>
     <string name="chat_edit_dialog_hint">Enter message content</string>
 

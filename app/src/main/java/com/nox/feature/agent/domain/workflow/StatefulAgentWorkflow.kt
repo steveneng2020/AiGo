@@ -501,6 +501,7 @@ class StatefulAgentWorkflow @Inject constructor(
         userRequest: String,
         context: AgentContext,
         tools: List<AgentTool>,
+        drainSteer: (suspend () -> List<AgentMessage.UserMessage>)?,
         reloadTools: (suspend () -> List<AgentTool>)?
     ): Flow<AgentEvent> = channelFlow {
         var currentContext = context
@@ -577,6 +578,25 @@ class StatefulAgentWorkflow @Inject constructor(
                         }
                     }
                     is AgentSideEffect.CallLlm -> {
+                        // 轮间插话：每轮模型调用前取一次队列，把用户中途补充的要求
+                        // 当作新的用户消息并入上下文并落库，不必等整轮结束。
+                        if (drainSteer != null) {
+                            val interjections = drainSteer()
+                            if (interjections.isNotEmpty()) {
+                                state = state.copy(messages = state.messages + interjections)
+                                currentContext.sessionId?.let { sessionId ->
+                                    interjections.forEach { msg ->
+                                        messagePersistenceUseCase.persist(
+                                            sessionId,
+                                            com.nox.feature.agent.presentation.MessageRole.USER,
+                                            msg.content,
+                                            id = msg.id
+                                        )
+                                    }
+                                    messagePersistenceUseCase.invalidateHistory(sessionId)
+                                }
+                            }
+                        }
                         if (reloadTools != null) {
                             currentTools = reloadTools()
                         }

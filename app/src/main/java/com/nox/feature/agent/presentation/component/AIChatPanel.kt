@@ -1597,6 +1597,12 @@ fun AIChatPanel(
     val sendMessage: () -> Unit = {
         val text = inputText.trim()
         if (text.isNotEmpty() || pendingAttachments.isNotEmpty()) {
+            // 运行中且是纯文本（无附件、非斜杠命令）：走轮间插话，AI 下一步就能看到，不必等整轮结束。
+            if (text.isNotEmpty() && pendingAttachments.isEmpty() && !text.startsWith("/") && viewModel.enqueueSteer(text)) {
+                viewModel.clearInputDraft()
+                followBottom = true
+                Toast.makeText(context, context.getString(R.string.chat_steer_queued), Toast.LENGTH_SHORT).show()
+            } else {
             val attachments = pendingAttachments
             val modelSupportsVision = activeModelMetadata?.supportsVision == true
             val promptAttachments = if (modelSupportsVision) attachments.filterNot { it.isImage } else attachments
@@ -1619,6 +1625,7 @@ fun AIChatPanel(
             scope.launch {
                 kotlinx.coroutines.delay(0)
                 snapToBottom()
+            }
             }
         }
     }

@@ -1938,6 +1938,26 @@ class AIAgentViewModel @Inject constructor(
         )
     }
 
+    /** 运行中插话队列：会话内待注入的用户补充；由 Agent Loop 每轮取走。 */
+    private val steerQueues = mutableMapOf<String, ArrayDeque<AgentMessage.UserMessage>>()
+
+    /** 运行中插话：当前会话有任务在跑时入队并返回 true；否则返回 false 走普通发送。 */
+    fun enqueueSteer(text: String): Boolean {
+        val sid = _currentSessionId.value ?: return false
+        val running = sessionJobs[sid]?.isActive == true || sid in _runningCommandSessions.value
+        if (!running) return false
+        steerQueues.getOrPut(sid) { ArrayDeque() }.addLast(AgentMessage.UserMessage(content = text))
+        return true
+    }
+
+    private fun drainSteer(sessionId: String): List<AgentMessage.UserMessage> {
+        val queue = steerQueues[sessionId] ?: return emptyList()
+        if (queue.isEmpty()) return emptyList()
+        val list = queue.toList()
+        queue.clear()
+        return list
+    }
+
     fun enqueueAgentRequest(
         request: String,
         modelRequest: String = request,
@@ -2283,6 +2303,7 @@ class AIAgentViewModel @Inject constructor(
                 userRequest = modelRequest,
                 context = agentContext,
                 tools = tools,
+                drainSteer = { drainSteer(sessionId) },
                 reloadTools = { selectTools(toolRegistry.getAvailableTools()) }
             ).collect { event ->
                 when (event) {
