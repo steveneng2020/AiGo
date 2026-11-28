@@ -16,8 +16,11 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 自定义模型元数据的本地缓存存储（存于 app 缓存目录，可随时被系统清理）。
+ * 自定义模型元数据的本地存储（存于 app 私有目录）。
  * key 为「提供商ID:模型名」复合键；优先级高于拉取/内置元数据。
+ *
+ * 必须用 filesDir 而不是 cacheDir：这里是用户手改的参数，丢了没法从服务端拉回来，
+ * 而 cacheDir 是系统随时可清理的临时目录（空间紧张、清除缓存、部分 ROM 定期清）。
  */
 @Singleton
 class CustomModelMetadataStore @Inject constructor(
@@ -71,7 +74,23 @@ class CustomModelMetadataStore @Inject constructor(
         }
     }
 
-    private fun file(): File = File(context.cacheDir, FILE_NAME)
+    private fun file(): File {
+        val target = File(context.filesDir, FILE_NAME)
+        // 一次性迁移：旧版本把文件放在 cacheDir，升级后不清过来用户会以为配置凭空消失
+        if (!target.exists()) {
+            val legacy = File(context.cacheDir, FILE_NAME)
+            if (legacy.isFile) {
+                runCatching {
+                    context.filesDir.mkdirs()
+                    legacy.copyTo(target, overwrite = true)
+                    legacy.delete()
+                }.onFailure {
+                    FileLogger.w(TAG, "迁移自定义模型元数据失败", it)
+                }
+            }
+        }
+        return target
+    }
 
     private companion object {
         const val TAG = "CustomModelMetadataStore"
