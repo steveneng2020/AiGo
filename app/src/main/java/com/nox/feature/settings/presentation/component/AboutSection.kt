@@ -850,13 +850,14 @@ private fun ReleaseNoteItem(release: com.nox.feature.settings.data.remote.Versio
                             // 光靠字号小 + 灰色区分时，它跟正文缩进一致，看起来像
                             // 又一条被截断的条目；加冒号后读起来是「优化：」引出下文。
                             text = "$label：",
-                            // 字号加大一号（labelMedium）：labelSmall 在 bodySmall 正文旁
-                            // 几乎分不出层级，加粗后也仍然偏小，组头不够醒目。
-                            style = MaterialTheme.typography.labelMedium,
+                            // 字号用 titleSmall 而不是 labelMedium：labelMedium 与正文
+                            // bodySmall 只有 2sp 之差，加粗后在浅灰上仍不够醒目；
+                            // titleSmall 再大一号，组头与条目正文一眼能分开。
+                            style = MaterialTheme.typography.titleSmall,
                             // Bold 而不是 SemiBold：标签只占一行、字又小，
                             // SemiBold 在这个字号下跟正文几乎同重，加了冒号也不跳。
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.semanticColors.subtleText,
+                            color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
                         )
                     }
