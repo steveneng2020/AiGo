@@ -956,7 +956,9 @@ internal fun ContextUsageIconButton(
     )
     Box(
         modifier = Modifier
-            .size(25.dp)
+            // 外层：触摸区。保持 36dp 与旁边 IconButton 一致，点得中。
+            // 之前把可见方块和触摸区做成同一个 34dp 盒子，所以缩方块就得缩热区。
+            .size(36.dp)
             .onGloballyPositioned { coords ->
                 val r = coords.boundsInWindow()
                 onBoundsChange(
@@ -968,18 +970,27 @@ internal fun ContextUsageIconButton(
                     )
                 )
             }
-            .clip(RoundedCornerShape(7.dp))
-            .background(Brush.linearGradient(colors))
             .clickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = FeatherIcons.Activity,
-            contentDescription = null,
-            tint = Color.White.copy(alpha = if (enabled) 1f else 0.5f),
-            modifier = Modifier.size(14.dp)
-        )
+        // 内层：可见方块。18dp 等于相邻文件夹 / 立方体图标的可见字形。
+        // 上一版拿它们的 36dp 触摸区当基准，做出来是文件夹的 1.4 倍，
+        // 因为本按钮的蓝底就是全部可见面积、没有透明边距。
+        Box(
+            modifier = Modifier
+                .size(18.dp)
+                .clip(RoundedCornerShape(5.dp))
+                .background(Brush.linearGradient(colors)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = FeatherIcons.Activity,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = if (enabled) 1f else 0.5f),
+                modifier = Modifier.size(10.dp)
+            )
+        }
     }
 }
 

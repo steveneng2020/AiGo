@@ -846,9 +846,14 @@ private fun ReleaseNoteItem(release: com.nox.feature.settings.data.remote.Versio
                     val label = kindLabel(item.kind)
                     if (label.isNotEmpty()) {
                         Text(
-                            text = label,
+                            // 末尾加冒号：这个标签是下面若干条目的组头，不是一条内容。
+                            // 光靠字号小 + 灰色区分时，它跟正文缩进一致，看起来像
+                            // 又一条被截断的条目；加冒号后读起来是「优化：」引出下文。
+                            text = "$label：",
                             style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
+                            // Bold 而不是 SemiBold：标签只占一行、字又小，
+                            // SemiBold 在这个字号下跟正文几乎同重，加了冒号也不跳。
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.semanticColors.subtleText,
                             modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
                         )
