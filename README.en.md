@@ -83,7 +83,7 @@ the other). Upstream Nox updates keep flowing into AiGo.
 | --- | --- | --- |
 | App name | Nox | AiGo |
 | Package | `com.nox` | `com.aigo` (both can coexist on one device) |
-| App icon | one set | nine switchable sets (six Kun + three originals) |
+| App icon | three sets | nine switchable sets (six Kun + three originals) |
 | Usage detail | one line of small text under each reply | full panel + per-turn breakdown card |
 | Update check | points at the Nox repo | points at this project |
 | Contact | QQ group | steveneng@163.com |
