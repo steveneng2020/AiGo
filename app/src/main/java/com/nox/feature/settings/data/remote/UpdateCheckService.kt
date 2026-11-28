@@ -248,17 +248,42 @@ class UpdateCheckService @Inject constructor(
     private fun parseReleaseNotes(notes: String): Pair<String, List<ChangelogItem>> {
         if (notes.isBlank()) return "" to emptyList()
         val itemRegex = Regex("""^-\s+\*\*(.+?)\*\*\s*[：:]\s*(.*)$""")
+        // 分类小标题 → kind。与 scripts/parse-changelog.py 的 SECTION_KINDS 保持一致：
+        // 同一份 CHANGELOG 两处解析，分类口径必须一致，否则 App 与 Release 页对不上。
+        // 未收录的小标题不改变 kind，沿用上一个——纯排版小标题（如「### 细节」）
+        // 不会把已分类的条目打回未分类。
+        val kindByHeading = mapOf(
+            "新增" to "added",
+            "新功能" to "added",
+            "改进" to "polished",
+            "体验改进" to "polished",
+            "交互改进" to "polished",
+            "优化" to "improved",
+            "性能优化" to "improved",
+            "体验优化" to "improved",
+            "修复" to "fixed",
+            "问题修复" to "fixed",
+            "上游同步" to "synced",
+            "同步上游" to "synced",
+        )
         var summary = ""
+        var currentKind = ""
         val items = mutableListOf<ChangelogItem>()
         notes.lines().forEach { raw ->
             val line = raw.trim()
             if (line.isEmpty()) return@forEach
             if (line.startsWith("<!--")) return@forEach
+            // ### 分类小标题：更新当前分类，不产出条目
+            if (line.startsWith("###")) {
+                currentKind = kindByHeading[line.removePrefix("###").trim()] ?: ""
+                return@forEach
+            }
             val m = itemRegex.find(line)
             if (m != null) {
                 items += ChangelogItem(
                     title = m.groupValues[1].trim(),
-                    detail = m.groupValues[2].trim()
+                    detail = m.groupValues[2].trim(),
+                    kind = currentKind
                 )
                 return@forEach
             }
