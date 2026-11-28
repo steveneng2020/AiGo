@@ -249,90 +249,14 @@ if [ -d "$OUT_DIR" ]; then
   fi
 fi
 
-# ---------- 6a. APK 是否比源码新 ----------
-# 踩过的坑：出包命令启动后继续改源码，构建用的还是旧代码，
-# 结果归档并装上设备的包不含最后那批改动，验收时看到的全是旧行为。
-# 判据：build-output 最新包的 mtime 必须晚于所有 src 文件的 mtime。
+# ---------- 6a/6b. 出包与归档检查已移到 pre-push ----------
 #
-# 豁免：本次提交含 app/src 改动时跳过。真实顺序是「提交 → 出包」，
-# 提交这一刻包里不可能已经含这些改动；这类提交要查的时候在 pre-push。
-staged_src_6a=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
-  | grep -E '^app/src/(main|debug|release|profile)/.*\.(kt|xml)$' || true)
-
-if [ -d "$OUT_DIR" ] && [ -z "$staged_src_6a" ]; then
-  newest_apk=$(ls -t "$OUT_DIR"/*.apk 2>/dev/null | head -1)
-  if [ -n "$newest_apk" ]; then
-    apk_mtime=$(stat -c %Y "$newest_apk" 2>/dev/null || echo 0)
-    newest_src=$(find app/src -type f \( -name '*.kt' -o -name '*.xml' \) -printf '%T@\n' 2>/dev/null \
-      | sort -n | tail -1 | cut -d. -f1)
-    newest_src=${newest_src:-0}
-    if [ "$newest_src" -gt "$apk_mtime" ]; then
-      red "  ✘ 源码比最新 APK 更晚：这个包不含最后的改动，必须重新出包"
-      echo "    APK:  $(basename "$newest_apk")"
-      echo "    源码: $(date -d "@$newest_src" '+%H:%M:%S' 2>/dev/null)"
-      echo "    APK:  $(date -d "@$apk_mtime" '+%H:%M:%S' 2>/dev/null)"
-      fail=1
-    else
-      green "  ✔ APK 包含最新源码"
-    fi
-  fi
-fi
-
-# ---------- 6b. 出包是否已归档 ----------
+# 真实流程是「提交 → 出包 → 归档 → 推送」。提交这一刻，包里必然不含本次改动，
+# 放在这里检查会与 build-lock 的「出包要求 app/src 已提交」互相锁死：
+# 提交被拦 → 出不了包 → 包永远是旧的 → 永远提交不了。
 #
-# 顺序约束（2026-11-28 修正）：真实流程是「提交 → 出包 → 归档 → 推送」。
-# 原先这里无条件要求「build-output 里的包比源码新」，与 build-lock 的
-# 「出包要求 app/src 已提交」互相锁死——提交被拦、出包也没法开始。
-#
-# 正确切分：
-#   本次提交含 app/src 改动 → 这是「出包前」的提交，包里不可能有这些改动，跳过
-#   本次提交不含 app/src     → 出包后才有的提交，此时归档包不该落后于 CHANGELOG
-#
-# 「必须先出包才能推送」放在 pre-push，那里才是真正交付前的关卡。
-staged_src=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
-  | grep -E '^app/src/(main|debug|release|profile)/.*\.(kt|xml)$' || true)
-
-if [ -d "$OUT_DIR" ]; then
-  newest_apk=$(ls -t "$OUT_DIR"/*.apk 2>/dev/null | head -1)
-  if [ -n "$newest_apk" ]; then
-    if [ -n "$staged_src" ]; then
-      yellow "  · 本次提交含源码改动，出包在提交之后，归档检查交给 pre-push"
-    else
-      apk_mtime=$(stat -c %Y "$newest_apk" 2>/dev/null || echo 0)
-      # 只看会打进 APK 的源码：必须排除 app/src/test 与 app/src/androidTest，
-      # 测试代码不进包，要求「改了测试就必须重新出包」只会逼人绕过门禁。
-      src_mtime=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
-        | grep -E '^app/src/(main|debug|release|profile)/.*\.(kt|xml)$' \
-        | while read -r f; do [ -f "$f" ] && stat -c %Y "$f"; done \
-        | sort -n | tail -1)
-      src_mtime=${src_mtime:-0}
-      if [ "$src_mtime" -gt "$apk_mtime" ]; then
-        red "  ✘ 源码已改但 build-output 里的包更旧（构建完要归档并规范命名）"
-        echo "    最新包: $(basename "$newest_apk")"
-        fail=1
-      else
-        green "  ✔ 出包已归档"
-      fi
-
-      # 6c. 归档包里的更新日记是否与 CHANGELOG.md 一致
-      #
-      # 6a/6b 只比时间戳，查不出「包里的 changelog.json 是旧内容」：
-      # 2026-11-28 出 vc171 时 CHANGELOG 在 08:41 改了 8 条，APK 是 08:17 构建的，
-      # 时间戳上新包旧于源码会被 6a 放行（源码没动过），但包里日记仍是 4 条。
-      # 只有读产物本身才能发现。Gradle 的 generateChangelog 在 CHANGELOG
-      # 比源码旧时判定「没变」不重跑，静默沿用旧输出——这就是当时的机制。
-      if [ -f scripts/check_apk_changelog.py ]; then
-        if python3 scripts/check_apk_changelog.py "$newest_apk" >/tmp/precommit_apklog.log 2>&1; then
-          green "  ✔ 包内更新日记与 CHANGELOG 一致"
-        else
-          red "  ✘ 包内更新日记与 CHANGELOG 不一致："
-          sed 's/^/    /' /tmp/precommit_apklog.log | head -8
-          fail=1
-        fi
-      fi
-    fi
-  fi
-fi
+# 2026-11-28 就是这么卡住的。这类「查产物」的检查只在 pre-push 有意义，
+# 那里才是真正交付前的关卡，见 .githooks/pre-push 第 2b 节。
 
 # ---------- 7. 未推送提交 ----------
 # 已移到 pre-push：提交阶段要求「必须已推送」会形成死锁——
