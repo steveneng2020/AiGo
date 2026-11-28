@@ -956,7 +956,7 @@ internal fun ContextUsageIconButton(
     )
     Box(
         modifier = Modifier
-            .size(34.dp)
+            .size(25.dp)
             .onGloballyPositioned { coords ->
                 val r = coords.boundsInWindow()
                 onBoundsChange(
@@ -968,7 +968,7 @@ internal fun ContextUsageIconButton(
                     )
                 )
             }
-            .clip(RoundedCornerShape(9.dp))
+            .clip(RoundedCornerShape(7.dp))
             .background(Brush.linearGradient(colors))
             .clickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = label },
@@ -978,7 +978,7 @@ internal fun ContextUsageIconButton(
             imageVector = FeatherIcons.Activity,
             contentDescription = null,
             tint = Color.White.copy(alpha = if (enabled) 1f else 0.5f),
-            modifier = Modifier.size(19.dp)
+            modifier = Modifier.size(14.dp)
         )
     }
 }
