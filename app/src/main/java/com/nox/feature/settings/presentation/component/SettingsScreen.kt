@@ -137,6 +137,7 @@ import compose.icons.feathericons.Save
 import compose.icons.feathericons.Server
 import compose.icons.feathericons.Shield
 import compose.icons.feathericons.Sliders
+import compose.icons.feathericons.Square
 import compose.icons.feathericons.Smartphone
 import compose.icons.feathericons.Terminal
 import compose.icons.feathericons.Settings
@@ -2578,18 +2579,6 @@ internal fun SettingsMenu(
             )
             SettingsDivider()
             SettingsRow(
-                icon = FeatherIcons.Package,
-                title = stringResource(SettingsSection.Plugins.titleRes),
-                onClick = { onOpen(SettingsSection.Plugins) }
-            )
-            SettingsDivider()
-            SettingsRow(
-                icon = FeatherIcons.FileText,
-                title = stringResource(SettingsSection.Prompts.titleRes),
-                onClick = { onOpen(SettingsSection.Prompts) }
-            )
-            SettingsDivider()
-            SettingsRow(
                 icon = FeatherIcons.Book,
                 title = stringResource(SettingsSection.Skills.titleRes),
                 onClick = { onOpen(SettingsSection.Skills) }
@@ -2605,6 +2594,18 @@ internal fun SettingsMenu(
                 icon = FeatherIcons.Users,
                 title = stringResource(SettingsSection.SubAgents.titleRes),
                 onClick = { onOpen(SettingsSection.SubAgents) }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Package,
+                title = stringResource(SettingsSection.Plugins.titleRes),
+                onClick = { onOpen(SettingsSection.Plugins) }
+            )
+            SettingsDivider()
+            SettingsRow(
+                icon = FeatherIcons.Square,
+                title = stringResource(SettingsSection.Prompts.titleRes),
+                onClick = { onOpen(SettingsSection.Prompts) }
             )
             PluginSettingsRows(
                 pages = pluginPages,
