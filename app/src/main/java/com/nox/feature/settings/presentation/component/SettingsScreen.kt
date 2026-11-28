@@ -2584,6 +2584,12 @@ internal fun SettingsMenu(
             )
             SettingsDivider()
             SettingsRow(
+                icon = FeatherIcons.FileText,
+                title = stringResource(SettingsSection.Prompts.titleRes),
+                onClick = { onOpen(SettingsSection.Prompts) }
+            )
+            SettingsDivider()
+            SettingsRow(
                 icon = FeatherIcons.Book,
                 title = stringResource(SettingsSection.Skills.titleRes),
                 onClick = { onOpen(SettingsSection.Skills) }
@@ -2599,12 +2605,6 @@ internal fun SettingsMenu(
                 icon = FeatherIcons.Users,
                 title = stringResource(SettingsSection.SubAgents.titleRes),
                 onClick = { onOpen(SettingsSection.SubAgents) }
-            )
-            SettingsDivider()
-            SettingsRow(
-                icon = FeatherIcons.Sliders,
-                title = stringResource(SettingsSection.Prompts.titleRes),
-                onClick = { onOpen(SettingsSection.Prompts) }
             )
             PluginSettingsRows(
                 pages = pluginPages,
