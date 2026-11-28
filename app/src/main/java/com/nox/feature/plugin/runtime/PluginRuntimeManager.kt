@@ -305,6 +305,7 @@ class PluginRuntimeManager @Inject constructor(
             "host.chat.getSession" -> hostCall { chatService.getSession(pluginId, params) }
             "host.chat.renameSession" -> hostCall { chatService.renameSession(pluginId, params) }
             "host.chat.resetSessionContext" -> hostCall { chatService.resetSessionContext(pluginId, params) }
+            "host.chat.compactSessionContext" -> hostCall { chatService.compactSessionContext(pluginId, params) }
             "host.chat.pinSession" -> hostCall { chatService.pinSession(pluginId, params) }
             "host.chat.deleteSession" -> hostCall { chatService.deleteSession(pluginId, params) }
             "host.chat.getRunState" -> hostCall { chatService.getRunState(pluginId, params) }

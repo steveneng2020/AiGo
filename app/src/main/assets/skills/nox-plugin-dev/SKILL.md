@@ -1,6 +1,6 @@
 ---
 name: nox-plugin-dev
-description: Nox（AiCode 二改）插件开发完整指南：plugin.json 全字段、13 种贡献类型、12 个 UI 槽位、runtime 的 JSON-RPC 协议与 handler 分发、页面桥 API 与 data:// 存储、UI 组件库、悬浮窗、工具与 hook 定义、打包安装调试与商店发布流程
+description: Nox（AiCode 二改）插件开发完整指南：plugin.json 全字段、13 种贡献类型、12 个 UI 槽位、runtime 的 JSON-RPC 协议与 handler 分发、页面桥 API 与 data:// 存储、网页登录与页面内登录态抓取（cookie / localStorage / token）、UI 组件库、悬浮窗、工具与 hook 定义、打包安装调试与商店发布流程
 ---
 
 # Nox 插件开发
@@ -754,7 +754,7 @@ rl.on('close', () => process.exit(0));
 | `host.clipboard.read` / `write` | 剪贴板 |
 | `host.share.text` | 系统分享 |
 | `host.ui.openUrl` | 打开链接 |
-| `host.webview.login` | 打开受控 WebView 完成第三方网页登录，回传 `{ finalUrl, cookies }`；用户取消抛 `LOGIN_CANCELED` |
+| `host.webview.login` | 打开受控 WebView 完成第三方网页登录，回传 `{ finalUrl, cookies, capture? }`；用户取消抛 `LOGIN_CANCELED` |
 | `host.file.pick` | 拉起系统文件选择器，回传 `{ files: [{ name, size, mime, base64 }] }`；取消抛 `PICK_CANCELED` |
 | `host.tools.execute` / `pending` / `resolve` | 调用宿主工具、处理待审批 |
 | `host.mcp.status` | MCP 连接状态 |
@@ -806,9 +806,12 @@ const ctx = await aicode.context();                    // { pluginId, pageId, vi
 
 `aicode.invoke(handler, args)` 是最常用的一个：handler 名与 runtime 的 `handlers` 键名一致，宿主把它转成 `ui.invoke` 发给插件进程。**桥没有 `plugin` 命名空间**，`aicode.plugin.invoke(...)` 不存在。
 
-**网页登录**：`aicode.webview.login({ url, title?, finishText?, cookieUrls?, accentColor?, cornerRadius?, dimAlpha?, showClose? })` 在 App 内打开受控全屏 WebView，
-用户完成第三方网页登录后返回 `{ finalUrl, cookies: { 地址: cookie 串 } }`；用户点「关闭」或返回抛 `LOGIN_CANCELED`。
-可选样式：`accentColor`（`#RRGGBB`，完成按钮与强调色）、`cornerRadius`（dp，卡片圆角）、`dimAlpha`（0–0.9，遮罩透明度）、`showClose`（是否显示关闭）。
+**网页登录**：`aicode.webview.login({ url, title?, cookieUrls?, capture?, autoCapture?, autoFinish?, successWhen?, showFinishButton?, showCancel?, cancelText?, showClose?, accentColor?, cornerRadius?, dimAlpha? })` 在 App 内打开受控全屏 WebView，
+用户完成第三方网页登录后返回 `{ finalUrl, cookies: { 地址: cookie 串 }, capture? }`；用户点「取消」或返回抛 `LOGIN_CANCELED`。
+
+**默认行为就是浏览器**：不传任何按钮参数时，页面不显示「完成」，检测到登录成功会自动关页并回传结果；底部只留一个「取消」让用户放弃。需要手动确认时再打开 `showFinishButton`、并用 `autoFinish: false` 关掉自动提交。
+
+可选样式：`accentColor`（`#RRGGBB`）、`cornerRadius`（dp，卡片圆角）、`dimAlpha`（0–0.9，遮罩透明度）、`showClose`（标题栏关闭）。
 WebView 开启 JavaScript、DOM Storage 与第三方 Cookie，登录态写入 App 级 CookieManager 并落盘，下次打开仍登录。
 需要 Nox 1.0.10+。
 
@@ -820,6 +823,68 @@ const result = await aicode.webview.login({
 });
 await aicode.fs.write('data://session.json', JSON.stringify(result));
 // result.finalUrl / result.cookies
+```
+
+**抳取页面内登录态**：很多站点不把凭据放 Cookie，而是存在 `localStorage` / `sessionStorage`（常见 token、refreshToken、csrf）。传 `capture` 让登录页在页面上下文执行一段 JS，结果一并回传：
+
+```js
+const result = await aicode.webview.login({
+  url: 'https://example.com/login',
+  cookieUrls: ['https://example.com'],
+  // 必须返回 JSON 字符串；宿主解析后放进 result.capture
+  capture: `JSON.stringify({
+    token: localStorage.getItem('token'),
+    refresh: localStorage.getItem('refreshToken')
+  })`,
+  autoCapture: true
+});
+// result.capture = { token: '...', refresh: '...' }
+```
+
+- 不传 `capture` 时，默认抓 `localStorage` 全量、`sessionStorage` 全量，以及 name/property 含 `token`/`csrf`/`auth` 的 `<meta>` 标签。
+- 脚本必须**返回 JSON 字符串**；解析失败时原文放进 `result.capture.raw`，不会因此让整次登录失败。
+- 执行时机：每次页面加载完成（`onPageFinished`）抓一次存为快照，点「完成」时再抓一次取最新。登录往往发生在最后一次跳转，只靠前者会拿到登录前的状态。
+- `autoCapture: true` 表示不传 `capture` 也按默认脚本抓。
+- 脚本长度上限 8KB，结果上限 256KB。
+- 脚本只读页面数据，不参与也不干预站点的登录流程。需要 Nox 1.0.28+。
+
+**自动识别登录完成**：默认就在跑 —— 页面每次加载后会轮询检测（约每 0.8 秒，最多 2 分钟），一检测到登录成功就当场抓取并关页回传，用户无需点任何按钮。
+
+默认判据（`successWhen` 不传时生效）：`localStorage` 中存在名字含 `token`/`auth`/`session`/`credential`/`ticket` 的键，或 `document.cookie` 中存在名字含 `token`/`auth`/`session`/`sid`/`ticket` 的键。**不看 URL 是否变化**，因为很多站点是弹层式登录，URL 根本不变。
+
+实际站点差异很大时传 `successWhen` 自定义，它是一段**返回真假的 JS 表达式**（返回 `true` / 非空字符串即视为成功）：
+
+```js
+await aicode.webview.login({
+  url: 'https://example.com/login',
+  // 等页面里出现登录后的标志元素
+  successWhen: `!!document.querySelector('[data-user-avatar]')`,
+  capture: `JSON.stringify({ token: localStorage.getItem('token') })`
+});
+// 检测到 avatar 出现后自动抓取并关闭，无需点击
+```
+
+**按钮交给插件控**（四个参数自由组合，都不传时默认是纯自动模式）：
+
+| 参数 | 默认 | 作用 |
+|---|---|---|
+| `autoFinish` | `true` | 检测到登录成功就自动回传并关页 |
+| `showFinishButton` | `false` | 显示一个手动「完成」按钮 |
+| `finishText` | `完成` | 上面那个按钮的文案 |
+| `showCancel` | `true` | 显示「取消」按钮（用户放弃登录） |
+| `cancelText` | `取消` | 取消按钮文案 |
+
+典型组合：
+
+```js
+// 纯自动（默认）：不传任何按钮参数
+await aicode.webview.login({ url, capture });
+
+// 自动为主，但允许用户手动提前提交
+await aicode.webview.login({ url, showFinishButton: true });
+
+// 完全手动（旧行为）：不自动完成，用户必须点按钮
+await aicode.webview.login({ url, autoFinish: false, showFinishButton: true, showCancel: false });
 ```
 
 ### 可用方法

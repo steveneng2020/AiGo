@@ -68,7 +68,9 @@ class PluginChatService @Inject constructor(
     private val runStateStore: AgentRunStateStore,
     private val toolPermissionManager: ToolPermissionManager,
     private val askUserQuestionManager: AskUserQuestionManager,
-    private val planApprovalManager: PlanApprovalManager
+    private val planApprovalManager: PlanApprovalManager,
+    /** 用于插件触发上下文压缩：生成摘要并标记旧消息，历史本身不删。 */
+    private val agentWorkflow: com.nox.feature.agent.domain.workflow.AgentWorkflow
 ) {
 
     suspend fun listSessions(pluginId: String, params: JsonObject): JsonElement {
@@ -212,6 +214,31 @@ class PluginChatService @Inject constructor(
         val sessionId = PluginHostPaths.requireString(params, "sessionId").trim()
         val session = requireSession(sessionId, workspace)
         return buildJsonObject { put("session", sessionJson(session)) }
+    }
+
+    /**
+     * 压缩会话上下文：让模型把旧消息总结成一段摘要，旧消息标记为已压缩。
+     *
+     * 与 resetSessionContext 的区别：重置是直接截断（模型失忆），
+     * 压缩会保留一段摘要作为新上下文的开头，模型能记住人物、目标与结论，
+     * 只是丢掉细节。界面上旧消息仍然可见，只是不再重复发给模型。
+     */
+    suspend fun compactSessionContext(pluginId: String, params: JsonObject): JsonElement {
+        ensureActive(pluginId)
+        val workspace = requireWorkspace()
+        val sessionId = PluginHostPaths.requireString(params, "sessionId").trim()
+        val session = requireSession(sessionId, workspace)
+        // 运行中压缩会与正在进行的请求抢状态，直接拒绝并让调用方稍后重试
+        val run = runStateStore.snapshot(session.id)
+        if (run != null && run.running) {
+            throw PluginHostException("SESSION_BUSY", "session is running; retry after it finishes")
+        }
+        val changed = agentWorkflow.compactSession(session.id)
+        return buildJsonObject {
+            put("ok", changed)
+            put("sessionId", session.id)
+            put("compacted", changed)
+        }
     }
 
     /**

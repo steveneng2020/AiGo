@@ -241,7 +241,9 @@ class ModelApiService @Inject constructor(
                     val path = if (useResponseApi) "v1/responses" else "v1/chat/completions"
                     val u = if (useFullUrl) baseUrl else joinUrl(baseUrl, path)
                     if (useResponseApi) {
-                        u to """{"model":${model.jsonStr()},"input":[{"role":"user","content":"hi"}]}"""
+                        // content 必须是 input_text 对象数组：写纯字符串会被严格的网关
+                        // 转成 upstream_error（星驰实测：字符串 400，对象数组 200）。
+                        u to """{"model":${model.jsonStr()},"input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}]}"""
                     } else {
                         u to """{"model":${model.jsonStr()},"max_completion_tokens":1,"messages":[{"role":"user","content":"hi"}]}"""
                     }
