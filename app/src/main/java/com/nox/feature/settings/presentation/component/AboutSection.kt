@@ -837,7 +837,23 @@ private fun ReleaseNoteItem(release: com.nox.feature.settings.data.remote.Versio
 
         if (release.items.isNotEmpty()) {
             Spacer(Modifier.height(Spacing.sm))
+            // 按分类分组：连续同 kind 的条目归在一组，组前加一个灰色小标签。
+            // kind 为空串（v1.0.5 及更早）时不加标签、直接平铺，与旧版呈现一致。
+            var lastKind = ""
             release.items.forEach { item ->
+                if (item.kind != lastKind) {
+                    lastKind = item.kind
+                    val label = kindLabel(item.kind)
+                    if (label.isNotEmpty()) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.semanticColors.subtleText,
+                            modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
+                        )
+                    }
+                }
                 val bold = MaterialTheme.colorScheme.onSurface
                 val normal = MaterialTheme.semanticColors.subtleText
                 val text = buildAnnotatedString {
@@ -870,6 +886,16 @@ private fun ReleaseNoteItem(release: com.nox.feature.settings.data.remote.Versio
             )
         }
     }
+}
+
+/** 分类键 → 显示标签。空串（旧版本未分类）返回空，调用方据此不画标签。 */
+private fun kindLabel(kind: String): String = when (kind) {
+    "added" -> "新增"
+    "polished" -> "改进"
+    "improved" -> "优化"
+    "fixed" -> "修复"
+    "synced" -> "上游同步"
+    else -> ""
 }
 
 /** ISO-8601 → `2026.11.17`；解析失败时原样返回，缺失时返回空串（不显示日期）。 */

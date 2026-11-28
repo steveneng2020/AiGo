@@ -25,10 +25,17 @@ data class UpdateAsset(
     val sha256: String?
 )
 
-/** 更新日记里的一条：标题 + 具体说明。 */
+/** 更新日记里的一条：分类 + 标题 + 具体说明。 */
 data class ChangelogItem(
     val title: String,
-    val detail: String
+    val detail: String,
+    /**
+     * 分类：added / improved / fixed / synced，空串表示未分类。
+     *
+     * v1.0.5 及更早的 CHANGELOG 没有 ### 分类小标题，解析结果为空串，
+     * UI 遇到空串时直接平铺、不加标签——不能因为格式演进把老版本显示弄乱。
+     */
+    val kind: String = ""
 )
 
 /** 单个版本的更新日志与更新包。 */
@@ -163,7 +170,8 @@ class UpdateCheckService @Inject constructor(
                 val item = runCatching { itemEl.asJsonObject }.getOrNull() ?: return@mapNotNull null
                 ChangelogItem(
                     title = item.get("title")?.asString.orEmpty(),
-                    detail = item.get("detail")?.asString.orEmpty()
+                    detail = item.get("detail")?.asString.orEmpty(),
+                    kind = item.get("kind")?.asString.orEmpty()
                 )
             }.orEmpty()
             VersionUpdate(

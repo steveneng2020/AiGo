@@ -12,7 +12,7 @@ App 内关于页与 GitHub Release 页都从同一份 CHANGELOG.md 读取，
   python3 scripts/parse-changelog.py --markdown-for v1.0.0   # 指定版本的 Markdown
   python3 scripts/parse-changelog.py --summary-for v1.0.0    # 指定版本的首条要点（APK 文件名用）
 
-输出 JSON 结构（items 是平铺数组，没有 sections 层级）：
+输出 JSON 结构（items 平铺，每条带 kind 分类）：
   {
     "version": 1,
     "entries": [
@@ -20,10 +20,21 @@ App 内关于页与 GitHub Release 页都从同一份 CHANGELOG.md 读取，
         "tag": "v1.0.0",
         "date": "2026-11-21",
         "summary": "一句话概括",
-        "items": [{"title": "短语", "detail": "具体说明"}]
+        "items": [{"kind": "added", "title": "短语", "detail": "具体说明"}]
       }
     ]
   }
+
+分类（kind）来自版本下的 ### 小标题：
+  ### 新增      → added
+  ### 优化      → improved
+  ### 修复      → fixed
+  ### 上游同步  → synced
+  无小标题（v1.0.0~v1.0.5 的旧写法）→ 空串，表示未分类。
+
+**旧版本必须继续能解析**：v1.0.5 及更早的 CHANGELOG 没有分类小标题，
+解析结果的 kind 一律为空串，由 UI 决定如何呈现（当前是直接平铺，不加标签）。
+这条兼容性是硬要求——已发布的包若因格式变更而显示异常，用户会以为坏了。
 """
 
 import json
@@ -38,6 +49,36 @@ ITEM = re.compile(r"^-\s+\*\*(.+?)\*\*[：:]\s*(.+)$")
 # 典型用法是把判据、实现要点这类细节挂在主条目下面，避免主条目过长。
 SUBITEM = re.compile(r"^\s{2,}-\s+(.+)$")
 
+# 版本下的小标题 → kind。
+#
+# 「优化」与「改进」是两类，不能合并：
+#   优化（perf）= 同功能跑得更快/更准/更省，例如显示精度修正、请求链路提速
+#   改进（polished）= 交互或呈现变好，功能范围不变，例如分组可折叠、布局重排
+# 上游 Conventional Commits 只有 perf，没有对应「交互改善」的 type；
+# 本项目面向终端用户，这个区分对读者有意义，所以单独列出。
+#
+# 中英都收：发布时可能有人用英文写。未收录的小标题不改变 kind（沿用上一个），
+# 这样「### 细节」这类纯排版小标题不会把已分类的条目打回未分类。
+SECTION_KINDS = {
+    "新增": "added",
+    "新功能": "added",
+    "added": "added",
+    "改进": "polished",
+    "体验改进": "polished",
+    "交互改进": "polished",
+    "polished": "polished",
+    "优化": "improved",
+    "性能优化": "improved",
+    "体验优化": "improved",
+    "improved": "improved",
+    "修复": "fixed",
+    "问题修复": "fixed",
+    "fixed": "fixed",
+    "上游同步": "synced",
+    "同步上游": "synced",
+    "synced": "synced",
+}
+
 
 def parse(md: str):
     """解析 CHANGELOG.md。
@@ -49,6 +90,7 @@ def parse(md: str):
     """
     entries = []
     cur = None
+    kind = ""  # 当前分类；### 小标题切换，未分类时为空串
     in_comment = False
     in_fence = False
 
@@ -72,18 +114,25 @@ def parse(md: str):
         if m:
             cur = {"tag": m.group(1), "date": m.group(2), "summary": "", "items": []}
             entries.append(cur)
+            kind = ""
             continue
 
         if cur is None:
             continue
 
-        # 忽略 ### 小标题（旧格式兼容），条目一律平铺
-        if SECTION_HEADING.match(line):
+        # ### 小标题：识别为分类，不产生条目。
+        # 旧版本（v1.0.5 及更早）没有分类小标题，kind 保持空串。
+        msec = SECTION_HEADING.match(line)
+        if msec:
+            label = msec.group(1).strip()
+            mapped = SECTION_KINDS.get(label) or SECTION_KINDS.get(label.lower(), "")
+            if mapped:
+                kind = mapped
             continue
 
         mi = ITEM.match(line)
         if mi:
-            cur["items"].append({"title": mi.group(1), "detail": mi.group(2)})
+            cur["items"].append({"kind": kind, "title": mi.group(1), "detail": mi.group(2)})
             continue
 
         # 子条目并入上一条 item 的 detail。
@@ -106,14 +155,37 @@ def parse(md: str):
     return {"version": 1, "entries": entries}
 
 
+KIND_LABELS = {
+    "added": "新增",
+    "polished": "改进",
+    "improved": "优化",
+    "fixed": "修复",
+    "synced": "上游同步",
+}
+
+
 def to_markdown(entry) -> str:
     out = []
     if entry["summary"]:
         out.append(entry["summary"])
         out.append("")
+
+    # 按 kind 重建小标题：CHANGELOG 里的 ### 分类在解析时变成了 kind 字段，
+    # 不重建的话 Release 页/弹窗拿到的是一大块平铺列表，分类信息丢失。
+    # 旧版本全部 kind 为空串，会落进同一个「无标签」组，输出与以前一致。
+    #
+    # 空行处理：summary 后面已经 append 过一个空行，这里只在已有内容后补一行，
+    # 否则会出现两个连续空行（Markdown 里会被渲染成多余的垂直间隙）。
+    current_kind = None
     for it in entry["items"]:
-        # detail 可能含换行（子条目已并进来），续行必须缩进两级，
-        # 否则在 Markdown 里会被当成新的顶级段落，读起来像另一条要点。
+        k = it.get("kind") or ""
+        if k != current_kind:
+            if k:
+                if out and out[-1] != "":
+                    out.append("")
+                out.append(f"### {KIND_LABELS.get(k, k)}")
+                out.append("")
+            current_kind = k
         lines = it["detail"].split("\n")
         out.append(f"- **{it['title']}**：{lines[0]}")
         for extra in lines[1:]:

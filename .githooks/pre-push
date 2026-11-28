@@ -87,6 +87,50 @@ else
     green "  ✔ 无敏感文件"
 fi
 
+# ---------- 2b. 改了 app/src 就必须已出包并归档 ----------
+#
+# 为什么放在 pre-push：真实流程是「提交 → 出包 → 归档 → 推送」。
+# 提交那一刻包里不可能含本次改动，所以这条只能在这里查。
+# 原先错放在 pre-commit，与 build-lock 的「出包要求已提交」互相锁死。
+#
+# 判据：本次推送涉及 app/src 的 .kt/.xml 时，
+# build-output 最新包的 mtime 必须晚于这些源文件的 mtime，且包内日记与 CHANGELOG 一致。
+push_src=$(git diff --name-only "${range}" 2>/dev/null \
+    | grep -E '^app/src/(main|debug|release|profile)/.*\.(kt|xml)$' || true)
+OUT_DIR="${AIGO_BUILD_OUTPUT:-$HOME/workspace/build-output}"
+if [ -n "${push_src}" ]; then
+    newest_apk=$(ls -t "$OUT_DIR"/*.apk 2>/dev/null | head -1)
+    if [ -z "${newest_apk}" ]; then
+        red "  ✘ 本次推送改了 app/src，但 build-output 里没有包（出包后归档再推）"
+        fail=1
+    else
+        apk_mtime=$(stat -c %Y "$newest_apk" 2>/dev/null || echo 0)
+        src_mtime=$(printf '%s\n' "${push_src}" | while read -r f; do
+            [ -f "$f" ] && stat -c %Y "$f"
+        done | sort -n | tail -1)
+        src_mtime=${src_mtime:-0}
+        if [ "$src_mtime" -gt "$apk_mtime" ]; then
+            red "  ✘ 改了源码但归档包更旧，先出包再推"
+            echo "    最新包: $(basename "$newest_apk")"
+            echo "    源码:   $(date -d "@$src_mtime" '+%m-%d %H:%M:%S' 2>/dev/null)"
+            echo "    APK:    $(date -d "@$apk_mtime" '+%m-%d %H:%M:%S' 2>/dev/null)"
+            fail=1
+        elif [ -f scripts/check_apk_changelog.py ]; then
+            if python3 scripts/check_apk_changelog.py "$newest_apk" >/tmp/prepush_apklog.log 2>&1; then
+                green "  ✔ 已出包归档，包内日记与 CHANGELOG 一致"
+            else
+                red "  ✘ 包内更新日记与 CHANGELOG 不一致："
+                sed 's/^/      /' /tmp/prepush_apklog.log | head -8
+                fail=1
+            fi
+        else
+            green "  ✔ 已出包归档"
+        fi
+    fi
+else
+    green "  ✔ 未改 app/src，无需出包"
+fi
+
 # ---------- 3. 更新日记日期 ----------
 if [ -f scripts/check_changelog_date.py ]; then
     if python3 scripts/check_changelog_date.py >/tmp/prepush_changelog.log 2>&1; then

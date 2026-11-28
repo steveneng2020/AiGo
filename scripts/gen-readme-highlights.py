@@ -34,10 +34,15 @@ PARSER = ROOT / "scripts" / "parse-changelog.py"
 START = "<!-- 新增与改进:START -->"
 END = "<!-- 新增与改进:END -->"
 
-# 取几个版本：README 要回答「这个项目做过什么」，所以覆盖全部版本。
-# v1.0.0 是最早的正式版，里面全是本项目的核心原创功能（运行中加附件、
-# 插件分组、通知栏图标跟随…），用「最近 N 版」窗口会把这些直接丢掉。
-RECENT_VERSIONS = 999
+# 取几个版本：README 只列最近 2 版的完整条目。
+#
+# 早先设 999（全列），理由是「README 要回答这个项目做过什么」。
+# 2026-11-28 改成 2，因为把职责拆开了：
+#   「长期做了什么」→ README 手写的「核心能力」表（恒定长度，不随版本膨胀）
+#   「最近改了什么」→ 本节（只留最近 2 版，自然有上限）
+#   「每一版细节」  → CHANGELOG.md 与 App 内关于页
+# 全列会让 README 每发一版就长几条，一年后几百条，新访客抓不到重点。
+RECENT_VERSIONS = 2
 
 # 每个版本最多列几条：不再截断，全列。
 #
@@ -56,7 +61,7 @@ MAX_ITEMS_PER_VERSION = None
 MIN_ITEMS_PER_VERSION = 2
 
 # 每条截断长度：README 是概览，细节在 CHANGELOG 与 App 里的更新日记。
-MAX_LEN = 100
+MAX_LEN = 160
 
 # 主题去重：同一件事在多版里反复出现时只保留最新那版。
 # 典型例子是图标——v1.0.1 写「新增鲲六套图标」，v1.0.4 又写「默认图标改为金黄鲲」，
@@ -108,82 +113,77 @@ def shorten(text: str, limit: int = MAX_LEN) -> str:
     return text[: limit - 1].rstrip("，。、；： ") + "…"
 
 
+KIND_LABELS = {
+    "added": "新增",
+    "polished": "改进",
+    "improved": "优化",
+    "fixed": "修复",
+    "synced": "上游同步",
+}
+
+# 分类按这个顺序出现：新增在前，修复居中，上游同步永远最后
+KIND_ORDER = ["added", "polished", "improved", "fixed", "synced"]
+
+
 def render(entries) -> str:
+    """渲染最近 RECENT_VERSIONS 个版本的完整条目。
+
+    设计取舍（2026-11-28 改）：
+      早先这套逻辑会「挑重点」——过滤修复类、按主题去重、每版只留几条。
+      那时 RECENT_VERSIONS=999，README 要承载全部历史，必须做减法。
+
+      现在职责拆开了：长期能力写在 README 手写的「核心能力」表里，
+      本节只留最近 2 版。既然只有 2 版，就不该再挑——用户点进来是想看
+      「这两版具体改了什么」，删条目会让「改了 8 条」显示成「4 条」，
+      与 CHANGELOG 和 App 关于页对不上。
+
+      所以：不过滤、不去重、不按长度筛，只按分类分组排列。
+    """
     lines = []
     used = entries[:RECENT_VERSIONS]
-
-    printed_any = False
     printed_tags = []
-    seen_topics = set()   # 已经出现过的话题（新版本优先，倒序填）
 
     for entry in used:
         tag = entry["tag"]
         date = entry["date"]
         items = entry.get("items") or []
-
-        # 挑重点：只留本项目做的新功能，修复/微调/上游同步都不进 README。
-        # 这些在 CHANGELOG 里都有，README 是概览。
-        picked = []
-        upstream_item = None
-        for it in items:
-            title = it.get("title", "").strip()
-            if not title:
-                continue
-            if title.startswith(UPSTREAM_MARKER):
-                upstream_item = it
-                continue
-            if title.startswith(SKIP_PREFIXES):
-                continue
-            # 说明太短 = 小改动，不算重点项目
-            if len(it.get("detail", "").strip()) < MIN_DETAIL_LEN:
-                continue
-            picked.append(it)
-
-        # 主题去重：先标记本版占用的主题
-        for it in picked:
-            it["_topic"] = next(
-                (k for k, kws in TOPIC_KEYWORDS.items()
-                 if any(kw in it.get("title", "") for kw in kws)),
-                None
-            )
-        picked = [it for it in picked
-                  if not (it["_topic"] and it["_topic"] in seen_topics)]
-        for it in picked:
-            if it["_topic"]:
-                seen_topics.add(it["_topic"])
-
-        # MAX_ITEMS_PER_VERSION 为 None 表示不截断（全列）。
-        # 保留这个变量是为了需要再收紧时有单一开关可改。
-        shown = picked if MAX_ITEMS_PER_VERSION is None else picked[:MAX_ITEMS_PER_VERSION]
-        # 够分量的改动不足 MIN_ITEMS_PER_VERSION 条 → 整个版本不出现在 README。
-        # 只留一两条会显得这一版没什么可说的，反而拉低整段的可信度；
-        # 这些小版本的内容在 CHANGELOG 与 App 内更新日记里都能看到。
-        if len(shown) < MIN_ITEMS_PER_VERSION:
+        if not items:
             continue
 
-        # 第一个有内容的版本不写小标题（章节标题已是「新增与改进」）；
-        # 之后每个版本用小标题分隔。
-        if printed_any:
+        if printed_tags:
             lines.append("")
         lines.append(f"**{tag}（{date}）**")
-        lines.append("")
-        printed_any = True
         printed_tags.append(tag)
 
-        for it in shown:
-            title = it.get("title", "").strip()
-            detail = shorten(it.get("detail", ""))
-            # 与 CHANGELOG 同样的行内格式：粗体短语 + 说明
-            lines.append(f"- **{title}** — {detail}" if detail else f"- **{title}**")
+        # 按分类分组；未分类（历史版本或没写小标题）归到空串组，不画标题
+        groups = {}
+        for it in items:
+            k = it.get("kind") or ""
+            groups.setdefault(k, []).append(it)
 
-        # 上游功能固定排在最后，不计入上面 3 条的名额
-        if upstream_item is not None:
-            title = upstream_item.get("title", "").strip()
-            detail = shorten(upstream_item.get("detail", ""))
-            lines.append(f"- **{title}** — {detail}" if detail else f"- **{title}**")
+        # 空串组排最前（保持原有阅读顺序），其余按 KIND_ORDER
+        ordered = []
+        if "" in groups:
+            ordered.append(("", groups.pop("")))
+        for k in KIND_ORDER:
+            if k in groups:
+                ordered.append((k, groups.pop(k)))
+        # 兜底：KIND_ORDER 里没收录的新 kind，按出现顺序追加
+        ordered.extend(groups.items())
 
-    # 「更早的版本」按实际没列出来的算，不要假设「前 N 个都列了」——
-    # 某个版本可能因为没有够分量的改动而被跳过。
+        for kind, group in ordered:
+            lines.append("")
+            if kind:
+                lines.append(f"_{KIND_LABELS.get(kind, kind)}_")
+                lines.append("")
+            for it in group:
+                title = it.get("title", "").strip()
+                if not title:
+                    continue
+                detail = shorten(it.get("detail", ""), limit=160)
+                lines.append(f"- **{title}** — {detail}" if detail else f"- **{title}**")
+
+    # 「更早的版本」按实际没列出来的算
     unlisted = [e["tag"] for e in entries if e["tag"] not in printed_tags]
     if unlisted:
         oldest = unlisted[-1]
