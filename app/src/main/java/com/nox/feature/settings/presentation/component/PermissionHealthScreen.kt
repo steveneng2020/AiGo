@@ -112,8 +112,10 @@ internal fun PermissionHealthScreen(
                         // 都能进、且用户可能想进去撤销，所以一律照常跳转。
                         if (item.action == PermissionHealthProbe.Action.STORAGE) {
                             if (item.state == PermissionHealthProbe.State.READY) {
-                                // 已授予：没有可申请的，跳到应用详情让用户自己看/撤销
-                                viewModel.openAppDetails()
+                                // 已授予：没有可申请的。不跳系统页——Android 没有直达
+                                // 运行时权限列表的公开 Action，MIUI 上试过会落在「应用信息」
+                                // 首页（2026-11-28 实测），用户还得自己往下找。改成提示路径。
+                                viewModel.showStorageGrantedHint()
                             } else {
                                 storageLauncher.launch(
                                     arrayOf(

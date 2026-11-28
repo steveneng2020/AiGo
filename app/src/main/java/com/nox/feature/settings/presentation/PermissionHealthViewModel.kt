@@ -5,8 +5,10 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nox.R
 import com.nox.core.util.FileLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -56,23 +58,26 @@ class PermissionHealthViewModel @Inject constructor(
      * 不能让一项失败影响其他项。
      */
     /**
-     * 打开本应用的系统详情页。
+     * 存储访问已授予时的提示。
      *
-     * 用于「运行时权限已授予」的情况：此时 requestPermissions 会立刻返回、
-     * 不弹框（用户看到的是点了没反应），而系统又没有直达单个 runtime 权限的
-     * 稳定 Action。跳应用详情是能做到的最接近的落点——用户可以在那里看到
-     * 权限列表并自行撤销。
+     * 为什么不再跳系统页：
+     *
+     * Android 没有官方常量能直达「某应用的运行时权限列表」。曾试过
+     * `android.intent.action.MANAGE_APP_PERMISSIONS` + resolveActivity 判定，
+     * 2026-11-28 在 MIUI/HyperOS 上实测 resolveActivity 返回 null，
+     * 于是退回 ACTION_APPLICATION_DETAILS_SETTINGS——落在「应用信息」首页，
+     * 权限入口还要用户自己往下滑。用户点「存储访问」却停在应用信息顶部，
+     * 困惑大于帮助，等于白点。
+     *
+     * 现在的做法：直接告诉用户去哪改，不再跳转。
+     * 优点是不依赖任何 ROM 私有实现，升级也不会失效。
      */
-    fun openAppDetails() {
+    fun showStorageGrantedHint() {
+        val msg = context.getString(R.string.settings_permission_storage_granted_hint)
         runCatching {
-            context.startActivity(
-                Intent(
-                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    Uri.parse("package:${context.packageName}"),
-                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
         }.onFailure {
-            FileLogger.w(TAG, "打开应用详情失败：${it.message}")
+            FileLogger.w(TAG, "显示存储权限提示失败：${it.message}")
         }
     }
 

@@ -532,9 +532,9 @@
     <string name="chat_fast_mode_cost_hint">Faster responses may incur additional charges</string>
     <string name="chat_touch_lock">Touch lock</string>
     <string name="touch_lock_active_title">Touch lock active</string>
-    <string name="touch_lock_hold_hint">Hold %1$d s to exit</string>
-    <string name="touch_lock_holding_countdown">Keep holding (%1$d s)</string>
-    <string name="touch_lock_unlock_cd">Hold for 3 seconds to exit touch lock</string>
+    <string name="touch_lock_hold_hint">Hold %1$s s to exit</string>
+    <string name="touch_lock_holding_countdown">Keep holding (%1$s s)</string>
+    <string name="touch_lock_unlock_cd">Hold for %1$s seconds to exit touch lock</string>
     <string name="chat_fast_mode_active_description">Fast mode on, reasoning %1$s</string>
     <string name="chat_reasoning_effort">Reasoning effort</string>
     <string name="chat_reasoning_effort_none">None</string>
@@ -2284,7 +2284,8 @@
     <string name="settings_permission_health">Permission health</string>
     <string name="settings_permission_health_summary">%1$d of %2$d ready</string>
     <string name="settings_permission_health_group">Permissions &amp; status</string>
-    <string name="settings_permission_health_hint">This page only reports status. Tap any item to grant it in system settings. Items marked "Attention" look enabled but the feature does not actually work.</string>
+    <string name="settings_permission_storage_granted_hint">Storage access is granted. To revoke: Settings → Apps → AiGo → Permissions</string>
+    <string name="settings_permission_health_hint">This page only reports status. Tap any item to open it in system settings. Items marked "Attention" look enabled but the feature does not actually work.</string>
     <string name="settings_perm_state_ready">Ready</string>
     <string name="settings_perm_state_attention">Attention</string>
     <string name="settings_perm_state_missing">Not granted</string>

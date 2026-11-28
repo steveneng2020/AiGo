@@ -29,7 +29,12 @@ class RootPolicyEngine @Inject constructor() {
             "tee" to RootOp.WRITE,
             "dd" to RootOp.WRITE,
             "install" to RootOp.WRITE,
-            "ln" to RootOp.WRITE
+            "ln" to RootOp.WRITE,
+            // settings 改的是 Settings 表（global/secure/system 三个命名空间），
+            // 不碰文件系统。它没有路径参数，所以归进来也不会触发路径校验。
+            // 归入 WRITE 而不是 OTHER，是为了让它走「已知写类命令」的正常流程，
+            // 不多弹一次「命令未指定可判定的路径」的确认框。
+            "settings" to RootOp.WRITE
         )
         val DELETE_COMMANDS = setOf("rm", "rmdir")
         val MOVE_COMMANDS = setOf("mv")
@@ -146,6 +151,18 @@ class RootPolicyEngine @Inject constructor() {
             "dd" -> args.filter { it.startsWith("if=") || it.startsWith("of=") }
                 .map { it.substringAfter('=') }
                 .filter { it.startsWith("/") }
+
+            // settings 的参数里没有路径：`settings put <namespace> <key> <value>`
+            // 的 value 常常含 `/` 和 `:`（如 enabled_accessibility_services 的值
+            // 是 `包名/服务类:包名/服务类`），把它当路径去 realpath 必然失败，
+            // 结果整条命令被 Deny——2026-11-28 实测卡在这里：
+            //   想用 root 通道写回无障碍设置来验证保活，被误判成「路径不存在」。
+            //
+            // settings 本身是受限命令（只能改 Settings 表，不能碰文件），
+            // 写系统区的风险由「改什么 key」决定，不由「value 长什么样」决定，
+            // 所以这类命令不需要做路径判定，交给用户确认即可。
+            "settings" -> emptyList()
+
             else -> positional
         }
     }

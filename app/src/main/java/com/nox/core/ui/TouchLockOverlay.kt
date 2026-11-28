@@ -56,11 +56,25 @@ import com.nox.R
 import com.nox.core.theme.Spacing
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Lock
-import kotlin.math.ceil
 import kotlin.math.max
 
 /** 长按多久退出：3 秒足够长到不会误触，又不至于让人等。 */
 internal const val TOUCH_LOCK_HOLD_DURATION_MS = 3_000L
+
+/**
+ * 把毫秒格式化成「秒」的展示文本，保留一位小数但去掉多余的 .0。
+ *
+ * 0.7 秒 → "0.7"，1 秒 → "1"，3 秒 → "3"，2.5 秒 → "2.5"。
+ * 直接用整数除法会把 0.7 算成 0（再兜成 1），与设置页显示的值对不上。
+ */
+internal fun formatHoldSeconds(holdDurationMs: Long): String {
+    val tenths = ((holdDurationMs.coerceAtLeast(1L) + 50L) / 100L)  // 四舍五入到 0.1 秒
+    return if (tenths % 10L == 0L) {
+        (tenths / 10L).toString()
+    } else {
+        "${tenths / 10L}.${tenths % 10L}"
+    }
+}
 
 /** 遮罩期间把屏幕调到近乎全黑，既省电又不晃眼。 */
 internal const val TOUCH_LOCK_WINDOW_BRIGHTNESS = 0.02f
@@ -77,13 +91,18 @@ internal fun touchLockHoldProgress(
     return (elapsedMs.toFloat() / holdDurationMs.toFloat()).coerceIn(0f, 1f)
 }
 
-internal fun touchLockRemainingSeconds(
+/**
+ * 剩余需按住的毫秒数。
+ *
+ * 早先返回「秒」并向上取整，于是 0.7 秒的设置在倒计时里全程显示「1 秒」，
+ * 与设置页滑杆显示的值对不上（用户报的「提示值与设置值对不上」）。
+ * 改为返回毫秒，由 [formatHoldSeconds] 统一按 0.1 秒格式化，
+ * 提示与倒计时用同一套规则，不会再出现两处不一致。
+ */
+internal fun touchLockRemainingMs(
     elapsedMs: Long,
     holdDurationMs: Long = TOUCH_LOCK_HOLD_DURATION_MS
-): Int {
-    val remainingMs = (holdDurationMs - elapsedMs.coerceAtLeast(0L)).coerceAtLeast(0L)
-    return ceil(remainingMs / 1_000.0).toInt()
-}
+): Long = (holdDurationMs - elapsedMs.coerceAtLeast(0L)).coerceAtLeast(0L)
 
 /** 手指是否仍落在解锁按钮（含容差）范围内；偏离就取消长按。 */
 internal fun isPointerWithinTouchLockTarget(
@@ -109,7 +128,7 @@ internal fun resolveTouchLockTargetBrightness(previousBrightness: Float): Float 
     }
 
 /**
- * 全屏防误触遮罩：纯黑底色省电并吞掉全部触摸与返回手势，仅中央按钮长按 3 秒可退出。
+ * 全屏防误触遮罩：纯黑底色省电并吞掉全部触摸与返回手势，仅中央按钮长按可退出（时长见 [holdDurationMs]）。
  *
  * 用于长任务运行时把手机放兜里、或者把屏幕交给别人看时防止误操作。
  */
@@ -174,9 +193,15 @@ fun TouchLockOverlay(
         animationSpec = spring(stiffness = Spring.StiffnessMedium),
         label = "touch-lock-button-scale"
     )
-    val unlockDescription = stringResource(R.string.touch_lock_unlock_cd)
+    // 解锁时长支持 0.1 秒精度（设置页滑杆 0.1~5 秒），所有展示时长的地方都要跟着走。
+    //
+    // 早先用 (holdDurationMs / 1000).toInt() 取整，0.7 秒会被算成 0，
+    // 再被 coerceAtLeast(1) 兜成 1，于是界面上写「长按 1 秒退出」而实际 0.7 秒。
+    // 另外无障碍描述与长按中的倒计时也曾各自写死或单独取整，三处对不上。
+    // 现在统一由 formatHoldSeconds 产出，必须先于任何使用处定义。
+    val totalSecondsText = formatHoldSeconds(holdDurationMs)
+    val unlockDescription = stringResource(R.string.touch_lock_unlock_cd, totalSecondsText)
     val tolerancePx = with(density) { UNLOCK_TOUCH_TOLERANCE.toPx() }
-    val totalSeconds = (holdDurationMs / 1_000L).toInt().coerceAtLeast(1)
 
     Box(
         modifier = modifier
@@ -297,10 +322,10 @@ fun TouchLockOverlay(
                 text = if (holding) {
                     stringResource(
                         R.string.touch_lock_holding_countdown,
-                        touchLockRemainingSeconds(elapsedMs)
+                        formatHoldSeconds(touchLockRemainingMs(elapsedMs, holdDurationMs))
                     )
                 } else {
-                    stringResource(R.string.touch_lock_hold_hint, totalSeconds)
+                    stringResource(R.string.touch_lock_hold_hint, totalSecondsText)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = if (holding) 0.80f else 0.42f)

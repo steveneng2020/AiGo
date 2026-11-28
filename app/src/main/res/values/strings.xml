@@ -543,9 +543,9 @@
     <string name="chat_fast_mode_cost_hint">响应更快，可能产生额外费用</string>
     <string name="chat_touch_lock">防误触</string>
     <string name="touch_lock_active_title">防误触模式已开启</string>
-    <string name="touch_lock_hold_hint">长按 %1$d 秒退出</string>
-    <string name="touch_lock_holding_countdown">继续按住（%1$d 秒）</string>
-    <string name="touch_lock_unlock_cd">长按 3 秒退出防误触模式</string>
+    <string name="touch_lock_hold_hint">长按 %1$s 秒退出</string>
+    <string name="touch_lock_holding_countdown">继续按住（%1$s 秒）</string>
+    <string name="touch_lock_unlock_cd">长按 %1$s 秒退出防误触模式</string>
     <string name="chat_fast_mode_active_description">Fast 模式已开启，思考强度 %1$s</string>
     <string name="chat_reasoning_effort">思考强度</string>
     <string name="chat_reasoning_effort_none">不思考</string>
@@ -2490,7 +2490,8 @@
     <string name="settings_permission_health">权限健康</string>
     <string name="settings_permission_health_summary">%1$d / %2$d 项就绪</string>
     <string name="settings_permission_health_group">权限与状态</string>
-    <string name="settings_permission_health_hint">这里只显示状态，点任意一项可跳到系统里授权。带「需注意」的项看着是开着的，但实际功能不可用。</string>
+    <string name="settings_permission_storage_granted_hint">存储访问已授予。如需撤销：设置 → 应用 → AiGo → 权限</string>
+    <string name="settings_permission_health_hint">这里只显示状态，点任意一项可跳到系统里设置。带「需注意」的项看着是开着的，但实际功能不可用。</string>
     <string name="settings_perm_state_ready">已就绪</string>
     <string name="settings_perm_state_attention">需注意</string>
     <string name="settings_perm_state_missing">未授予</string>
